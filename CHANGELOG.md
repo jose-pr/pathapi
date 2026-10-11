@@ -124,9 +124,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   same file, a target that is a directory or holds keys, an existing target
   without `overwrite=True`); an existing target is replaced by the copy and no
   longer deleted first, so it is intact when the copy fails; `progress` is
-  called once with the total; a store that answers "not implemented" gets the
-  streamed copy. The copy keeps the object's content type and metadata, which
-  the streamed copy did not.
+  called once with the total; a file named as the root of a
+  `recursive=True` copy is still read and written; a store that answers "not
+  implemented" gets the streamed copy. The copy keeps the object's content type
+  and metadata, which the streamed copy did not.
 - **`gs:` and `az:` read and write an object in pieces.** Reading asks for
   ranges of 4 MiB (`gs:`) or 512 KiB (`az:`, `schemes.az.READ_CHUNK`: the SDK
   holds about nine times a response, assign a larger number to trade memory

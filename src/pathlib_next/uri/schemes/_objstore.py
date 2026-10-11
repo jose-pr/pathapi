@@ -1,6 +1,7 @@
 """What `s3:`, `gs:` and `az:` share: how a transport failure becomes an
-`OSError`, which keys of a prefix a directory walk can reach, and the guard
-that keeps a recursive copy and a recursive remove to the same set of keys.
+`OSError`, which keys of a prefix a directory walk can reach, the guard that
+keeps a recursive copy and a recursive remove to the same set of keys, and the
+ranged reader and spooled writer of a stream.
 
 A walk lists one level at a time with a delimiter, so it never visits a key
 whose name has an empty, `.` or `..` segment, the subtree below a key that is
@@ -19,15 +20,7 @@ import threading as _threading
 import typing as _ty
 
 from ... import utils as _utils
-from ...path import (
-    _copy_mode,
-    _handing,
-    _same_file,
-    _stat_or_none,
-    _take_handed,
-    check_follow,
-    copy_error_predicate,
-)
+from ...path import check_follow, copy_error_predicate
 from ...utils.stat import FileStat
 from .. import UriPath as _UriPath
 
@@ -683,30 +676,24 @@ class ObjectStorePath(_UriPath):
         if isinstance(target, str):
             target = self._coerce_target(target)
         with checked_copy(self, recursive):
-            handing = _contextlib.nullcontext()
-            if self._store_copy_possible(target):
-                left = self._copy_in_store(
-                    target,
-                    overwrite=overwrite,
-                    follow_symlinks=follow_symlinks,
-                    preserve_metadata=preserve_metadata,
-                    progress=progress,
-                )
-                if left is None:
-                    return
-                # What the checks found out is not asked of the store again.
-                handing = _handing(self, target, *left)
-            with handing:
-                return super().copy(
-                    target,
-                    overwrite=overwrite,
-                    follow_symlinks=follow_symlinks,
-                    preserve_metadata=preserve_metadata,
-                    recursive=recursive,
-                    ignore_error=ignore_error,
-                    progress=progress,
-                    **({} if on_error is None else {"on_error": on_error}),
-                )
+            if self._store_copy_possible(target) and self._copy_in_store(
+                target,
+                overwrite=overwrite,
+                follow_symlinks=follow_symlinks,
+                recursive=recursive,
+                progress=progress,
+            ):
+                return
+            return super().copy(
+                target,
+                overwrite=overwrite,
+                follow_symlinks=follow_symlinks,
+                preserve_metadata=preserve_metadata,
+                recursive=recursive,
+                ignore_error=ignore_error,
+                progress=progress,
+                **({} if on_error is None else {"on_error": on_error}),
+            )
 
     def _store_copy_possible(self, target) -> bool:
         """Whether one request of the store can copy this object onto
@@ -721,35 +708,42 @@ class ObjectStorePath(_UriPath):
         )
 
     def _copy_in_store(
-        self, target, *, overwrite, follow_symlinks, preserve_metadata, progress
-    ):
+        self, target, *, overwrite, follow_symlinks, recursive, progress
+    ) -> bool:
         """Copy this object onto `target` with the store's own copy call, after
         the checks `Path.copy()` makes before it writes, in the same order: the
         same file, a target that is a directory or holds keys, an existing
         target without `overwrite`. Nothing is written when one fails, and a
         copy call that fails leaves an existing target as it was.
 
-        None when the object is copied. Otherwise `(source stat, target
-        absent)`, what the checks learned, for `Path.copy()` to take over: the
-        source is not an object (a prefix directory, a missing path), or the
-        store does not implement the call."""
-        handed = _take_handed(self, target)
-        known = None if handed is None else handed.source_stat
-        src_stat = known if known is not None else _stat_or_none(self, follow_symlinks)
-        absent = handed is not None and handed.target_absent
-        if src_stat is None or not _stat.S_ISREG(src_stat.st_mode):
-            return src_stat, absent
-        if _same_file(self, target, identity=False):
+        False when `Path.copy()` is to do it: the source is not an object (a
+        prefix directory, a missing path), the store does not implement the
+        call, or the source is the root of a recursive copy, which may be
+        either and which `Path.copy()` asks about once, with what `move()`
+        already knows. An object has no permission bits, so
+        `preserve_metadata` has nothing to carry over."""
+        hint = self._stat_hint
+        if (hint is None and recursive) or (
+            hint is not None and not _stat.S_ISREG(hint.st_mode)
+        ):
+            return False
+        try:
+            src_stat = self.stat(follow_symlinks=follow_symlinks)
+        except (OSError, ValueError, NotImplementedError):
+            return False
+        if not _stat.S_ISREG(src_stat.st_mode):
+            return False
+        # The same object under two spellings of its key is one file too.
+        if self._same_location(target) and self.key == target.key:
             raise OSError(
                 _errno.EINVAL, "Source and target are the same file", str(target)
             )
         # stat(), not exists(): only FileNotFoundError means the target is
         # absent, never a failed probe.
         try:
-            target_stat = None if absent else target.stat()
+            target_stat = target.stat()
         except FileNotFoundError:
             target_stat = None
-        absent = absent or target_stat is None
         if target_stat is not None:
             if _stat.S_ISDIR(target_stat.st_mode):
                 raise IsADirectoryError(target)
@@ -757,12 +751,10 @@ class ObjectStorePath(_UriPath):
                 raise FileExistsError(target)
         size = src_stat.st_size
         if not self._copy_object(target, size):
-            return src_stat, absent
+            return False
         if progress is not None:
             progress(self, size, size)
-        if preserve_metadata:
-            _copy_mode(self, target, follow_symlinks, src_stat)
-        return None
+        return True
 
     def rename(self, target):
         target = self._rename_target(target)

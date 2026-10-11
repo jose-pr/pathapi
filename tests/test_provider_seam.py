@@ -30,7 +30,6 @@ NOT_THE_CORES = {
     ("uri/schemes/archive/zip.py", "_append"): "the zip write stream's own method",
     ("uri/schemes/archive/tar.py", "_members"): "the tar backend's member table",
     ("uri/schemes/archive/tar.py", "_source"): "the tar backend's byte source",
-    ("uri/schemes/s3.py", "_dirty"): "a write stream's own flag",
     ("uri/schemes/_objstore.py", "_dirty"): "a write stream's own flag",
     ("uri/schemes/s3.py", "_path"): "the path a stream or a client call is for",
     ("uri/schemes/_objstore.py", "_path"): "the path a stream is for",

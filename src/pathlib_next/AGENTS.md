@@ -2060,7 +2060,8 @@ of their own. A supplied backend is unaffected.
   the store does. A store that answers "not implemented" gets the
   streamed copy instead, and a copy between different supplied backends or
   schemes always streams. `copy(recursive=True)` and `move()` of a prefix
-  copy each file this way.
+  copy each file this way; a file named as the root of a `recursive=True`
+  copy is read and written.
 - `checksum(algorithm="md5")` (`NativeChecksum`) is the digest the store
   keeps, read with one request and no byte of the content. On `s3:` it is
   the plain MD5 that the ETag is for an object one request wrote and that

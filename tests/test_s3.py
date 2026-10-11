@@ -1351,3 +1351,12 @@ def test_each_moto_test_talks_to_its_own_mock_second(moto_s3):
     assert _moto_keys(moto_s3) == []
     S3Path("s3://bkt/mine.txt").write_bytes(b"y")
     assert _moto_keys(moto_s3) == ["mine.txt"]
+
+
+def test_a_file_named_as_the_root_of_a_recursive_copy_is_copied(moto_s3):
+    moto_s3.put_object(Bucket="bkt", Key="a.bin", Body=b"payload")
+    backend, _sent = _recording_backend()
+    S3Path("s3://bkt/a.bin", backend=backend).copy(
+        S3Path("s3://bkt/b.bin", backend=backend), recursive=True
+    )
+    assert _stored(moto_s3, "b.bin") == b"payload"
