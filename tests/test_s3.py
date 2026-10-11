@@ -1277,3 +1277,77 @@ def test_moving_a_prefix_copies_each_file_in_the_store(moto_s3):
     assert sent.count("CopyObject") == 3
     assert "GetObject" not in sent
     assert not any(key.startswith("d/") for key in _moto_keys(moto_s3))
+
+
+# --- one default backend per process ----------------------------------------
+
+
+def test_separately_built_paths_share_one_default_client(moto_s3, monkeypatch):
+    import boto3
+
+    built = []
+    real = boto3.client
+
+    def counting(*args, **kwargs):
+        built.append(args)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(boto3, "client", counting)
+    first, second = S3Path("s3://bkt/a.txt"), S3Path("s3://other/b.txt")
+    assert first.backend is second.backend
+    first.write_bytes(b"x")
+    assert not second.exists()
+    assert len(built) == 1
+
+
+def test_a_supplied_backend_is_not_the_shared_one(moto_s3):
+    from pathlib_next.uri.schemes.s3 import S3Backend
+
+    own = S3Backend()
+    path = S3Path("s3://bkt/a.txt", backend=own)
+    assert path.backend is own
+    assert path.backend is not S3Path("s3://bkt/b.txt").backend
+    assert (path / "child").backend is own
+
+
+def test_threads_racing_for_the_default_backend_get_one():
+    import threading
+
+    found = []
+    barrier = threading.Barrier(8)
+
+    def build():
+        barrier.wait()
+        found.append(S3Path("s3://bkt/x").backend)
+
+    threads = [threading.Thread(target=build) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert len(found) == 8 and len({id(backend) for backend in found}) == 1
+
+
+def test_a_test_may_build_the_default_backend():
+    from pathlib_next.uri.schemes import s3
+
+    assert S3Path("s3://bkt/a.txt").backend is s3._DEFAULT_BACKEND
+
+
+def test_the_next_test_starts_without_the_default_backend_of_the_one_before():
+    # Follows the test above: the suite forgets the shared backend between tests.
+    from pathlib_next.uri.schemes import s3
+
+    assert s3._DEFAULT_BACKEND is None
+
+
+def test_each_moto_test_talks_to_its_own_mock_first(moto_s3):
+    S3Path("s3://bkt/left-behind.txt").write_bytes(b"x")
+    assert _moto_keys(moto_s3) == ["left-behind.txt"]
+
+
+def test_each_moto_test_talks_to_its_own_mock_second(moto_s3):
+    assert not S3Path("s3://bkt/left-behind.txt").exists()
+    assert _moto_keys(moto_s3) == []
+    S3Path("s3://bkt/mine.txt").write_bytes(b"y")
+    assert _moto_keys(moto_s3) == ["mine.txt"]

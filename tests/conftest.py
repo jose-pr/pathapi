@@ -3,6 +3,7 @@ import contextlib
 import functools
 import hashlib
 import http.server
+import sys
 import tempfile
 import threading
 import time
@@ -255,6 +256,23 @@ def _close_cached_ftp_connections():
     if ftp is not None:
         for key in list(ftp._CACHED_CLIENTS.cache):
             ftp._CACHED_CLIENTS.discard(*key)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_default_object_store_backends():
+    """`s3:` and `gs:` share one default backend per process; a test starts
+    without one, so its client is built for its own mock or fake and never
+    inherited from another test."""
+
+    def forget():
+        for scheme in ("s3", "gs"):
+            module = sys.modules.get(f"pathlib_next.uri.schemes.{scheme}")
+            if module is not None:
+                module._reset_default_backend()
+
+    forget()
+    yield
+    forget()
 
 
 @pytest.fixture

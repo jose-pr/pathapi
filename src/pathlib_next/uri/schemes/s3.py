@@ -61,6 +61,29 @@ class S3Backend(BaseS3Backend):
         _store.restore_backend(self, state)
 
 
+_DEFAULT_BACKEND: "S3Backend | None" = None
+_DEFAULT_BACKEND_LOCK = _threading.Lock()
+
+
+def _default_backend() -> S3Backend:
+    """The one backend, and so the one client and connection pool, that every
+    `S3Path` built without `backend=` shares in this process."""
+    global _DEFAULT_BACKEND
+    with _DEFAULT_BACKEND_LOCK:
+        if _DEFAULT_BACKEND is None:
+            _DEFAULT_BACKEND = S3Backend()
+        return _DEFAULT_BACKEND
+
+
+def _reset_default_backend() -> None:
+    """Forget the shared default backend, so the next path builds a new one.
+    The test suite calls it between tests; paths that already hold the old
+    one keep it."""
+    global _DEFAULT_BACKEND
+    with _DEFAULT_BACKEND_LOCK:
+        _DEFAULT_BACKEND = None
+
+
 _PUT_OBJECT_LIMIT = 5 * 1024**3
 """Largest body a single PutObject accepts, and the largest source a single
 CopyObject copies; above it writes and renames use boto3's managed
@@ -303,7 +326,7 @@ class S3Path(_store.ObjectStorePath):
         backend: BaseS3Backend
 
     def _initbackend(self):
-        return S3Backend()
+        return _default_backend()
 
     @property
     def bucket(self) -> str:

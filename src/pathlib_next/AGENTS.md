@@ -2003,7 +2003,12 @@ they built and keep their options (`client_kwargs`, credentials included):
 the copy builds its own client on first use. A pickled path never carries
 them: it holds the URI, and the receiving process uses the default backend
 unless the program supplies one (a backend class that sets `picklable =
-True` is pickled with its path, secrets and all).
+True` is pickled with its path, secrets and all). Every `S3Path` and
+`GsPath` built without `backend=` uses one default backend per process
+(`AzPath` has one per account), so separately built paths share one client
+and one connection pool, and the credentials, region and endpoint that the
+environment gave the first request are theirs; pass `backend=` for a client
+of their own. A supplied backend is unaffected.
 
 - Directories are key prefixes: `mkdir()` writes a zero-byte `key/` marker,
   `rmdir()` needs an empty prefix, a key that is both an object and a prefix
@@ -2144,7 +2149,9 @@ kept). `AzBackend(account=None, **client_kwargs)`: `connection_string=` →
 `account_url="https://<account>.blob.core.windows.net"` with
 `azure-identity`'s `DefaultAzureCredential` unless `credential=` is passed.
 Without `backend=`, one shared backend per URI account is used, which needs
-`azure-identity` (installed by the `az` extra; `ImportError` otherwise). Same
+`azure-identity` (installed by the `az` extra; `ImportError` otherwise). A
+supplied `AzBackend` is used for whatever account the URI names: the URI's
+account does not select it. Same
 prefix model, error and recursive-copy/remove rules as `S3Path` (a name
 that is both a blob and a prefix is the blob, whatever order the SDK lists
 them in; timeouts and retries are the SDK's own `retry_*`, `connection_timeout=`

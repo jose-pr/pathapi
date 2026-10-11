@@ -85,6 +85,29 @@ class GsBackend(BaseGsBackend):
         _store.restore_backend(self, state)
 
 
+_DEFAULT_BACKEND: "GsBackend | None" = None
+_DEFAULT_BACKEND_LOCK = _threading.Lock()
+
+
+def _default_backend() -> GsBackend:
+    """The one backend, and so the one client, that every `GsPath` built
+    without `backend=` shares in this process."""
+    global _DEFAULT_BACKEND
+    with _DEFAULT_BACKEND_LOCK:
+        if _DEFAULT_BACKEND is None:
+            _DEFAULT_BACKEND = GsBackend()
+        return _DEFAULT_BACKEND
+
+
+def _reset_default_backend() -> None:
+    """Forget the shared default backend, so the next path builds a new one.
+    The test suite calls it between tests; paths that already hold the old
+    one keep it."""
+    global _DEFAULT_BACKEND
+    with _DEFAULT_BACKEND_LOCK:
+        _DEFAULT_BACKEND = None
+
+
 def _object_key(path: str) -> str:
     """The object key a gs URI path names: leading `/`s dropped, and
     exactly one trailing `/`. `gs://b/dir/` is the directory `dir`, the
@@ -224,7 +247,7 @@ class GsPath(_store.ObjectStorePath):
         backend: BaseGsBackend
 
     def _initbackend(self):
-        return GsBackend()
+        return _default_backend()
 
     @property
     def bucket_name(self) -> str:

@@ -1413,3 +1413,55 @@ def test_a_large_exclusive_upload_does_not_replace_an_object(monkeypatch):
     with _gs("gs://bucket/new", backend).open("xb") as stream:
         stream.write(b"123456789")
     assert bucket.objects["new"] == b"123456789"
+
+
+# --- one default backend per process ----------------------------------------
+
+
+def test_separately_built_paths_share_one_default_client(fake_storage_module):
+    first, second = GsPath("gs://one/a.txt"), GsPath("gs://two/b.txt")
+    assert first.backend is second.backend
+    first.backend.client()
+    second.backend.client()
+    assert len(fake_storage_module) == 1
+
+
+def test_a_supplied_backend_is_not_the_shared_one():
+    from pathlib_next.uri.schemes.gs import GsBackend
+
+    own = GsBackend()
+    path = GsPath("gs://one/a.txt", backend=own)
+    assert path.backend is own
+    assert path.backend is not GsPath("gs://one/b.txt").backend
+    assert (path / "child").backend is own
+
+
+def test_threads_racing_for_the_default_backend_get_one():
+    import threading
+
+    found = []
+    barrier = threading.Barrier(8)
+
+    def build():
+        barrier.wait()
+        found.append(GsPath("gs://one/x").backend)
+
+    threads = [threading.Thread(target=build) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert len(found) == 8 and len({id(backend) for backend in found}) == 1
+
+
+def test_a_test_may_build_the_default_backend():
+    from pathlib_next.uri.schemes import gs
+
+    assert GsPath("gs://one/a.txt").backend is gs._DEFAULT_BACKEND
+
+
+def test_the_next_test_starts_without_the_default_backend_of_the_one_before():
+    # Follows the test above: the suite forgets the shared backend between tests.
+    from pathlib_next.uri.schemes import gs
+
+    assert gs._DEFAULT_BACKEND is None
