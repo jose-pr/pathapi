@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import atexit as _atexit
+import contextvars as _contextvars
 import errno as _errno
 import gc as _gc
 import io as _io
@@ -36,6 +37,13 @@ def _mark_posix_rename_unsupported(client) -> None:
     except TypeError:
         pass
 
+
+#: The `(source, target)` of the `SftpPath.replace()` that handed its work to
+#: the generic `replace()`, so that `move()` calling `replace()` again knows
+#: it is the same call.
+_REPLACING: "_contextvars.ContextVar[tuple | None]" = _contextvars.ContextVar(
+    "pathlib_next_sftp_replacing", default=None
+)
 
 #: Files `SftpPath._open()` handed out for writing and nobody has closed.
 _UNCLOSED: "_weakref.WeakSet" = _weakref.WeakSet()
@@ -736,6 +744,58 @@ class SftpPath(UriPath):
         self._rename_on_wire(target)
         # pathlib returns the new path.
         return self.with_path(target.path)
+
+    def replace(self, target: "SftpPath | Uri | str"):
+        """Rename this entry to `target`, replacing what is there, and return
+        `target` as a path.
+
+        Onto a path of this server the request is `posix-rename@openssh.com`
+        where the server has it: one request, atomic, and if it fails both
+        entries are as they were. A server that lacks the extension, or that
+        refuses it without saying why, gets what `Path.replace()` does: the
+        file at `target` is removed and then this entry is renamed. Onto
+        anything else this is `Path.replace()`, which `move(overwrite=True)`
+        uses too."""
+        if isinstance(target, str):
+            target = self._coerce_target(target)
+        pending = _REPLACING.get()
+        if pending is not None and pending[0] is self and pending[1] is target:
+            # `Path.replace()` below reached `move()`, which found a file at
+            # `target` and asked this method to swap it in.
+            if not self._same_location(target):
+                raise OSError(_errno.EXDEV, "Cross-device link", str(target.path))
+            target.unlink(missing_ok=True)
+            return self.rename(target)
+        if type(target) is type(self) and self._same_location(target):
+            client = self._sftpclient
+            posix_rename = getattr(client, "posix_rename", None)
+            if posix_rename is not None and not _posix_rename_known_unsupported(client):
+                try:
+                    posix_rename(self.path, target.path)
+                except NotImplementedError:
+                    _mark_posix_rename_unsupported(client)
+                except OSError as error:
+                    # A refusal that names its cause is the answer, unless a
+                    # directory stands at `target`: `Path.replace()` checks
+                    # those before it removes anything and says which error
+                    # it is on any server.
+                    if error.errno is not None and not self._is_directory_at(target):
+                        raise
+                else:
+                    return target
+        token = _REPLACING.set((self, target))
+        try:
+            return super().replace(target)
+        finally:
+            _REPLACING.reset(token)
+
+    @staticmethod
+    def _is_directory_at(path: "SftpPath") -> bool:
+        try:
+            found = FileStat.from_path(path, follow_symlink=False)
+        except Exception:
+            return False
+        return found is not None and found.is_dir() and not found.is_symlink()
 
     def _rename_on_wire(self, target: Uri) -> None:
         client = self._sftpclient

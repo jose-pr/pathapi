@@ -1682,6 +1682,10 @@ MAX_LISTING_BYTES = 8388608
   matter); `st_size` from `Content-Length` (absent, non-numeric or negative
   = unknown, `0`), `st_mtime` from `Last-Modified` (UTC), or from the
   parent's index when `walk_up_last_modified=True`.
+- An index page prints its dates with no zone, and they are read as UTC:
+  the `st_mtime` of a listed entry can be off by the server's offset from
+  UTC (`stat()` of the entry uses `Last-Modified`, which names its zone).
+  Compare sizes, or give `PathSyncer` `quick_check=False`.
 - Listing scrapes an Apache/nginx-style HTML index, asking for the
   directory's URL with a trailing `/` first; `.`/`..` rows are never
   children; a non-HTML response → `NotADirectoryError` (an HTML file lists
@@ -1807,6 +1811,7 @@ class BaseFtpBackend:
 class SftpPath(UriPath):
     def __init__(self, *args, ssh_config=..., **kwargs): ...
     def readlink(self) -> SftpPath: ...
+    def replace(self, target) -> SftpPath: ...
     def hardlink_to(self, target): ...
     def chmod(self, mode, *, follow_symlinks=True): ...
     def chown(self, uid=None, gid=None, *, follow_symlinks=True) -> None: ...
@@ -1898,7 +1903,16 @@ class BaseSftpBackend:
   backends, in whole seconds; SFTPv3 carries the access and modification time
   as a pair, so the one left alone is read first (one more request).
   `rename()` replaces an existing target via `posix-rename@openssh.com`
-  where supported, else `FileExistsError`. `checksum()`/
+  where supported, else `FileExistsError`. `replace(target)` onto a path of
+  the same server is that one request when the server has the extension:
+  atomic, the target is not removed first, and a refusal that names its
+  cause (`PermissionError`, `FileNotFoundError`, ...) leaves both entries as
+  they were. A server without the extension, one that refuses it with a bare
+  failure, and a directory at `target` (judged by `Path.replace()`, which
+  checks before it removes: `OSError(ENOTEMPTY)`, `IsADirectoryError`) get
+  the generic `replace()`: the file at `target` is removed, then this entry
+  is renamed. `move(overwrite=True)` onto an existing file of the same
+  server uses it, so it is one `posix-rename` and no removal. `checksum()`/
   `supported_checksums()` (`NativeChecksum`): both backends send the
   `check-file-handle` extension (OpenSSH lacks it); an "operation
   unsupported" answer is remembered per connection and algorithm (one request
