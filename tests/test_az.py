@@ -471,3 +471,24 @@ def test_az_a_stream_seeks_without_reading_what_it_skips(az_server, az_api_serve
         stream.seek(20 * MIB + 1)
         assert stream.read(3) == bytes([1, 2, 3])
     assert len(_content_reads(state)) == 3
+
+
+def test_az_an_exclusive_upload_does_not_replace_an_existing_blob(
+    az_server, az_api_server, monkeypatch
+):
+    import io
+
+    from pathlib_next.uri.schemes import _objstore as store
+
+    path, _ = az_server
+    state = az_api_server.state
+    before = state.objects["a.txt"]
+    with pytest.raises(FileExistsError):
+        (path / "a.txt")._upload(b"new", exclusive=True)
+    # Above the single-request size the upload is made of blocks.
+    monkeypatch.setattr(store, "SPOOL_SIZE", 8)
+    with pytest.raises(FileExistsError):
+        (path / "a.txt")._upload_file(io.BytesIO(b"123456789"), 9, exclusive=True)
+    assert state.objects["a.txt"] == before
+    (path / "fresh.txt")._upload_file(io.BytesIO(b"123456789"), 9, exclusive=True)
+    assert state.objects["fresh.txt"] == b"123456789"

@@ -1370,6 +1370,9 @@ def gcs_api_server(fixture_tree):
                     self._resumable_start(qs)
                     return
                 obj_name, content = self._read_upload_body(qs)
+                if qs.get("ifGenerationMatch") == ["0"] and obj_name in objects:
+                    self._send_json(412, {})
+                    return
                 if obj_name:
                     objects[obj_name] = content
                     self._send_json(200, self._object_json(obj_name))
