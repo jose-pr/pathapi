@@ -15,6 +15,7 @@ import operator as _operator
 import os as _os
 import pathlib as _pathlib
 import re as _re
+import shutil as _shutil
 import stat as _stat
 import sys as _sys
 import time as _time
@@ -741,6 +742,50 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
     def is_hidden(self):
         """Return True if the final path component is a hidden file/directory."""
         return self.name.startswith(".")
+
+    @property
+    def info(self) -> "_PathInfo":
+        """What this path is, as an object shaped like `pathlib.types.PathInfo`
+        (Python 3.14): `exists()`, `is_dir()`, `is_file()` (each with
+        `follow_symlinks=True`) and `is_symlink()`. It asks `stat()` at most
+        once with and once without following links and remembers the answers
+        on that object only: a new `info` is a new question. `LocalPath` has
+        pathlib's own on 3.14."""
+        return _PathInfo(self)
+
+    def _copy_from(self, source, follow_symlinks=True, preserve_metadata=False):
+        """Copy `source` -- any path with `info`, `iterdir()`, `readlink()` and
+        `open()`, such as a `pathlib.Path` -- to this path, creating files and
+        directories as pathlib 3.14 does: an existing file is overwritten, an
+        existing directory raises. Python 3.14's `pathlib.Path.copy(target)`
+        hands the work to `target._copy_from()`; `preserve_metadata` copies the
+        permission bits and the modification time where this class can set
+        them."""
+        info = source.info
+        link = not follow_symlinks and info.is_symlink()
+        if link:
+            self.symlink_to(str(source.readlink()), info.is_dir())
+        elif info.is_dir():
+            children = source.iterdir()
+            self.mkdir()
+            for child in children:
+                self.joinpath(child.name)._copy_from(
+                    child, follow_symlinks, preserve_metadata
+                )
+        else:
+            with source.open("rb") as reader, self.open("wb") as writer:
+                _shutil.copyfileobj(reader, writer)
+        read = getattr(source, "stat", None)
+        if preserve_metadata and not link and read is not None:
+            stat = read()
+            for apply in (
+                lambda: self.chmod(_stat.S_IMODE(stat.st_mode)),
+                lambda: self._utime(mtime=stat.st_mtime),
+            ):
+                try:
+                    apply()
+                except NotImplementedError:
+                    pass
 
     def samefile(self, other_path: str | _ty.Self):
         """Return whether other_path is the same or not as this file, by
@@ -1954,6 +1999,62 @@ def copy_error_predicate(ignore_error, on_error) -> "_utils.OfferedOnce | None":
     if ignore_error is not None:
         raise TypeError("copy() takes ignore_error or on_error, not both")
     return _utils.as_error_predicate(on_error)
+
+
+class _PathInfo:
+    """`Path.info`: the file type of one path, from at most one stat that
+    follows links and one that does not, both kept on this object only."""
+
+    __slots__ = ("_path", "_followed", "_unfollowed")
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._followed = self._unfollowed = _UNSET
+
+    def _stat(self, follow_symlinks: bool):
+        """The stat, or None where there is no such entry."""
+        if follow_symlinks:
+            if self._followed is _UNSET:
+                # An entry that is missing or is not a link is the same stat
+                # either way.
+                plain = self._unfollowed
+                if plain is _UNSET or (
+                    plain is not None and _stat.S_ISLNK(plain.st_mode)
+                ):
+                    self._followed = self._ask(True)
+                else:
+                    self._followed = plain
+            return self._followed
+        if self._unfollowed is _UNSET:
+            self._unfollowed = self._ask(False)
+        return self._unfollowed
+
+    def _ask(self, follow_symlinks: bool):
+        try:
+            return self._path.stat(follow_symlinks=follow_symlinks)
+        except (OSError, ValueError):
+            return None
+
+    def exists(self, *, follow_symlinks: bool = True) -> bool:
+        return self._stat(follow_symlinks) is not None
+
+    def is_dir(self, *, follow_symlinks: bool = True) -> bool:
+        stat = self._stat(follow_symlinks)
+        return stat is not None and _stat.S_ISDIR(stat.st_mode)
+
+    def is_file(self, *, follow_symlinks: bool = True) -> bool:
+        stat = self._stat(follow_symlinks)
+        return stat is not None and _stat.S_ISREG(stat.st_mode)
+
+    def is_symlink(self) -> bool:
+        stat = self._stat(False)
+        return stat is not None and _stat.S_ISLNK(stat.st_mode)
+
+    def __repr__(self) -> str:
+        return f"<{type(self._path).__name__}.info>"
+
+
+_UNSET = object()
 
 
 def _stat_or_none(path: Path, follow_symlinks: bool):

@@ -140,6 +140,7 @@ has a root; a class whose rooted paths are not all absolute overrides it).
 
 ```python
 class Path(Pathname, Chmod, Stat, BinaryOpen):
+    info
     def is_hidden(self): ...
     def is_junction(self) -> bool: ...
     def is_mount(self) -> bool: ...
@@ -487,6 +488,9 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
     def _open(self, mode="r", buffering=-1) -> IOBase: ...
     def _chown(self, uid, gid, *, follow_symlinks=True) -> None: ...
     def _utime(self, *, atime=None, mtime=None) -> None: ...
+    def _copy_from(
+        self, source, follow_symlinks=True, preserve_metadata=False,
+    ) -> None: ...
 
 def check_follow(name, policy) -> None: ...
 def contains(src, target) -> bool: ...
@@ -501,6 +505,26 @@ class CommitOnClose(BytesIO):
   of naming a directory (`("",)` for a rooted path, else `()`); `parents`
   stops there. Override it when the root is spelled differently (`FileUri`
   anchors at a Windows drive or share).
+- `info` — an object with the methods of `pathlib.types.PathInfo`
+  (Python 3.14): `exists()`, `is_dir()`, `is_file()` (each with
+  `follow_symlinks=True`) and `is_symlink()`. A stat that fails with
+  `OSError`/`ValueError` reads as "no such entry". It calls `stat()` at most
+  once following links and once not (an entry that is missing or not a link
+  shares its non-following stat), and remembers the answers on the info object
+  alone: every `path.info` is a fresh question, since a path holds no state.
+  `LocalPath` has pathlib's own on 3.14 and this one before.
+- `_copy_from(source, follow_symlinks=True, preserve_metadata=False)` — the
+  hook Python 3.14's `pathlib.Path.copy(target)` calls on a target that is
+  not a stdlib path (after `target.with_segments`, `target.parents` and `==`
+  have said it is not the source): `pathlib.Path(f).copy(MemPath("/x"))`
+  works on 3.14, and returns `target.joinpath()`. It copies `source` (anything
+  with `info`, `iterdir()`, `readlink()`, `open()` and `stat()`) as 3.14 does:
+  an existing file is overwritten, an existing directory raises, children are
+  copied one by one, `follow_symlinks=False` makes a link through
+  `symlink_to()`, and `preserve_metadata` copies the permission bits and the
+  modification time where the class can set them (`chmod()`, `_utime()`).
+  `Path.copy()` of this library does not call it. A class that mixes a
+  stdlib path keeps stdlib's.
 - `_scandir()`, `_same_filesystem()`, `_coerce_target()` — see `Path`.
   `_open()`, `_chown()` and `_utime()` — see `BinaryOpen` and `Chmod`.
 - `check_follow(name, policy)` — `ValueError` naming `name` unless `policy` is

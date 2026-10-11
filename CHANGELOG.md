@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `TypeError` before anything is copied. `sftp:` (the asyncssh concurrent walk
   included), `s3:`, `gs:` and `az:` accept it, and `PathContract` gains a test
   that gives one predicate to `rm()` and `copy()`.
+- **`Path.info`, and Python 3.14's `pathlib.Path.copy()` onto any `Path`.**
+  Every `Path` (`MemPath`, `UriPath`, `SftpPath`, ...) has `info`, on every
+  Python version: an object with `exists()`, `is_dir()`, `is_file()` (each with
+  `follow_symlinks=True`) and `is_symlink()`, the shape of 3.14's
+  `pathlib.types.PathInfo`. It calls `stat()` at most once following links and
+  once not, and remembers the answers on that object only, so a new `path.info`
+  asks again. `LocalPath` keeps pathlib's own on 3.14. A new hook,
+  `Path._copy_from(source, follow_symlinks=True, preserve_metadata=False)`,
+  lets `pathlib.Path(f).copy(MemPath("/x"))` work on 3.14, where it raised
+  `AttributeError: ... has no attribute '_copy_from'`: it overwrites a file,
+  raises on an existing directory, and with `preserve_metadata=True` copies the
+  permission bits and the modification time where the class can set them.
+  `Path.copy()` of this library is unchanged and does not call it.
 - **`FileStat.size_known`, and listings that know a type but not a size.**
   A listing can now say "this is a file" without inventing its size: a stat
   with `size_known=False` answers `is_dir()`, `is_file()`, `exists()`,
