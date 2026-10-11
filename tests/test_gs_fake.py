@@ -50,6 +50,9 @@ class _FakeBlob:
             raise _Missing(self.name)
 
     def delete(self):
+        if self._bucket.batch is not None:
+            self._bucket.batch.queued.append(self.name)
+            return
         if self.name in self._bucket.delete_errors:
             raise OSError(self.name)
         if self.name in self._bucket.delete_raises:
@@ -96,9 +99,61 @@ class _FakeIterator:
             yield _FakeBlob(self._bucket, name)
 
 
+class _Reply:
+    """One part of a batch reply: what `requests.Response` gives the SDK's
+    `Batch` for it."""
+
+    def __init__(self, status, content=b""):
+        self.status_code = status
+        self.content = content
+
+
+class _FakeBatch:
+    """The SDK's `Batch`: inside the block `blob.delete()` only queues; on
+    exit one request answers every queued delete, and `_responses` holds a
+    reply per delete in order."""
+
+    def __init__(self, bucket, raise_exception=True):
+        self._bucket = bucket
+        self.queued = []
+        self._responses = []
+
+    def __enter__(self):
+        self._bucket.batch = self
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self._bucket.batch = None
+        if exc_type is None:
+            self._finish()
+
+    def _finish(self):
+        bucket = self._bucket
+        bucket.batch_calls.append(list(self.queued))
+        if bucket.batch_rejected:
+            raise _ServiceUnavailable("503 batch")
+        for name in self.queued:
+            if name in bucket.batch_statuses:
+                status = bucket.batch_statuses[name]
+            elif name in bucket.objects:
+                del bucket.objects[name]
+                bucket.deleted.append(name)
+                status = 204
+            else:
+                status = 404
+            self._responses.append(_Reply(status, b'{"error": {"message": "refused"}}'))
+        if bucket.batch_short:
+            del self._responses[-1]
+
+
 class _FakeBucket:
     def __init__(self):
         self.objects = {}
+        self.batch = None
+        self.batch_calls = []
+        self.batch_statuses = {}
+        self.batch_rejected = False
+        self.batch_short = False
         self.deleted = []
         self.uploads = []
         self.delete_errors = set()
@@ -121,16 +176,22 @@ class _FakeBucket:
 
 
 class _FakeClient:
-    def __init__(self):
+    def __init__(self, batching=False):
         self.bucket_obj = _FakeBucket()
+        if batching:
+            # A client that cannot batch has no such method.
+            self.batch = self._batch
 
     def bucket(self, _name):
         return self.bucket_obj
 
+    def _batch(self, raise_exception=True):
+        return _FakeBatch(self.bucket_obj, raise_exception)
+
 
 class _FakeBackend(BaseGsBackend):
-    def __init__(self):
-        self.client_obj = _FakeClient()
+    def __init__(self, batching=False):
+        self.client_obj = _FakeClient(batching)
 
     def client(self):
         return self.client_obj
@@ -178,6 +239,72 @@ def test_rm_recursive_deletes_exact_object_before_prefix():
     _gs("gs://bucket/file.txt", backend).rm(recursive=True)
     assert bucket.objects == {"file.txt/nested.txt": b"keep"}
     assert bucket.list_calls == []
+
+
+def _batching_bucket(count=0, **objects):
+    backend = _FakeBackend(batching=True)
+    bucket = backend.client_obj.bucket_obj
+    bucket.objects.update({f"dir/f{i:03d}": b"x" for i in range(count)})
+    bucket.objects.update(objects)
+    return backend, bucket
+
+
+def test_rm_recursive_deletes_a_prefix_in_batches_of_one_hundred():
+    backend, bucket = _batching_bucket(250, **{"other.txt": b"keep"})
+    _gs("gs://bucket/dir", backend).rm(recursive=True)
+    assert bucket.objects == {"other.txt": b"keep"}
+    assert [len(names) for names in bucket.batch_calls] == [100, 100, 50]
+    assert bucket.batch_calls[0][0] == "dir/f000"
+    assert bucket.batch_calls[2][-1] == "dir/f249"
+
+
+def test_rm_recursive_offers_each_refused_key_once_with_its_own_path():
+    backend, bucket = _batching_bucket(5)
+    bucket.batch_statuses["dir/f002"] = 403
+    offered = []
+    _gs("gs://bucket/dir", backend).rm(
+        recursive=True,
+        ignore_error=lambda error, path: offered.append((type(error), path.key))
+        or True,
+    )
+    assert offered == [(PermissionError, "dir/f002")]
+    assert set(bucket.objects) == {"dir/f002"}
+    assert len(bucket.batch_calls) == 1
+
+
+def test_rm_recursive_raises_the_first_refused_key_when_it_is_not_ignored():
+    backend, bucket = _batching_bucket(3)
+    bucket.batch_statuses["dir/f001"] = 500
+    with pytest.raises(OSError) as info:
+        _gs("gs://bucket/dir", backend).rm(recursive=True)
+    assert type(info.value) is OSError
+    assert info.value.filename == "gs://bucket/dir/f001"
+    assert "refused" in str(info.value)
+
+
+def test_rm_recursive_does_not_offer_a_blob_that_is_already_gone():
+    backend, bucket = _batching_bucket(3)
+    bucket.batch_statuses["dir/f001"] = 404
+    offered = []
+    _gs("gs://bucket/dir", backend).rm(
+        recursive=True, ignore_error=lambda error, path: offered.append(path) or True
+    )
+    assert offered == []
+
+
+def test_rm_recursive_deletes_each_key_when_the_batch_request_fails():
+    backend, bucket = _batching_bucket(4)
+    bucket.batch_rejected = True
+    _gs("gs://bucket/dir", backend).rm(recursive=True)
+    assert bucket.objects == {}
+    assert len(bucket.batch_calls) == 1
+
+
+def test_rm_recursive_deletes_each_key_when_the_replies_do_not_match_the_keys():
+    backend, bucket = _batching_bucket(4)
+    bucket.batch_short = True
+    _gs("gs://bucket/dir", backend).rm(recursive=True)
+    assert bucket.objects == {}
 
 
 def test_rm_recursive_missing_ok():

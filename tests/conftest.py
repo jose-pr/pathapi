@@ -9,6 +9,7 @@ import pytest
 
 import census as census_module
 import hermetic
+import objstore_fakes
 from server_loops import stop_server
 from hermetic import NetworkAccessBlocked  # noqa: F401  (re-exported for tests)
 from pathlib_next.mempath import MemPath, MemPathBackend
@@ -1103,15 +1104,31 @@ def gcs_api_server(fixture_tree):
 
     bucket_name = "test-bucket"
     updated = "2026-07-12T00:00:00Z"
+    state = objstore_fakes.FakeState(objects)
 
     class _GcsApiHandler(http.server.BaseHTTPRequestHandler):
+        def parse_request(self):
+            parsed = super().parse_request()
+            if parsed:
+                state.requests.append((self.command, self.path))
+            return parsed
+
         def _object_json(self, name):
-            return {
+            content = objects[name]
+            described = {
                 "kind": "storage#object",
                 "name": name,
-                "size": str(len(objects[name])),
+                "size": str(len(content)),
                 "updated": updated,
+                "md5Hash": objstore_fakes.md5_base64(content),
+                "crc32c": objstore_fakes.crc32c_base64(content),
             }
+            for field, value in state.metadata.get(name, {}).items():
+                if value is None:
+                    described.pop(field, None)
+                else:
+                    described[field] = value
+            return described
 
         def _read_upload_body(self, qs):
             content_length = int(self.headers.get("Content-Length", 0))
@@ -1170,7 +1187,7 @@ def gcs_api_server(fixture_tree):
             if split.path == f"/storage/v1/b/{bucket_name}/o":
                 prefix = qs.get("prefix", [""])[0]
                 delimiter = qs.get("delimiter", [None])[0]
-                result = {"kind": "storage#objects", "items": [], "prefixes": []}
+                entries = []
                 prefixes_set = set()
                 for key in sorted(objects.keys()):
                     if key.startswith(prefix):
@@ -1181,11 +1198,25 @@ def gcs_api_server(fixture_tree):
                                 pre = prefix + parts[0] + delimiter
                                 if pre not in prefixes_set:
                                     prefixes_set.add(pre)
-                                    result["prefixes"].append(pre)
+                                    entries.append(("prefix", pre))
                             else:
-                                result["items"].append(self._object_json(key))
+                                entries.append(("item", key))
                         else:
-                            result["items"].append(self._object_json(key))
+                            entries.append(("item", key))
+                page, following = objstore_fakes.page_of(
+                    entries,
+                    int(qs.get("pageToken", ["0"])[0]),
+                    int(qs.get("maxResults", ["0"])[0]),
+                    state.page_size,
+                )
+                result = {"kind": "storage#objects", "items": [], "prefixes": []}
+                for kind, name in page:
+                    if kind == "prefix":
+                        result["prefixes"].append(name)
+                    else:
+                        result["items"].append(self._object_json(name))
+                if following is not None:
+                    result["nextPageToken"] = str(following)
                 self._send_json(200, result)
                 return
 
@@ -1223,6 +1254,11 @@ def gcs_api_server(fixture_tree):
                 self._send_json(404, {})
                 return
 
+            # GET bucket metadata: /storage/v1/b/{bucket}
+            if split.path == f"/storage/v1/b/{bucket_name}":
+                self._send_json(200, {"kind": "storage#bucket", "name": bucket_name})
+                return
+
             # GET metadata: /storage/v1/b/{bucket}/o/{object}
             if split.path.startswith(f"/storage/v1/b/{bucket_name}/o/"):
                 obj_name = urllib.parse.unquote(
@@ -1249,7 +1285,36 @@ def gcs_api_server(fixture_tree):
                 self._send_json(400, {})
                 return
 
+            if split.path == "/batch/storage/v1":
+                self._serve_batch()
+                return
+
             self.do_GET()
+
+        def _serve_batch(self):
+            body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            if state.batch_status != 200:
+                self._send_json(state.batch_status, {})
+                return
+            names = objstore_fakes.gcs_batch_deletes(
+                self.headers.get("Content-Type", ""), body
+            )
+            state.batches.append(names)
+            statuses = []
+            for name in names:
+                if name in state.refuse:
+                    statuses.append(state.refuse[name])
+                elif name in objects:
+                    del objects[name]
+                    statuses.append(204)
+                else:
+                    statuses.append(404)
+            reply, content_type = objstore_fakes.gcs_batch_reply(statuses)
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(reply)))
+            self.end_headers()
+            self.wfile.write(reply)
 
         def do_PUT(self):
             self.do_POST()
@@ -1260,6 +1325,9 @@ def gcs_api_server(fixture_tree):
                 obj_name = urllib.parse.unquote(
                     split.path[len(f"/storage/v1/b/{bucket_name}/o/") :]
                 )
+                if obj_name in state.refuse:
+                    self._send_json(state.refuse[obj_name], {})
+                    return
                 if obj_name in objects:
                     del objects[obj_name]
                     self.send_response(204)
@@ -1281,7 +1349,7 @@ def gcs_api_server(fixture_tree):
             pass
 
     with _serve_http(_GcsApiHandler) as base_url:
-        yield base_url, bucket_name
+        yield objstore_fakes.ServerInfo((base_url, bucket_name), state)
 
 
 @pytest.fixture
@@ -1319,6 +1387,7 @@ def az_api_server(fixture_tree):
     account = "testaccount"
     container = "testcontainer"
     last_modified = "Sun, 12 Jul 2026 00:00:00 GMT"
+    state = objstore_fakes.FakeState(objects)
 
     def _copy_status_headers():
         return {
@@ -1327,12 +1396,37 @@ def az_api_server(fixture_tree):
         }
 
     class _AzApiHandler(http.server.BaseHTTPRequestHandler):
-        def _send_blob_headers(self, length):
+        def parse_request(self):
+            parsed = super().parse_request()
+            if parsed:
+                state.requests.append((self.command, self.path))
+            return parsed
+
+        def _md5(self, name):
+            # The Content-MD5 the service reports for `name`, or None.
+            overrides = state.metadata.get(name, {})
+            if "Content-MD5" in overrides:
+                return overrides["Content-MD5"]
+            return objstore_fakes.md5_base64(objects[name])
+
+        def _send_blob_headers(self, length, name=None):
             self.send_header("Content-Type", "application/octet-stream")
             self.send_header("Content-Length", str(length))
             self.send_header("Last-Modified", last_modified)
             self.send_header("ETag", '"etag"')
             self.send_header("x-ms-blob-type", "BlockBlob")
+            if name is not None and self._md5(name):
+                self.send_header("Content-MD5", self._md5(name))
+
+        def _blob_element(self, blobs_elem, key):
+            blob_elem = ET.SubElement(blobs_elem, "Blob")
+            ET.SubElement(blob_elem, "Name").text = key
+            props_elem = ET.SubElement(blob_elem, "Properties")
+            ET.SubElement(props_elem, "Content-Length").text = str(len(objects[key]))
+            ET.SubElement(props_elem, "Last-Modified").text = last_modified
+            ET.SubElement(props_elem, "BlobType").text = "BlockBlob"
+            if self._md5(key):
+                ET.SubElement(props_elem, "Content-MD5").text = self._md5(key)
 
         def do_GET(self):
             split = urllib.parse.urlsplit(self.path)
@@ -1349,9 +1443,15 @@ def az_api_server(fixture_tree):
 
                 root = ET.Element("EnumerationResults")
                 root.set("ContainerName", container)
+                # The SDK repeats these on the request for the next page.
+                if prefix:
+                    ET.SubElement(root, "Prefix").text = prefix
+                if delimiter:
+                    ET.SubElement(root, "Delimiter").text = delimiter
 
                 blobs_elem = ET.SubElement(root, "Blobs")
                 prefixes_set = set()
+                entries = []
 
                 for key in sorted(objects.keys()):
                     if key.startswith(prefix):
@@ -1362,33 +1462,28 @@ def az_api_server(fixture_tree):
                                 pre = prefix + parts[0] + delimiter
                                 if pre not in prefixes_set:
                                     prefixes_set.add(pre)
-                                    pre_elem = ET.SubElement(blobs_elem, "BlobPrefix")
-                                    name_elem = ET.SubElement(pre_elem, "Name")
-                                    name_elem.text = pre
+                                    entries.append(("prefix", pre))
                             else:
-                                blob_elem = ET.SubElement(blobs_elem, "Blob")
-                                name_elem = ET.SubElement(blob_elem, "Name")
-                                name_elem.text = key
-                                props_elem = ET.SubElement(blob_elem, "Properties")
-                                size_elem = ET.SubElement(props_elem, "Content-Length")
-                                size_elem.text = str(len(objects[key]))
-                                mtime_elem = ET.SubElement(props_elem, "Last-Modified")
-                                mtime_elem.text = last_modified
-                                type_elem = ET.SubElement(props_elem, "BlobType")
-                                type_elem.text = "BlockBlob"
+                                entries.append(("blob", key))
                         else:
-                            blob_elem = ET.SubElement(blobs_elem, "Blob")
-                            name_elem = ET.SubElement(blob_elem, "Name")
-                            name_elem.text = key
-                            props_elem = ET.SubElement(blob_elem, "Properties")
-                            size_elem = ET.SubElement(props_elem, "Content-Length")
-                            size_elem.text = str(len(objects[key]))
-                            mtime_elem = ET.SubElement(props_elem, "Last-Modified")
-                            mtime_elem.text = last_modified
-                            type_elem = ET.SubElement(props_elem, "BlobType")
-                            type_elem.text = "BlockBlob"
+                            entries.append(("blob", key))
 
-                ET.SubElement(root, "NextMarker").text = ""
+                page, following = objstore_fakes.page_of(
+                    entries,
+                    int(qs.get("marker", ["0"])[0] or 0),
+                    int(qs.get("maxresults", ["0"])[0]),
+                    state.page_size,
+                )
+                for kind, name in page:
+                    if kind == "prefix":
+                        pre_elem = ET.SubElement(blobs_elem, "BlobPrefix")
+                        ET.SubElement(pre_elem, "Name").text = name
+                    else:
+                        self._blob_element(blobs_elem, name)
+
+                ET.SubElement(root, "NextMarker").text = (
+                    "" if following is None else str(following)
+                )
 
                 body = ET.tostring(root, encoding="utf-8")
                 self.send_response(200)
@@ -1420,7 +1515,7 @@ def az_api_server(fixture_tree):
                         status = 206
                     chunk = content[start : end + 1]
                     self.send_response(status)
-                    self._send_blob_headers(len(chunk))
+                    self._send_blob_headers(len(chunk), blob_name)
                     self.send_header(
                         "Content-Range", f"bytes {start}-{end}/{len(content)}"
                     )
@@ -1439,6 +1534,35 @@ def az_api_server(fixture_tree):
         def do_HEAD(self):
             # Delegate to GET
             self.do_GET()
+
+        def do_POST(self):
+            split = urllib.parse.urlsplit(self.path)
+            qs = urllib.parse.parse_qs(split.query)
+            body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            if qs.get("comp") != ["batch"] or state.batch_status != 200:
+                self.send_response(
+                    400 if qs.get("comp") != ["batch"] else state.batch_status
+                )
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            names = objstore_fakes.azure_batch_deletes(account, container, body)
+            state.batches.append(names)
+            statuses = []
+            for name in names:
+                if name in state.refuse:
+                    statuses.append(state.refuse[name])
+                elif name in objects:
+                    del objects[name]
+                    statuses.append(202)
+                else:
+                    statuses.append(404)
+            reply, content_type = objstore_fakes.azure_batch_reply(statuses)
+            self.send_response(202)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(reply)))
+            self.end_headers()
+            self.wfile.write(reply)
 
         def do_PUT(self):
             split = urllib.parse.urlsplit(self.path)
@@ -1485,6 +1609,11 @@ def az_api_server(fixture_tree):
                 blob_name = urllib.parse.unquote(
                     split.path[len(f"/{account}/{container}/") :]
                 )
+                if blob_name in state.refuse:
+                    self.send_response(state.refuse[blob_name])
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
                 if blob_name in objects:
                     del objects[blob_name]
                     self.send_response(202)
@@ -1501,7 +1630,7 @@ def az_api_server(fixture_tree):
             pass
 
     with _serve_http(_AzApiHandler) as base_url:
-        yield base_url, account, container
+        yield objstore_fakes.ServerInfo((base_url, account, container), state)
 
 
 @pytest.fixture

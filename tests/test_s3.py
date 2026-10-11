@@ -891,3 +891,47 @@ def test_mkdir_on_an_existing_object_is_file_exists(moto_s3):
 def test_mkdir_of_a_missing_path_writes_the_marker(moto_s3):
     S3Path("s3://bkt/newdir").mkdir()
     assert _moto_keys(moto_s3) == ["newdir/"]
+
+
+# --- listing past one page, and the requests an operation sends -----------------
+
+
+def _recording_backend(max_keys=None):
+    """A backend whose client records the name of every request it sends in
+    `sent`; with `max_keys`, each listing page holds at most that many keys."""
+    from pathlib_next.uri.schemes.s3 import S3Backend
+
+    backend = S3Backend()
+    sent = []
+    events = backend.client().meta.events
+    events.register("before-call.s3", lambda model, **_: sent.append(model.name))
+    if max_keys is not None:
+
+        def small_pages(params, **_):
+            params["MaxKeys"] = max_keys
+
+        events.register("before-parameter-build.s3.ListObjectsV2", small_pages)
+    return backend, sent
+
+
+def test_a_listing_that_spans_pages_shows_every_entry_once(moto_s3):
+    for index in range(3):
+        moto_s3.put_object(Bucket="bkt", Key=f"paged/d{index}/x", Body=b"x")
+        moto_s3.put_object(Bucket="bkt", Key=f"paged/f{index}", Body=b"x")
+    backend, sent = _recording_backend(max_keys=2)
+    names = sorted(
+        child.name for child in S3Path("s3://bkt/paged", backend=backend).iterdir()
+    )
+    assert names == ["d0", "d1", "d2", "f0", "f1", "f2"]
+    assert sent.count("ListObjectsV2") >= 3
+
+
+def test_removing_a_prefix_lists_every_page(moto_s3):
+    for index in range(7):
+        moto_s3.put_object(Bucket="bkt", Key=f"paged/f{index}", Body=b"x")
+    moto_s3.put_object(Bucket="bkt", Key="keep.txt", Body=b"x")
+    backend, sent = _recording_backend(max_keys=2)
+    S3Path("s3://bkt/paged", backend=backend).rm(recursive=True)
+    assert _moto_keys(moto_s3) == ["keep.txt"]
+    assert sent.count("ListObjectsV2") >= 4
+    assert sent.count("DeleteObjects") == 1

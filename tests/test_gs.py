@@ -195,3 +195,102 @@ def test_gs_a_retry_that_runs_out_of_time_is_still_a_connection_error(monkeypatc
     with pytest.raises(ConnectionError) as info:
         path.stat()
     assert info.value.__cause__ is None
+
+
+# --- listing pages and batched deletes --------------------------------------
+
+
+def _list_requests(state):
+    return [
+        target
+        for method, target in state.requests
+        if method == "GET" and target.startswith("/storage/v1/b/test-bucket/o?")
+    ]
+
+
+def test_gs_a_listing_that_spans_pages_shows_every_entry_once(
+    gs_server, gcs_api_server
+):
+    path, _ = gs_server
+    state = gcs_api_server.state
+    for index in range(3):
+        state.objects[f"paged/d{index}/x"] = b"x"
+        state.objects[f"paged/f{index}"] = b"x"
+    state.page_size = 2
+    del state.requests[:]
+    names = sorted(child.name for child in (path / "paged").iterdir())
+    assert names == ["d0", "d1", "d2", "f0", "f1", "f2"]
+    assert len(_list_requests(state)) >= 3
+    assert len({target for target in _list_requests(state)}) >= 3
+
+
+def test_gs_removing_a_prefix_lists_every_page(gs_server, gcs_api_server):
+    path, _ = gs_server
+    state = gcs_api_server.state
+    for index in range(7):
+        state.objects[f"paged/f{index}"] = b"x"
+    state.page_size = 2
+    (path / "paged").rm(recursive=True)
+    assert not [name for name in state.objects if name.startswith("paged/")]
+
+
+def test_gs_rm_recursive_removes_a_prefix_in_batch_requests(gs_server, gcs_api_server):
+    path, _ = gs_server
+    state = gcs_api_server.state
+    for index in range(250):
+        state.objects[f"bulk/f{index:03d}"] = b"x"
+    del state.requests[:]
+    (path / "bulk").rm(recursive=True)
+    assert [method for method, _ in state.requests].count("DELETE") == 0
+    posts = [
+        target
+        for method, target in state.requests
+        if method == "POST" and target.split("?")[0] == "/batch/storage/v1"
+    ]
+    assert len(posts) == 3
+    assert [len(names) for names in state.batches] == [100, 100, 50]
+    assert not [name for name in state.objects if name.startswith("bulk/")]
+    assert "a.txt" in state.objects
+
+
+def test_gs_a_refused_key_of_a_batch_is_offered_once_with_its_own_path(
+    gs_server, gcs_api_server
+):
+    path, _ = gs_server
+    state = gcs_api_server.state
+    for index in range(5):
+        state.objects[f"bulk/f{index}"] = b"x"
+    state.refuse["bulk/f3"] = 403
+    offered = []
+    (path / "bulk").rm(
+        recursive=True,
+        ignore_error=lambda error, where: offered.append((type(error), str(where)))
+        or True,
+    )
+    assert offered == [(PermissionError, f"{path}/bulk/f3")]
+    assert [name for name in state.objects if name.startswith("bulk/")] == ["bulk/f3"]
+
+
+def test_gs_a_blob_the_batch_finds_gone_is_not_an_error(gs_server, gcs_api_server):
+    path, _ = gs_server
+    state = gcs_api_server.state
+    for index in range(3):
+        state.objects[f"bulk/f{index}"] = b"x"
+    state.refuse["bulk/f1"] = 404
+    (path / "bulk").rm(recursive=True)
+    assert [name for name in state.objects if name.startswith("bulk/")] == ["bulk/f1"]
+
+
+def test_gs_a_store_without_the_batch_endpoint_is_deleted_key_by_key(
+    gs_server, gcs_api_server
+):
+    path, _ = gs_server
+    state = gcs_api_server.state
+    for index in range(4):
+        state.objects[f"bulk/f{index}"] = b"x"
+    state.batch_status = 501
+    del state.requests[:]
+    (path / "bulk").rm(recursive=True)
+    assert not [name for name in state.objects if name.startswith("bulk/")]
+    methods = [method for method, _ in state.requests]
+    assert methods.count("DELETE") == 4

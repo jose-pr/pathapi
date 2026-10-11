@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib as _contextlib
 import errno as _errno
 import io as _io
+import json as _json
 import sys as _sys
 import threading as _threading
 import typing as _ty
@@ -177,6 +178,25 @@ def _translate_errors(path, *, create=False):
         if translated is None:
             raise
         raise translated from None
+
+
+_DELETE_BATCH = 100
+"""Deletes sent in one batch request (the API takes up to 1000)."""
+
+
+class _BatchReplyError(Exception):
+    """A part of a batch reply that is not a success, shaped as the SDK's own
+    API errors are: the HTTP status is `code`."""
+
+    def __init__(self, code: int, reply):
+        text = ""
+        try:
+            error = _json.loads(reply.content.decode("utf-8", "replace"))["error"]
+            text = error.get("message") or ""
+        except (ValueError, KeyError, AttributeError, TypeError):
+            pass
+        super().__init__(f"{code} {text or getattr(reply, 'reason', '') or 'error'}")
+        self.code = code
 
 
 _GsWriteStream = _store.BufferedUploadStream
@@ -391,14 +411,57 @@ class GsPath(_store.ObjectStorePath):
             if not missing_ok:
                 raise
 
-    def _delete_keys(self, keys: "list[str]", on_error) -> None:
+    def _delete_each(self, keys, on_error, *, ignore_missing=False) -> None:
         for key in keys:
             try:
                 with _translate_errors(self._key_path(key)):
                     self._bucket.blob(key).delete(**self._options)
             except Exception as error:
+                if ignore_missing and isinstance(error, FileNotFoundError):
+                    # Removed by the batch that was just retried.
+                    continue
                 if not on_error(error, self._key_path(key)):
                     raise
+
+    def _delete_batch(self, keys: "list[str]"):
+        """Delete `keys` in one batch request and return its replies, one per
+        key in order. None when the batch cannot say what it did to each key:
+        the client has no batches, the request failed, or the replies do not
+        match what was sent."""
+        make_batch = getattr(self._client, "batch", None)
+        if not callable(make_batch):
+            return None
+        bucket = self._bucket
+        try:
+            with make_batch(raise_exception=False) as batch:
+                for key in keys:
+                    bucket.blob(key).delete(**self._options)
+        except Exception:
+            return None
+        replies = getattr(batch, "_responses", None)
+        if isinstance(replies, list) and len(replies) == len(keys):
+            return replies
+        return None
+
+    def _delete_keys(self, keys: "list[str]", on_error) -> None:
+        for index in range(0, len(keys), _DELETE_BATCH):
+            chunk = keys[index : index + _DELETE_BATCH]
+            replies = self._delete_batch(chunk)
+            if replies is None:
+                # A rejected batch deleted none and a broken one an unknown
+                # number: each key is deleted on its own, so one failing blob
+                # leaves no other behind.
+                self._delete_each(chunk, on_error, ignore_missing=True)
+                continue
+            for key, reply in zip(chunk, replies):
+                status = reply.status_code
+                # A blob gone since the listing is what the delete is for.
+                if 200 <= status < 300 or status == 404:
+                    continue
+                where = self._key_path(key)
+                failed = _oserror(_BatchReplyError(status, reply), where)
+                if not on_error(failed, where):
+                    raise failed
 
     def _rename_source(self, key: str):
         return self._reload(key)

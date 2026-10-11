@@ -201,3 +201,73 @@ def test_az_probes_for_a_directory_ask_the_service_for_one_item(
         "prefix=sub%2F" in line or "prefix=missing%2F" in line for line in probes
     )
     assert all("maxresults=1" in line for line in probes)
+
+
+# --- listing pages and batched deletes --------------------------------------
+
+
+def _blob_list_requests(state):
+    return [
+        target
+        for method, target in state.requests
+        if method == "GET" and "comp=list" in target
+    ]
+
+
+def test_az_a_listing_that_spans_pages_shows_every_entry_once(az_server, az_api_server):
+    path, _ = az_server
+    state = az_api_server.state
+    for index in range(3):
+        state.objects[f"paged/d{index}/x"] = b"x"
+        state.objects[f"paged/f{index}"] = b"x"
+    state.page_size = 2
+    del state.requests[:]
+    names = sorted(child.name for child in (path / "paged").iterdir())
+    assert names == ["d0", "d1", "d2", "f0", "f1", "f2"]
+    assert len(_blob_list_requests(state)) >= 3
+    assert any("marker=" in target for target in _blob_list_requests(state))
+
+
+def test_az_removing_a_prefix_lists_every_page(az_server, az_api_server):
+    path, _ = az_server
+    state = az_api_server.state
+    for index in range(7):
+        state.objects[f"paged/f{index}"] = b"x"
+    state.page_size = 2
+    (path / "paged").rm(recursive=True)
+    assert not [name for name in state.objects if name.startswith("paged/")]
+
+
+def test_az_rm_recursive_removes_a_prefix_in_one_batch_request(
+    az_server, az_api_server
+):
+    path, _ = az_server
+    state = az_api_server.state
+    for index in range(250):
+        state.objects[f"bulk/f{index:03d}"] = b"x"
+    del state.requests[:]
+    (path / "bulk").rm(recursive=True)
+    assert [method for method, _ in state.requests].count("DELETE") == 0
+    posts = [target for method, target in state.requests if method == "POST"]
+    assert len(posts) == 1 and "comp=batch" in posts[0]
+    assert [len(names) for names in state.batches] == [250]
+    assert not [name for name in state.objects if name.startswith("bulk/")]
+    assert "a.txt" in state.objects
+
+
+def test_az_a_refused_key_of_a_batch_is_offered_once_with_its_own_path(
+    az_server, az_api_server
+):
+    path, _ = az_server
+    state = az_api_server.state
+    for index in range(5):
+        state.objects[f"bulk/f{index}"] = b"x"
+    state.refuse["bulk/f3"] = 403
+    offered = []
+    (path / "bulk").rm(
+        recursive=True,
+        ignore_error=lambda error, where: offered.append((type(error), str(where)))
+        or True,
+    )
+    assert offered == [(PermissionError, f"{path}/bulk/f3")]
+    assert [name for name in state.objects if name.startswith("bulk/")] == ["bulk/f3"]
