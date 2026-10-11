@@ -285,6 +285,14 @@ The `<archive-uri>` is any absolute URI with an explicit scheme, so
   `os.replace`) and keeps the other members' metadata, the archive comment and
   any leading bytes. Every other outer scheme is read-only and is read into
   memory.
+- **`with path.batch():`** holds every change made to a zip while the
+  block is open and replaces the archive once when it ends, instead of
+  once per change. Inside the block every path of the archive reads the
+  held changes and the file is not touched; an exception leaves the
+  archive byte for byte as it was. `copy(recursive=True)` into a zip and
+  `PathSyncer` onto one open it themselves: copying 300 files is one
+  rewrite, not 300, and a copy that fails part way leaves the archive
+  unchanged. Another thread using the archive waits for the block.
 - **`tar:`** (also `.tar.gz`/`.tar.bz2`/`.tar.xz`) is read-only.
 - **`archive:`** detects the format from the outer name, then from the file's
   magic bytes, on first use (building or printing a path reads nothing);

@@ -147,6 +147,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   held a `gs:` or `az:` file object open for a long time now issues a
   request per chunk read, and catches `OSError` if the object may be
   replaced under it.
+- **`ArchiveUri.batch()` holds the changes to a zip and writes them in one
+  replacement.** `with zip_path.batch():` makes the writes, `mkdir()`,
+  `unlink()`, `rmdir()`, `rename()` and `rm()` inside the block change a
+  pending member list that every path of the archive reads, and replaces
+  the archive file once when the outermost block ends: the members, their
+  order and their metadata are what the same changes made one by one
+  leave. An exception in the block leaves the file byte for byte as it
+  was, and so does a file another process replaced meanwhile
+  (`OSError(EBUSY)`). A block inside another joins it, and another
+  thread's use of the archive waits for the block. A tar, a non-local
+  zip and a nested archive raise `NotImplementedError`, as their writes
+  do. A new hook, `Path._write_batch()` (documented for path implementers,
+  a block that does nothing by default), is what `copy(recursive=True)`
+  and `PathSyncer.sync()` enter around their writes to their target.
 
 ### Changed
 - **A sync leaves each copy with its source's modification time
@@ -176,6 +190,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `same_filesystem()`, pickling and `copy.copy`. To keep a client of its own,
   pass `backend=S3Backend(...)`/`GsBackend(...)`. A supplied `AzBackend` is
   used for whatever account the URI names; the header now says so.
+- **Copying a tree into a zip and syncing onto one rewrite the archive
+  once.** `copy(recursive=True)` and `PathSyncer.sync()` replaced the
+  archive file for every member and directory they wrote (71 times for a
+  60-file tree, 6 s for 300 small files); they now run inside
+  `batch()` and replace it once. A copy or a sync that raises now leaves
+  the archive as it was: the members written before the error used to
+  stay, so a program that read them back after catching the error finds
+  the archive unchanged. A dry run opens no batch. Nothing to change in a
+  caller that does not depend on those partial results.
 
 ### Fixed
 - **A predicate that raises ends `rm()` and `PathSyncer` with its own
