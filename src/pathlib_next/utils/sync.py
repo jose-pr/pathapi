@@ -397,6 +397,15 @@ def _is_junction(path: Path) -> bool:
         return True
 
 
+def _is_mount(path: Path) -> bool:
+    """Whether `path` is a mount point (a mounted volume, a bind mount); a
+    class that cannot answer says no."""
+    try:
+        return bool(path.is_mount())
+    except (NotImplementedError, OSError, ValueError):
+        return False
+
+
 def _child_name(path: Path) -> str:
     # A directory child of a `UriPath` can end in "/", leaving `.name`
     # empty; its last real component is then the parent's name.
@@ -584,7 +593,12 @@ class PathSyncer(object):
     A symlink or a Windows junction found inside the target, below its
     root, is replaced by a real directory and never listed, written or
     deleted through. A mount point there (a mounted volume, a bind mount) is
-    part of the tree and is synced into.
+    part of the tree and is synced into, as `rsync` does. With
+    `follow_mounts=False` it is an error for that entry instead:
+    `OSError(EXDEV)` naming it, offered to `ignore_error` with event
+    `SyncEvent.TypeMismatch`, and nothing behind it is listed, written or
+    removed, in a dry run as in a real one. The root target is used as given
+    either way.
 
     `remove_missing=False` never deletes a non-empty target directory: when
     the source entry became a file or a symlink, replacing that directory
@@ -638,6 +652,7 @@ class PathSyncer(object):
         "ignore_error",
         "quick_check",
         "preserve_mtime",
+        "follow_mounts",
     )
     EVENT_LOG_FORMAT = "[%s] Source:%s Target:%s DryRun:%s"
 
@@ -652,6 +667,7 @@ class PathSyncer(object):
         ignore_error: _OnPathSyncerError | bool = False,
         quick_check: bool = True,
         preserve_mtime: bool = True,
+        follow_mounts: bool = True,
     ) -> None:
         # `None` (the default) resolves to `_default_checksum` -- a sentinel
         # `sync()` recognizes (via `is`) to route through
@@ -676,6 +692,7 @@ class PathSyncer(object):
         )
         self.quick_check = quick_check
         self.preserve_mtime = preserve_mtime
+        self.follow_mounts = follow_mounts
 
     def log(self, msg: str, *args: object):
         # Overridable hook: a subclass overrides `log` to route sync
@@ -1237,6 +1254,31 @@ class PathSyncer(object):
                 and not target.is_symlink()
                 and _is_junction(target.path)
             )
+            if (
+                not self.follow_mounts
+                and not root
+                and not binding
+                and target.is_dir()
+                and not target.is_symlink()
+                and _is_mount(target.path)
+            ):
+                # Another filesystem under this name: what is inside belongs
+                # to whoever mounted it, and the caller asked to stay out.
+                error = OSError(
+                    _errno.EXDEV,
+                    "refusing to sync into a mount point (follow_mounts is False)",
+                    str(target.path),
+                )
+                if not self._tolerate(
+                    _ignore_error,
+                    error,
+                    source,
+                    target,
+                    SyncEvent.TypeMismatch,
+                    dry_run,
+                ):
+                    raise error
+                return
             if (
                 (target.is_symlink() and not root)
                 or binding

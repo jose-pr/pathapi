@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `TypeError` before anything is copied. `sftp:` (the asyncssh concurrent walk
   included), `s3:`, `gs:` and `az:` accept it, and `PathContract` gains a test
   that gives one predicate to `rm()` and `copy()`.
+- **`PathSyncer(follow_mounts=False)` and `uripath sync --no-follow-mounts`.**
+  A mount point found below the target root (a mounted volume, a bind mount)
+  is still synced into by default, as `rsync` does. With `follow_mounts=False`
+  it is an error for that entry instead: `OSError(EXDEV)` naming it, offered to
+  `ignore_error` with event `TypeMismatch`, and nothing behind it is listed,
+  written or removed, in a dry run too. A bind mount aliases another directory
+  as a junction does, and `rm(recursive=True)` already stops at one; this lets
+  a sync with `remove_missing=True` refuse it. A junction is replaced under
+  either value, and the root target is used as given.
 - **`touch()` moves an existing file's time, and a sync leaves its copies with
   their source's time.** The generic `touch()` of an existing file did nothing;
   it now sets the access and modification times to now through a new `_utime()`

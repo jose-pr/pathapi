@@ -262,6 +262,7 @@ def _cmd_sync(args, *, stdin=None, stdout=None) -> int:
         checksum,
         remove_missing=args.remove_missing,
         follow_symlinks=args.follow_symlinks,
+        follow_mounts=args.follow_mounts,
         hook=report,
     ).sync(
         _path(args.source),
@@ -394,6 +395,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_false",
         default=True,
         help="recreate symlinks of SOURCE as links (default: follow them)",
+    )
+    sync.add_argument(
+        "--no-follow-mounts",
+        dest="follow_mounts",
+        action="store_false",
+        default=True,
+        help="fail on a mount point inside TARGET instead of syncing into it "
+        "(default: sync into it)",
     )
     sync.set_defaults(func=_cmd_sync, parser=sync)
     return parser

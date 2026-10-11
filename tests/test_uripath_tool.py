@@ -124,6 +124,49 @@ def test_sync_size_only_keeps_size_comparison(tmp_path):
     assert (target / "version.txt").read_text(encoding="utf-8") == "0.9.2"
 
 
+def _mount_named_mounted(monkeypatch):
+    # A mount point needs privileges to create: `is_mount()` says so for a
+    # directory called `mounted`.
+    real = LocalPath.is_mount
+    monkeypatch.setattr(
+        LocalPath, "is_mount", lambda self: self.name == "mounted" or real(self)
+    )
+
+
+def _mount_trees(tmp_path):
+    source, target = tmp_path / "source", tmp_path / "target"
+    (source / "mounted").mkdir(parents=True)
+    (source / "mounted" / "new.txt").write_text("new", encoding="utf-8")
+    (target / "mounted").mkdir(parents=True)
+    (target / "mounted" / "theirs.txt").write_text("theirs", encoding="utf-8")
+    return source, target
+
+
+def test_sync_goes_into_a_mount_point_unless_told_not_to(tmp_path, monkeypatch):
+    _mount_named_mounted(monkeypatch)
+    source, target = _mount_trees(tmp_path)
+
+    assert uripath.main(["sync", str(source), str(target)]) == 0
+
+    assert (target / "mounted" / "new.txt").read_text(encoding="utf-8") == "new"
+
+
+def test_sync_no_follow_mounts_fails_on_a_mount_point_and_leaves_it(
+    tmp_path, monkeypatch
+):
+    _mount_named_mounted(monkeypatch)
+    source, target = _mount_trees(tmp_path)
+    stderr = io.StringIO()
+
+    status = uripath.main(
+        ["sync", "--no-follow-mounts", str(source), str(target)], stderr=stderr
+    )
+
+    assert status == 1
+    assert "mounted" in stderr.getvalue()
+    assert [p.name for p in (target / "mounted").iterdir()] == ["theirs.txt"]
+
+
 # --- gittools-cli-dry-run-silent ---
 
 

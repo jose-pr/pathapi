@@ -770,7 +770,7 @@ class PathSyncer:
     def __init__(
         self, checksum=None, /, remove_missing=False, follow_symlinks=True,
         symlink_mode="preserve", hook=None, ignore_error=False,
-        quick_check=True, preserve_mtime=True,
+        quick_check=True, preserve_mtime=True, follow_mounts=True,
     ) -> None: ...
     def sync(self, source, target, /, dry_run=False, ignore_error=None): ...
     def log(self, msg, *args): ...
@@ -819,7 +819,12 @@ One-way tree sync between any two
   inside `target` is replaced, never followed, and so is a Windows
   junction below its root (event `TypeMismatch`; `rmdir()` removes the
   junction and nothing behind it). A mount point inside `target` is part
-  of the tree and is synced into; the root `target` is used as given.
+  of the tree and is synced into (`follow_mounts=True`, the default).
+  With `follow_mounts=False` it is an error for that entry instead:
+  `OSError(EXDEV)` naming it, offered to `ignore_error` with event
+  `TypeMismatch`, and nothing behind it is listed, written or removed, in a
+  dry run too. A junction is replaced as above under either value; the root
+  `target` is used as given.
   Listing entries with unknown
   stats are re-stat'd. A name the source lists is never "missing": a listed
   link that cannot be resolved (dangling, a loop, an unmounted volume) is an
@@ -2341,7 +2346,7 @@ and a URI argument fails with `the '<scheme>' scheme needs the 'uri' extra`
 | `write PATH [DATA] [--encoding utf-8]` | Write `DATA` encoded, or stdin's bytes when omitted. |
 | `rm PATH [-r/--recursive] [--missing-ok] [--ignore-error]` | `Path.rm()`. |
 | `cp SOURCE TARGET [-r/--recursive] [--overwrite] [--no-follow-symlinks] [--no-preserve-metadata]` | `Path.copy()`; with `-`, streams (an existing target needs `--overwrite`; no `-r`). |
-| `sync SOURCE TARGET [--dry-run] [--remove-missing] [--size-only] [-v/--verbose] [--no-follow-symlinks]` | `PathSyncer` with content comparison; `--size-only` compares sizes. `--dry-run` prints `would copy SRC -> DST`/`would remove`/`would mkdir`/`would replace`/`would symlink`; `-v` prints the changes made. |
+| `sync SOURCE TARGET [--dry-run] [--remove-missing] [--size-only] [-v/--verbose] [--no-follow-symlinks] [--no-follow-mounts]` | `PathSyncer` with content comparison; `--size-only` compares sizes. `--dry-run` prints `would copy SRC -> DST`/`would remove`/`would mkdir`/`would replace`/`would symlink`; `-v` prints the changes made. `--no-follow-mounts` fails (exit 1, `OSError(EXDEV)`) on a mount point inside TARGET instead of syncing into it. |
 
 Exit status: 0 success (also `--help`); 1 the operation failed, with one line
 `uripath: <Type>: <message>` on stderr; 2 a wrong invocation, with the usage on

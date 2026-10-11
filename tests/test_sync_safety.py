@@ -1207,6 +1207,154 @@ def test_root_target_that_is_a_mount_point_is_used_as_given(
     assert (dst / "theirs.txt").read_text() == "theirs"
 
 
+def _mutations_below(events, directory):
+    return [
+        (e, t) for e, s, t in _mutations(events) if t.startswith(directory + os.sep)
+    ]
+
+
+def _mount_trees(tmp_path):
+    """A source with a `mounted` directory and a file, over a target whose
+    `mounted` directory (a mount point in these tests) holds data of its own."""
+    src = tmp_path / "src"
+    _write(src / "mounted" / "new.txt", "new")
+    _write(src / "own.txt", "own")
+    dst = tmp_path / "dst"
+    _write(dst / "mounted" / "theirs.txt", "theirs")
+    return pathlib_next.LocalPath(src), pathlib_next.LocalPath(dst), dst
+
+
+def test_follow_mounts_true_syncs_into_a_mount_point_as_by_default(
+    tmp_path, mount_named_mounted
+):
+    src, target, dst = _mount_trees(tmp_path)
+
+    PathSyncer(_size, follow_mounts=True).sync(src, target)
+
+    assert (dst / "mounted" / "new.txt").read_text() == "new"
+    assert (dst / "mounted" / "theirs.txt").read_text() == "theirs"
+
+
+def test_follow_mounts_false_leaves_a_mount_point_untouched_and_reports_it_once(
+    tmp_path, mount_named_mounted
+):
+    src, target, dst = _mount_trees(tmp_path)
+    _write(dst / "mounted" / "stale.txt", "stale")
+    events, hook = _events()
+    errors = []
+
+    def tolerate(error, source, target_entry, event):
+        errors.append((error, str(target_entry.path), event))
+        return True
+
+    PathSyncer(
+        _size,
+        remove_missing=True,
+        follow_mounts=False,
+        hook=hook,
+        ignore_error=tolerate,
+    ).sync(src, target)
+
+    assert sorted(p.name for p in (dst / "mounted").iterdir()) == [
+        "stale.txt",
+        "theirs.txt",
+    ]
+    assert (dst / "own.txt").read_text() == "own"
+    [(error, where, event)] = errors
+    assert isinstance(error, OSError) and error.errno == errno.EXDEV
+    assert where == str(dst / "mounted") and error.filename == where
+    assert event is SyncEvent.TypeMismatch
+    mount = str(dst / "mounted")
+    assert [e for e, s, t, _ in events if e is SyncEvent.Error] == [SyncEvent.Error]
+    assert not [
+        (e, t) for e, t in _mutations_below(events, mount)
+    ], "nothing below the mount point is copied, created or removed"
+
+
+def test_follow_mounts_false_raises_exdev_naming_the_mount_when_not_tolerated(
+    tmp_path, mount_named_mounted
+):
+    src, target, dst = _mount_trees(tmp_path)
+
+    with pytest.raises(OSError) as raised:
+        PathSyncer(_size, follow_mounts=False).sync(src, target)
+
+    assert raised.value.errno == errno.EXDEV
+    assert raised.value.filename == str(dst / "mounted")
+    assert sorted(p.name for p in (dst / "mounted").iterdir()) == ["theirs.txt"]
+
+
+def test_follow_mounts_false_dry_run_decides_what_a_real_run_decides(
+    tmp_path, mount_named_mounted
+):
+    src, target, dst = _mount_trees(tmp_path)
+    seen = {"dry": [], "real": []}
+
+    for name, dry_run in (("dry", True), ("real", False)):
+
+        def tolerate(error, source, target_entry, event, name=name):
+            seen[name].append((type(error), error.errno, event))
+            return True
+
+        PathSyncer(_size, follow_mounts=False, ignore_error=tolerate).sync(
+            src, target, dry_run=dry_run
+        )
+
+    assert (
+        seen["dry"] == seen["real"] == [(OSError, errno.EXDEV, SyncEvent.TypeMismatch)]
+    )
+    assert sorted(p.name for p in (dst / "mounted").iterdir()) == ["theirs.txt"]
+
+
+def test_follow_mounts_false_still_uses_a_root_target_that_is_a_mount_point(
+    tmp_path, mount_named_mounted
+):
+    src = tmp_path / "src"
+    _write(src / "new.txt", "new")
+    dst = tmp_path / "mounted"
+    _write(dst / "theirs.txt", "theirs")
+
+    PathSyncer(_size, follow_mounts=False).sync(
+        pathlib_next.LocalPath(src), pathlib_next.LocalPath(dst)
+    )
+
+    assert (dst / "new.txt").read_text() == "new"
+    assert (dst / "theirs.txt").read_text() == "theirs"
+
+
+@requires_junctions
+@pytest.mark.parametrize("follow_mounts", [True, False])
+def test_junction_is_replaced_under_either_follow_mounts(tmp_path, follow_mounts):
+    outside = tmp_path / "outside"
+    _write(outside / "unrelated.txt", "unrelated")
+    src = tmp_path / "src"
+    _write(src / "sub" / "new.txt", "new")
+    dst = tmp_path / "dst"
+    dst.mkdir()
+    _junction(outside, dst / "sub")
+
+    PathSyncer(_size, follow_mounts=follow_mounts).sync(
+        pathlib_next.LocalPath(src), pathlib_next.LocalPath(dst)
+    )
+
+    assert not pathlib_next.LocalPath(dst / "sub").is_junction()
+    assert (dst / "sub" / "new.txt").read_text() == "new"
+    assert (outside / "unrelated.txt").read_text() == "unrelated"
+    assert sorted(p.name for p in outside.iterdir()) == ["unrelated.txt"]
+
+
+def test_follow_mounts_false_does_not_ask_a_class_that_cannot_say(tmp_path):
+    # A path class without `is_mount()` answers "not a mount point".
+    source, target = MemPath("/s"), MemPath("/t")
+    source.mkdir()
+    (source / "d").mkdir()
+    (source / "d" / "f.txt").write_text("1")
+
+    PathSyncer(_size, follow_mounts=False).sync(source, target)
+
+    assert (target / "d" / "f.txt").read_text() == "1"
+
+
 # --- the temporary sibling: replace fallback, name length, leftovers -------
 
 import re
