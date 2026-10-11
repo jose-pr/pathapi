@@ -8,6 +8,8 @@ operating systems.
 from __future__ import annotations
 
 import abc as _abc
+import contextlib as _contextlib
+import contextvars as _contextvars
 import errno as _errno
 import operator as _operator
 import os as _os
@@ -1511,8 +1513,10 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         if isinstance(target, str):
             target = self._coerce_target(target)
         src = self
+        handed = _take_handed(src, target)
+        known = None if handed is None else handed.source_stat
 
-        if not follow_symlinks and src.is_symlink():
+        if not follow_symlinks and known is None and src.is_symlink():
             # pathlib 3.14: copy the link itself, not what it points at.
             # Copying the target's content (and chmod'ing it with the link's
             # own 0o777) silently defeated the flag.
@@ -1520,7 +1524,8 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
 
         # One stat of the source answers its type, its mode and, beside the
         # target's, whether the two are one file; None when it cannot be had.
-        src_stat = _stat_or_none(src, follow_symlinks)
+        src_stat = known if known is not None else _stat_or_none(src, follow_symlinks)
+        target_absent = handed is not None and handed.target_absent
 
         if recursive and src_stat is not None and _stat.S_ISDIR(src_stat.st_mode):
             if contains(src, target):
@@ -1533,7 +1538,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
                 )
             # Listed before the target exists, as shutil.copytree does.
             children = list(src.iterdir())
-            if target.exists():
+            if not target_absent and target.exists():
                 if not target.is_dir():
                     raise FileExistsError(target)
                 if not overwrite:
@@ -1596,7 +1601,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         # timeout) as "missing", and overwrite=False must never be decided by
         # a failure. Only FileNotFoundError means the target is absent.
         try:
-            target_stat = target.stat()
+            target_stat = None if target_absent else target.stat()
         except FileNotFoundError:
             target_stat = None
         target_exists = target_stat is not None
@@ -1762,7 +1767,8 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         # Everything that can fail cheaply is checked before the target is
         # touched: a missing source, or a file onto a directory, must not
         # delete the target and only then raise.
-        src_stat = FileStat.from_path(src, follow_symlink=False)
+        held = _Held(src)
+        src_stat = held.source
         if src_stat is None:
             raise FileNotFoundError(
                 _errno.ENOENT, "No such file or directory", str(src)
@@ -1770,9 +1776,10 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         # The same entry under another spelling (a case-only rename on a
         # case-insensitive filesystem, or `x.move(x)`) is renamed in place:
         # removing the "existing" target would delete the source itself.
-        relation = _relation(src, target, follow=False)
+        relation = _relation(src, target, follow=False, held=held)
+        target_stat = None
         if relation != _SAME:
-            target_stat = FileStat.from_path(target, follow_symlink=False)
+            target_stat = held.target(target)
             if target_stat is not None and not overwrite:
                 raise FileExistsError(target)
             if relation == _INNER:
@@ -1819,18 +1826,33 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
 
         # A link is recreated, not read through, wherever the target can
         # hold one: what a move produces must not depend on whether
-        # rename() was available.
+        # rename() was available. The copy is told what this call found out
+        # about the roots (nothing at `target`; `src` is not a link) so it
+        # does not ask a backend again. A rename that raised
+        # NotImplementedError or EXDEV changed nothing.
         links = _holds_links(src, target)
+        handing = _handing(
+            src,
+            target,
+            held.source_raw if not src_stat.is_symlink() else None,
+            relation != _SAME and target_stat is None,
+        )
         if src_stat.is_symlink() and links:
-            src.copy(target, overwrite=overwrite, follow_symlinks=False)
+            with handing:
+                src.copy(target, overwrite=overwrite, follow_symlinks=False)
             src.unlink()
         elif src.is_dir() if src_stat.is_symlink() else src_stat.is_dir():
-            src.copy(
-                target, overwrite=overwrite, recursive=True, follow_symlinks=not links
-            )
+            with handing:
+                src.copy(
+                    target,
+                    overwrite=overwrite,
+                    recursive=True,
+                    follow_symlinks=not links,
+                )
             src.rm(recursive=True)
         else:
-            src.copy(target, overwrite=overwrite)
+            with handing:
+                src.copy(target, overwrite=overwrite)
             src.unlink()
 
 
@@ -1892,6 +1914,100 @@ def _stat_or_none(path: Path, follow_symlinks: bool):
         return path.stat(follow_symlinks=follow_symlinks)
     except (OSError, ValueError, NotImplementedError):
         return None
+
+
+class _Held:
+    """The non-following stats `move()` takes of its source and its target,
+    each at most once, for `move()` and `_relation()` to share. It lives for
+    one call and is never kept on a path."""
+
+    __slots__ = ("source", "source_raw", "_target", "_target_raw", "_taken")
+
+    def __init__(self, src: Path):
+        self.source_raw = self.source = None
+        self._target = self._target_raw = None
+        self._taken = False
+        try:
+            self.source_raw = src.stat(follow_symlinks=False)
+        except FileNotFoundError:
+            return
+        self.source = FileStat.from_stat(self.source_raw)
+
+    def target(self, path: Path):
+        """The `FileStat` of `path` without following a link, None when it is
+        missing; an `OSError` is raised again by the next call."""
+        if not self._taken:
+            try:
+                self._target_raw = path.stat(follow_symlinks=False)
+            except FileNotFoundError:
+                self._target_raw = None
+            self._target = (
+                None
+                if self._target_raw is None
+                else FileStat.from_stat(self._target_raw)
+            )
+            self._taken = True
+        return self._target
+
+    def same_file(self, src: Path, target: Path) -> bool:
+        """`src.samefile(target)` from the stats in hand: for a class that does
+        not answer `samefile()` itself and two paths that are not links (a
+        link's own stat is not the file `samefile()` compares)."""
+        if type(src).samefile is not Path.samefile or self.source.is_symlink():
+            return src.samefile(target)
+        there = self.target(target)
+        if there is None:
+            return False
+        if there.is_symlink():
+            return src.samefile(target)
+        return _same_identity(self.source_raw, self._target_raw)
+
+
+class _Handed:
+    """What `move()` found out about the two roots, for the one `copy()` it
+    calls on exactly this source and target. `source_stat` is the source's
+    own stat (None: not known to be a plain entry), `target_absent` that
+    nothing was at the target, with nothing written or removed there since."""
+
+    __slots__ = ("source", "target", "source_stat", "target_absent", "taken")
+
+    def __init__(self, source, target, source_stat, target_absent):
+        self.source, self.target = source, target
+        self.source_stat, self.target_absent = source_stat, target_absent
+        self.taken = False
+
+
+_HANDED: "_contextvars.ContextVar[_Handed | None]" = _contextvars.ContextVar(
+    "pathlib_next_handed_stats", default=None
+)
+
+
+@_contextlib.contextmanager
+def _handing(source, target, source_stat, target_absent):
+    """Make `source_stat` and `target_absent` available to the `copy()` of
+    `source` onto `target` made inside the block, once, and to nothing else
+    (`ObjectStorePath.copy()` and the like pass the very same objects on to
+    `Path.copy()`)."""
+    token = _HANDED.set(_Handed(source, target, source_stat, target_absent))
+    try:
+        yield
+    finally:
+        _HANDED.reset(token)
+
+
+def _take_handed(source, target) -> "_Handed | None":
+    """What `move()` handed to the copy of exactly `source` onto `target`, the
+    first time it is asked; None for any other copy."""
+    handed = _HANDED.get()
+    if (
+        handed is None
+        or handed.taken
+        or handed.source is not source
+        or handed.target is not target
+    ):
+        return None
+    handed.taken = True
+    return handed
 
 
 def _same_identity(first, second) -> bool:
@@ -2016,7 +2132,12 @@ def _local_relation(mine, theirs, follow: bool) -> "str | None":
 
 
 def _relation(
-    src: Path, target: Path, *, follow: bool, identity: bool = True
+    src: Path,
+    target: Path,
+    *,
+    follow: bool,
+    identity: bool = True,
+    held: "_Held | None" = None,
 ) -> "str | None":
     """How `target` stands to `src`: `_SAME`, `_OTHER`, `_OUTER`, `_INNER`,
     or None when they are unrelated or this cannot tell.
@@ -2027,7 +2148,9 @@ def _relation(
     `_same_filesystem()` places together, by `samefile()` where `stat()`
     carries `st_dev`/`st_ino` (when `identity`; it costs a stat of each) and
     by `==` otherwise. `follow` says whether a final symlink is looked
-    through (a copy reads it) or is the entry itself (a move renames it)."""
+    through (a copy reads it) or is the entry itself (a move renames it).
+    `held` is the stats of `src` and `target` the caller already took, so
+    `samefile()` does not take them again."""
     mine, theirs = _local_file(src), _local_file(target)
     if mine is not None and theirs is not None:
         return _local_relation(mine, theirs, follow)
@@ -2050,7 +2173,7 @@ def _relation(
         return None
     if identity:
         try:
-            if src.samefile(target):
+            if src.samefile(target) if held is None else held.same_file(src, target):
                 return _SAME
         except (NotImplementedError, OSError, TypeError, ValueError):
             pass

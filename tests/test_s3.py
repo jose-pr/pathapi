@@ -3,6 +3,7 @@ real AWS account. Covers prefix-emulated directories, list_objects_v2
 paging shape, and copy_object+delete_object rename.
 """
 
+import collections
 import datetime
 import io
 
@@ -741,6 +742,63 @@ def _counting_backend():
             return client
 
     return Counting()
+
+
+def _keyed_backend():
+    """An `S3Backend` that records `(operation, key or prefix)` per request."""
+    from pathlib_next.uri.schemes.s3 import S3Backend
+
+    class Keyed(S3Backend):
+        __slots__ = ("calls",)
+
+        def client(self):
+            first = self._client is None
+            client = super().client()
+            if first:
+                self.calls = []
+                original = client._make_api_call
+
+                def recorded(operation, params):
+                    self.calls.append(
+                        (operation, params.get("Key", params.get("Prefix")))
+                    )
+                    return original(operation, params)
+
+                client._make_api_call = recorded
+            return client
+
+    return Keyed()
+
+
+def test_move_of_a_prefix_asks_about_the_new_directory_only_as_often_as_it_must(
+    moto_s3,
+):
+    _put_all(moto_s3, ["d/", "d/x.txt", "d/sub/a.txt", "d/empty/"])
+    backend = _keyed_backend()
+
+    S3Path("s3://bkt/d", backend=backend).move(
+        S3Path("s3://bkt/moved", backend=backend)
+    )
+
+    calls = collections.Counter(backend.calls)
+    reads = calls["HeadObject", "moved"], sum(
+        n for (operation, _key), n in calls.items() if operation in _STAT_REQUESTS
+    )
+    # One stat of the target by move(), one by the directory creation itself;
+    # the whole move used to need four of the first and 37 of the second.
+    assert reads[0] <= 2
+    assert reads[1] <= 31
+    assert _moto_keys(moto_s3) == [
+        "moved/",
+        "moved/empty/",
+        "moved/sub/",
+        "moved/sub/a.txt",
+        "moved/x.txt",
+        "unrelated.txt",
+    ]
+
+
+_STAT_REQUESTS = ("HeadObject", "ListObjectsV2")
 
 
 def test_rm_recursive_of_a_prefix_a_listing_shows_is_one_batched_delete(moto_s3):

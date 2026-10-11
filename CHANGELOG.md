@@ -25,6 +25,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   outside this package can use the documented names instead. `path.__all__`
   now lists `check_follow` and `contains`.
 
+### Changed
+- **`move()` asks a backend about each end once.** A move that falls back to
+  copy and delete stat-ed the source and the target several times each before
+  it started to copy (the same-entry check, `move()`'s own checks, then
+  `copy()`'s). It now takes one stat of each and hands the answer to the
+  same-entry check and to the `copy()` it calls, for that call only; nothing is
+  kept on a path. On an object store each stat is a request pair, so a
+  directory move makes fewer requests. Every refusal `move()` made is made as
+  before, in the same order. Nothing to change in a caller or a subclass; a
+  class that overrides `samefile()` is still asked.
+
 ## [0.9.13] - 2026-10-09
 
 ### Added
