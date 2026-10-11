@@ -199,6 +199,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   stay, so a program that read them back after catching the error finds
   the archive unchanged. A dry run opens no batch. Nothing to change in a
   caller that does not depend on those partial results.
+- **`SftpPath.replace()` is one atomic request.** It sends
+  `posix-rename@openssh.com` where the server has it, so the file at the
+  target is replaced without being removed first, and a refusal that names
+  its cause (a permission, a missing source) leaves both entries as they
+  were. `move(overwrite=True)` onto an existing file of the same server
+  uses it: it was a removal followed by a rename, with a window in which
+  the target did not exist, and a failed rename lost the target. A server
+  without the extension, or one that refuses it with a bare failure, gets
+  the removal and rename as before; a directory at the target is checked by
+  `Path.replace()` first, as before. Nothing to change in a caller.
+- **The dates of an HTML index are documented as UTC.** An index page
+  prints them with no zone; `http:` has always read them as UTC, so the
+  `st_mtime` of a listed entry can be off by the server's offset. The
+  divergences page and the header now say so; `quick_check=False` or a
+  comparison of sizes avoids it.
 
 ### Fixed
 - **A predicate that raises ends `rm()` and `PathSyncer` with its own
