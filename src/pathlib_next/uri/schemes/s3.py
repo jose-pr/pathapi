@@ -4,7 +4,6 @@ import errno as _errno
 import io as _io
 import itertools as _itertools
 import re as _re
-import tempfile as _tempfile
 import threading as _threading
 import typing as _ty
 
@@ -243,84 +242,15 @@ class _S3BodyReader(_io.RawIOBase):
             super().close()
 
 
-class _S3WriteStream(_io.BufferedIOBase):
-    """Spools the write (in memory up to `_SPOOL_SIZE`, then a temp file)
-    and uploads it on close(): a managed transfer, multipart above boto3's
-    threshold, so objects over PutObject's 5 GB limit can be written.
+class _S3WriteStream(_store.SpoolUploadStream):
+    """The spooled write of `s3:`, uploaded on close() as a managed transfer,
+    multipart above boto3's threshold, so objects over PutObject's 5 GB limit
+    can be written.
 
     `exclusive` (`open("x")`) creates the key with a conditional PutObject
-    (`IfNoneMatch="*"`), atomic against a concurrent creator. With
-    `initial` (`open("r+")`) the spool starts with the object's content at
-    position 0 and is uploaded only if it was modified."""
+    (`IfNoneMatch="*"`), atomic against a concurrent creator."""
 
-    def __init__(self, path: "S3Path", exclusive=False, initial=None):
-        super().__init__()
-        self._path = path
-        self._exclusive = exclusive
-        self._file = _tempfile.SpooledTemporaryFile(max_size=_SPOOL_SIZE)
-        self._dirty = initial is None
-        if initial is not None:
-            while True:
-                chunk = initial.read(_io.DEFAULT_BUFFER_SIZE)
-                if not chunk:
-                    break
-                self._file.write(chunk)
-            self._file.seek(0)
-
-    def readable(self):
-        return True
-
-    def writable(self):
-        return True
-
-    def seekable(self):
-        return True
-
-    def _check_open(self):
-        if self.closed:
-            raise ValueError("I/O operation on closed file.")
-
-    def write(self, data):
-        self._check_open()
-        self._dirty = True
-        return self._file.write(data)
-
-    def read(self, size=-1):
-        self._check_open()
-        return self._file.read(size)
-
-    def read1(self, size=-1):
-        return self.read(size)
-
-    def seek(self, offset, whence=_io.SEEK_SET):
-        self._check_open()
-        self._file.seek(offset, whence)
-        return self._file.tell()
-
-    def tell(self):
-        self._check_open()
-        return self._file.tell()
-
-    def truncate(self, size=None):
-        self._check_open()
-        self._dirty = True
-        if size is None:
-            size = self._file.tell()
-        return self._file.truncate(size)
-
-    def close(self):
-        if self.closed:
-            return
-        try:
-            if self._dirty:
-                self._upload()
-        finally:
-            # Closed even when the upload fails, so `IOBase.__del__` does not
-            # retry it (over newer content) at garbage collection.
-            try:
-                self._file.close()
-            finally:
-                super().close()
+    spool_size = _SPOOL_SIZE
 
     def _upload(self):
         path = self._path

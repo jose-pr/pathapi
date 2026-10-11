@@ -1,5 +1,7 @@
+import base64
 import contextlib
 import functools
+import hashlib
 import http.server
 import tempfile
 import threading
@@ -1105,6 +1107,7 @@ def gcs_api_server(fixture_tree):
     bucket_name = "test-bucket"
     updated = "2026-07-12T00:00:00Z"
     state = objstore_fakes.FakeState(objects)
+    uploads = {}
 
     class _GcsApiHandler(http.server.BaseHTTPRequestHandler):
         def parse_request(self):
@@ -1172,15 +1175,7 @@ def gcs_api_server(fixture_tree):
                 obj_name = urllib.parse.unquote(
                     split.path[len(f"/download/storage/v1/b/{bucket_name}/o/") :]
                 )
-                if obj_name in objects:
-                    content = objects[obj_name]
-                    self.send_response(200)
-                    self.send_header("Content-Type", "application/octet-stream")
-                    self.send_header("Content-Length", str(len(content)))
-                    self.end_headers()
-                    self.wfile.write(content)
-                    return
-                self._send_json(404, {})
+                self._send_media(obj_name)
                 return
 
             # LIST: /storage/v1/b/{bucket}/o?prefix=&delimiter=/
@@ -1227,15 +1222,7 @@ def gcs_api_server(fixture_tree):
                 obj_name = urllib.parse.unquote(
                     split.path[len(f"/storage/v1/b/{bucket_name}/o/") :]
                 )
-                if obj_name in objects:
-                    content = objects[obj_name]
-                    self.send_response(200)
-                    self.send_header("Content-Type", "application/octet-stream")
-                    self.send_header("Content-Length", str(len(content)))
-                    self.end_headers()
-                    self.wfile.write(content)
-                    return
-                self._send_json(404, {})
+                self._send_media(obj_name)
                 return
 
             # COPY: /storage/v1/b/{src}/o/{source}/copyTo/b/{dst}/o/{dest}
@@ -1276,11 +1263,94 @@ def gcs_api_server(fixture_tree):
 
             self._send_json(404, {})
 
+        def _send_media(self, obj_name):
+            # The object's bytes, or the range of them that `Range` asks for.
+            if obj_name not in objects:
+                self._send_json(404, {})
+                return
+            content = objects[obj_name]
+            wanted = self.headers.get("Range", "")
+            if wanted.startswith("bytes="):
+                first, _, last = wanted[6:].partition("-")
+                start = int(first or 0)
+                if start >= len(content):
+                    self._send_json(416, {})
+                    return
+                end = min(int(last) if last else len(content) - 1, len(content) - 1)
+                body = content[start : end + 1]
+                self.send_response(206)
+                self.send_header("Content-Range", f"bytes {start}-{end}/{len(content)}")
+            else:
+                body = content
+                self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _resumable_start(self, qs):
+            # A resumable upload begins with a JSON body naming the object
+            # and is answered with the URL that takes its chunks.
+            body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            name = (json.loads(body) if body else {}).get("name") or qs.get(
+                "name", [""]
+            )[0]
+            if qs.get("ifGenerationMatch") == ["0"] and name in objects:
+                self._send_json(412, {})
+                return
+            upload_id = f"upload-{len(uploads)}"
+            uploads[upload_id] = (name, bytearray(), hashlib.md5(), [0, 0])
+            self.send_response(200)
+            self.send_header(
+                "Location",
+                f"http://{self.headers['Host']}/upload/storage/v1/b/{bucket_name}"
+                f"/o?uploadType=resumable&upload_id={upload_id}",
+            )
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def _resumable_chunk(self, qs):
+            name, received, digest, counted = uploads[qs["upload_id"][0]]
+            body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            span, _, total = (
+                self.headers["Content-Range"].partition(" ")[2].partition("/")
+            )
+            if span != "*":
+                assert int(span.split("-")[0]) == counted[0], "chunk out of order"
+                counted[0] += len(body)
+                counted[1] = objstore_fakes.crc32c(body, counted[1])
+                digest.update(body)
+                if not state.discard_uploads:
+                    received.extend(body)
+            if total != "*" and counted[0] == int(total):
+                if state.discard_uploads:
+                    objects[name] = b""
+                    state.discarded[name] = (counted[0], digest.hexdigest())
+                    state.metadata[name] = {
+                        "size": str(counted[0]),
+                        "md5Hash": base64.b64encode(digest.digest()).decode(),
+                        "crc32c": base64.b64encode(
+                            counted[1].to_bytes(4, "big")
+                        ).decode(),
+                    }
+                else:
+                    objects[name] = bytes(received)
+                self._send_json(200, self._object_json(name))
+                return
+            self.send_response(308)
+            if counted[0]:
+                self.send_header("Range", f"bytes=0-{counted[0] - 1}")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
         def do_POST(self):
             split = urllib.parse.urlsplit(self.path)
             qs = urllib.parse.parse_qs(split.query)
 
             if split.path == f"/upload/storage/v1/b/{bucket_name}/o":
+                if qs.get("uploadType") == ["resumable"]:
+                    self._resumable_start(qs)
+                    return
                 obj_name, content = self._read_upload_body(qs)
                 if obj_name:
                     objects[obj_name] = content
@@ -1321,6 +1391,10 @@ def gcs_api_server(fixture_tree):
             self.wfile.write(reply)
 
         def do_PUT(self):
+            qs = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            if "upload_id" in qs:
+                self._resumable_chunk(qs)
+                return
             self.do_POST()
 
         def do_DELETE(self):
@@ -1392,6 +1466,8 @@ def az_api_server(fixture_tree):
     container = "testcontainer"
     last_modified = "Sun, 12 Jul 2026 00:00:00 GMT"
     state = objstore_fakes.FakeState(objects)
+    blocks = {}
+    discards = {}
 
     def _copy_status_headers():
         return {
@@ -1602,7 +1678,37 @@ def az_api_server(fixture_tree):
                     return
 
                 content_length = int(self.headers.get("Content-Length", 0))
-                objects[blob_name] = self.rfile.read(content_length)
+                data = self.rfile.read(content_length)
+                if qs.get("comp") == ["block"]:
+                    if state.discard_uploads:
+                        # Blocks arrive in the order they are committed.
+                        kept = discards.setdefault(blob_name, [0, hashlib.md5()])
+                        kept[0] += len(data)
+                        kept[1].update(data)
+                        blocks[(blob_name, qs["blockid"][0])] = b""
+                    else:
+                        blocks[(blob_name, qs["blockid"][0])] = data
+                    self.send_response(201)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                if self.headers.get("If-None-Match") == "*" and blob_name in objects:
+                    self.send_response(409)
+                    self.send_header("x-ms-error-code", "BlobAlreadyExists")
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                if qs.get("comp") == ["blocklist"]:
+                    ids = [
+                        element.text
+                        for element in ET.fromstring(data)
+                        if element.tag in ("Latest", "Committed", "Uncommitted")
+                    ]
+                    data = b"".join(blocks.pop((blob_name, one)) for one in ids)
+                    if state.discard_uploads:
+                        total, digest = discards.pop(blob_name)
+                        state.discarded[blob_name] = (total, digest.hexdigest())
+                objects[blob_name] = data
                 self.send_response(201)
                 self.send_header("Last-Modified", last_modified)
                 self.send_header("ETag", '"etag"')

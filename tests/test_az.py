@@ -394,3 +394,80 @@ def test_az_moving_a_prefix_copies_each_blob_in_the_service(az_server, az_api_se
         ("tree/sub/two", "moved/sub/two"),
     ]
     assert _content_reads(state) == []
+
+
+# --- reads and writes stream: memory is bounded by a few chunks -------------
+
+MIB = 1024 * 1024
+BIG = 32 * MIB
+
+
+def _traced(operation):
+    """The peak memory, in bytes, that Python allocates while `operation()`
+    runs (the loopback server's included), and its result."""
+    import tracemalloc
+
+    tracemalloc.start()
+    try:
+        result = operation()
+        return tracemalloc.get_traced_memory()[1], result
+    finally:
+        tracemalloc.stop()
+
+
+def _read_in_pieces(path):
+    import hashlib
+
+    digest = hashlib.md5()
+    with path.open("rb") as stream:
+        while piece := stream.read(MIB):
+            digest.update(piece)
+    return digest.hexdigest()
+
+
+def _write_in_pieces(path, piece):
+    with path.open("wb") as stream:
+        for _ in range(BIG // len(piece)):
+            stream.write(piece)
+
+
+def test_az_reading_a_large_blob_holds_a_few_chunks(az_server, az_api_server):
+    import hashlib
+
+    path, _ = az_server
+    content = bytes(range(256)) * (BIG // 256)
+    az_api_server.state.objects["big.bin"] = content
+    peak, digest = _traced(lambda: _read_in_pieces(path / "big.bin"))
+    assert digest == hashlib.md5(content).hexdigest()
+    assert peak < 12 * MIB, peak / MIB
+
+
+def test_az_writing_a_large_blob_holds_a_few_chunks(az_server, az_api_server):
+    import hashlib
+
+    path, _ = az_server
+    state = az_api_server.state
+    state.discard_uploads = True
+    piece = bytes(range(256)) * (MIB // 256)
+    peak, _ = _traced(lambda: _write_in_pieces(path / "up.bin", piece))
+    assert state.discarded["up.bin"] == (BIG, hashlib.md5(piece * 32).hexdigest())
+    assert peak < 12 * MIB, peak / MIB
+    blocks = [
+        target
+        for method, target in state.requests
+        if method == "PUT" and "comp=block" in target and "blocklist" not in target
+    ]
+    assert len(blocks) > 1
+
+
+def test_az_a_stream_seeks_without_reading_what_it_skips(az_server, az_api_server):
+    path, _ = az_server
+    state = az_api_server.state
+    state.objects["big.bin"] = bytes(range(256)) * (BIG // 256)
+    del state.requests[:]
+    with (path / "big.bin").open("rb") as stream:
+        stream.seek(-4, 2)
+        assert stream.read() == bytes([252, 253, 254, 255])
+        stream.seek(20 * MIB + 1)
+        assert stream.read(3) == bytes([1, 2, 3])
+    assert len(_content_reads(state)) == 3

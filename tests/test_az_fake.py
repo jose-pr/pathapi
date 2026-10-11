@@ -4,6 +4,8 @@ import datetime
 
 import pytest
 
+from pathlib_next.uri.schemes import _objstore as store
+from pathlib_next.uri.schemes import az
 from pathlib_next.uri.schemes.az import AzPath, BaseAzBackend
 
 
@@ -34,6 +36,10 @@ class _ServiceUnavailable(_HttpResponseError):
 
 class _NotImplemented(_HttpResponseError):
     status_code = 501
+
+
+class _RangeNotSatisfiable(_HttpResponseError):
+    status_code = 416
 
 
 class _Forbidden(_HttpResponseError):
@@ -90,15 +96,26 @@ class _FakeBlobClient:
         del self._container.objects[self.name]
         self._container.deleted.append(self.name)
 
-    def download_blob(self):
+    def download_blob(self, offset=None, length=None):
         if self.name not in self._container.objects:
             raise _Missing(self.name)
+        content = self._container.objects[self.name]
+        if offset is not None:
+            # A range at or past the end is answered 416, an empty blob's
+            # included.
+            if offset >= len(content):
+                raise _RangeNotSatisfiable(self.name)
+            content = content[offset : None if length is None else offset + length]
+            self._container.ranges.append((self.name, offset, length))
         self._container.downloads.append(self.name)
-        return _FakeDownloader(self._container.objects[self.name])
+        return _FakeDownloader(content)
 
     def upload_blob(self, data, overwrite=False):
         if self._container.upload_errors:
             raise self._container.upload_errors.pop(0)
+        if hasattr(data, "read"):
+            self._container.stream_uploads.append(self.name)
+            data = data.read()
         # The real SDK sends If-None-Match: * unless overwrite=True.
         if not overwrite and self.name in self._container.objects:
             raise _Exists(self.name)
@@ -117,6 +134,8 @@ class _FakeBlobClient:
 class _FakeContainer:
     def __init__(self, *, bulk=True):
         self.objects = {}
+        self.ranges = []
+        self.stream_uploads = []
         self.copy_errors = {}
         self.copies = []
         self.downloads = []
@@ -1309,3 +1328,82 @@ def test_copy_into_another_container_is_streamed():
         _az("az://account/elsewhere/b.txt", backend)
     )
     assert container.copies == [] and container.downloads == ["a.txt"]
+
+
+# --- reads and writes stream ------------------------------------------------
+
+
+def test_open_reads_the_blob_in_ranges_of_one_chunk(monkeypatch):
+    monkeypatch.setattr(az, "READ_CHUNK", 4)
+    backend, container = _container_with(**{"big.bin": bytes(range(10))})
+    with _az("az://account/container/big.bin", backend).open("rb") as stream:
+        assert stream.read() == bytes(range(10))
+    assert container.ranges == [("big.bin", 0, 4), ("big.bin", 4, 4), ("big.bin", 8, 4)]
+
+
+def test_a_stream_of_a_large_blob_seeks_by_range(monkeypatch):
+    monkeypatch.setattr(az, "READ_CHUNK", 4)
+    backend, _container = _container_with(**{"big.bin": bytes(range(10))})
+    with _az("az://account/container/big.bin", backend).open("rb") as stream:
+        assert stream.seekable()
+        stream.seek(6)
+        assert stream.read(2) == bytes([6, 7])
+        stream.seek(-2, 2)
+        assert stream.read() == bytes([8, 9])
+
+
+def test_open_reads_an_empty_blob(monkeypatch):
+    monkeypatch.setattr(az, "READ_CHUNK", 4)
+    backend, _container = _container_with(**{"empty": b""})
+    assert _az("az://account/container/empty", backend).read_bytes() == b""
+
+
+def test_a_range_that_fails_midway_is_an_oserror(monkeypatch):
+    monkeypatch.setattr(az, "READ_CHUNK", 4)
+    backend, _container = _container_with(**{"big.bin": bytes(range(10))})
+    original = _FakeBlobClient.download_blob
+
+    def failing(self, offset=None, length=None):
+        if offset:
+            raise _ServiceUnavailable("503")
+        return original(self, offset, length)
+
+    monkeypatch.setattr(_FakeBlobClient, "download_blob", failing)
+    with _az("az://account/container/big.bin", backend).open("rb") as stream:
+        assert stream.read(4) == bytes(range(4))
+        with pytest.raises(OSError) as info:
+            stream.read(1)
+    assert info.value.filename == "az://account/container/big.bin"
+    assert info.value.__cause__ is None
+
+
+def test_r_plus_changes_a_blob_that_spans_several_ranges(monkeypatch):
+    monkeypatch.setattr(az, "READ_CHUNK", 4)
+    backend, container = _container_with(**{"big.bin": bytes(range(10))})
+    with _az("az://account/container/big.bin", backend).open("r+b") as stream:
+        stream.seek(5)
+        stream.write(b"\xff")
+    assert container.objects["big.bin"] == bytes([0, 1, 2, 3, 4, 255, 6, 7, 8, 9])
+
+
+def test_a_write_that_fits_the_spool_is_one_request_and_a_larger_one_a_stream(
+    monkeypatch,
+):
+    monkeypatch.setattr(store, "SPOOL_SIZE", 8)
+    backend, container = _container_with()
+    _az("az://account/container/small", backend).write_bytes(b"12345678")
+    _az("az://account/container/large", backend).write_bytes(b"123456789")
+    assert container.objects == {"small": b"12345678", "large": b"123456789"}
+    assert container.stream_uploads == ["large"]
+
+
+def test_a_large_exclusive_upload_does_not_replace_a_blob(monkeypatch):
+    import io
+
+    monkeypatch.setattr(store, "SPOOL_SIZE", 8)
+    backend, container = _container_with(**{"there": b"keep"})
+    with pytest.raises(FileExistsError):
+        _az("az://account/container/there", backend)._upload_file(
+            io.BytesIO(b"123456789"), 9, exclusive=True
+        )
+    assert container.objects == {"there": b"keep"}

@@ -4,6 +4,7 @@ import hashlib
 import pytest
 
 import objstore_fakes
+from pathlib_next.uri.schemes import _objstore as store
 from pathlib_next.uri.schemes.gs import BaseGsBackend, GsPath
 
 
@@ -34,6 +35,10 @@ class _ServiceUnavailable(_ApiError):
 
 class _NotImplemented(_ApiError):
     code = 501
+
+
+class _RangeNotSatisfiable(_ApiError):
+    code = 416
 
 
 class _FakeBlob:
@@ -86,11 +91,25 @@ class _FakeBlob:
         del self._bucket.objects[self.name]
         self._bucket.deleted.append(self.name)
 
-    def download_as_bytes(self):
+    def download_as_bytes(self, start=None, end=None, checksum=None, **_kwargs):
         if self.name not in self._bucket.objects:
             raise _Missing(self.name)
+        content = self._bucket.objects[self.name]
+        if start is not None:
+            # A range at or past the end is answered 416, an empty object's
+            # included.
+            if start >= len(content):
+                raise _RangeNotSatisfiable(self.name)
+            content = content[start : None if end is None else end + 1]
+            self._bucket.ranges.append((self.name, start, end))
         self._bucket.downloads.append(self.name)
-        return self._bucket.objects[self.name]
+        return content
+
+    def upload_from_file(
+        self, file_obj, size=None, if_generation_match=None, **_kwargs
+    ):
+        self._bucket.file_uploads.append((self.name, size))
+        self.upload_from_string(file_obj.read(), if_generation_match)
 
     def upload_from_string(self, data, if_generation_match=None):
         if self._bucket.upload_errors:
@@ -175,6 +194,8 @@ class _FakeBucket:
     def __init__(self):
         self.objects = {}
         self.downloads = []
+        self.ranges = []
+        self.file_uploads = []
         self.copies = []
         self.copy_errors = {}
         self.stored = {}
@@ -191,7 +212,7 @@ class _FakeBucket:
         self.upload_errors = []
         self.list_calls = []
 
-    def blob(self, name):
+    def blob(self, name, chunk_size=None):
         return _FakeBlob(self, name)
 
     def list_blobs(self, prefix="", delimiter=None, **_kwargs):
@@ -1303,3 +1324,92 @@ def test_moving_a_prefix_copies_each_object_in_the_store():
     ]
     assert sorted(bucket.copies) == [("d/a", "e/a"), ("d/sub/b", "e/sub/b")]
     assert bucket.downloads == []
+
+
+# --- reads and writes stream ------------------------------------------------
+
+
+def test_open_reads_the_object_in_ranges_of_one_chunk(monkeypatch):
+    monkeypatch.setattr(store, "READ_CHUNK", 4)
+    backend, bucket = _bucket_with(**{"big.bin": bytes(range(10))})
+    with _gs("gs://bucket/big.bin", backend).open("rb") as stream:
+        assert stream.read() == bytes(range(10))
+    assert bucket.ranges == [("big.bin", 0, 3), ("big.bin", 4, 7), ("big.bin", 8, 11)]
+
+
+def test_a_stream_of_a_large_object_seeks_by_range(monkeypatch):
+    monkeypatch.setattr(store, "READ_CHUNK", 4)
+    backend, bucket = _bucket_with(**{"big.bin": bytes(range(10))})
+    with _gs("gs://bucket/big.bin", backend).open("rb") as stream:
+        assert stream.seekable()
+        stream.seek(6)
+        assert stream.read(2) == bytes([6, 7])
+        stream.seek(-2, 2)
+        assert stream.read() == bytes([8, 9])
+        stream.seek(1)
+        assert stream.read(1) == bytes([1])
+
+
+def test_open_reads_an_empty_object_and_text(monkeypatch):
+    monkeypatch.setattr(store, "READ_CHUNK", 4)
+    backend, _bucket = _bucket_with(
+        **{"empty": b"", "t.txt": "héllo\nworld\n".encode()}
+    )
+    assert _gs("gs://bucket/empty", backend).read_bytes() == b""
+    text = _gs("gs://bucket/t.txt", backend).read_text(encoding="utf-8")
+    assert text == "héllo\nworld\n"
+
+
+def test_a_range_that_fails_midway_is_an_oserror(monkeypatch):
+    monkeypatch.setattr(store, "READ_CHUNK", 4)
+    backend, _bucket = _bucket_with(**{"big.bin": bytes(range(10))})
+    original = _FakeBlob.download_as_bytes
+
+    def failing(self, start=None, end=None, **kwargs):
+        if start:
+            raise _ServiceUnavailable("503")
+        return original(self, start, end, **kwargs)
+
+    monkeypatch.setattr(_FakeBlob, "download_as_bytes", failing)
+    with _gs("gs://bucket/big.bin", backend).open("rb") as stream:
+        assert stream.read(4) == bytes(range(4))
+        with pytest.raises(OSError) as info:
+            stream.read(1)
+    assert info.value.filename == "gs://bucket/big.bin"
+    assert info.value.__cause__ is None
+
+
+def test_r_plus_changes_an_object_that_spans_several_ranges(monkeypatch):
+    monkeypatch.setattr(store, "READ_CHUNK", 4)
+    backend, bucket = _bucket_with(**{"big.bin": bytes(range(10))})
+    with _gs("gs://bucket/big.bin", backend).open("r+b") as stream:
+        stream.seek(5)
+        stream.write(b"\xff")
+    assert bucket.objects["big.bin"] == bytes([0, 1, 2, 3, 4, 255, 6, 7, 8, 9])
+
+
+def test_a_write_that_fits_the_spool_is_one_request_and_a_larger_one_is_a_file(
+    monkeypatch,
+):
+    monkeypatch.setattr(store, "SPOOL_SIZE", 8)
+    backend, bucket = _bucket_with()
+    _gs("gs://bucket/small", backend).write_bytes(b"12345678")
+    _gs("gs://bucket/large", backend).write_bytes(b"123456789")
+    assert bucket.objects == {"small": b"12345678", "large": b"123456789"}
+    assert bucket.uploads == ["small", "large"]
+    assert bucket.file_uploads == [("large", 9)]
+
+
+def test_a_large_exclusive_upload_does_not_replace_an_object(monkeypatch):
+    import io
+
+    monkeypatch.setattr(store, "SPOOL_SIZE", 8)
+    backend, bucket = _bucket_with(**{"there": b"keep"})
+    with pytest.raises(FileExistsError):
+        _gs("gs://bucket/there", backend)._upload_file(
+            io.BytesIO(b"123456789"), 9, exclusive=True
+        )
+    assert bucket.objects == {"there": b"keep"}
+    with _gs("gs://bucket/new", backend).open("xb") as stream:
+        stream.write(b"123456789")
+    assert bucket.objects["new"] == b"123456789"

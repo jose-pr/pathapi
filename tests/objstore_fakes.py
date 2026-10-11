@@ -25,7 +25,10 @@ class FakeState:
     answers with a given status (`refuse`) and `batches`, the object names of
     each batch request it served. `copies` lists the `(source, target)` object
     names of the copy requests it served; `copy_status`, when set, is the
-    status it answers every copy request with."""
+    status it answers every copy request with. With `discard_uploads`, an
+    object uploaded in several requests is not kept: `discarded` maps its name
+    to `(size, md5 hex)` and the object is empty, so a test can upload more
+    than it wants this process to hold."""
 
     def __init__(self, objects):
         self.objects = objects
@@ -37,6 +40,8 @@ class FakeState:
         self.metadata = {}
         self.copies = []
         self.copy_status = None
+        self.discard_uploads = False
+        self.discarded = {}
 
 
 def page_of(entries, offset, limit, page_size):
@@ -53,9 +58,18 @@ def md5_base64(content):
     return base64.b64encode(hashlib.md5(content).digest()).decode()
 
 
-def crc32c(content):
-    """CRC-32C (Castagnoli) of `content`, as the 32-bit integer."""
-    crc = 0xFFFFFFFF
+def crc32c(content, crc=0):
+    """CRC-32C (Castagnoli) of `content` as a 32-bit integer, continuing from
+    the value `crc` of what came before. The C extension that the Google SDK
+    brings does the work when it is installed; the bitwise loop is for a few
+    bytes."""
+    try:
+        import google_crc32c
+
+        return google_crc32c.extend(crc, content)
+    except ImportError:
+        pass
+    crc ^= 0xFFFFFFFF
     for byte in content:
         crc ^= byte
         for _ in range(8):

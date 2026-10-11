@@ -2105,9 +2105,12 @@ call a path makes (`BaseGsBackend.call_options()` is the hook); left out,
 the SDK's defaults apply, under which an unreachable endpoint fails after
 about two minutes. Same prefix model, rename, error and
 recursive-copy/remove rules as `S3Path` (same bucket); `rmdir()` of the
-bucket root → `PermissionError`; reads load the whole object into memory
-(the stream is seekable) and writes buffer in memory until close; `"x"` uses
-`if_generation_match=0`; `"a"` unsupported; `st_mtime` from `updated`.
+bucket root → `PermissionError`; reads fetch the object in ranged requests of
+4 MiB as they are read, so a read holds one chunk and the stream stays
+seekable (`seek()` asks nothing until the next read; `seek(n, 2)` asks the
+size); `"w"`/`"x"`/`"r+"` spool in memory up to 4 MiB, then in a temp file,
+and upload on close (one request up to 4 MiB, a resumable upload in 2 MiB
+requests above); `"x"` uses `if_generation_match=0`; `"a"` unsupported; `st_mtime` from `updated`.
 A file `copy()` is one `copy_blob` request, within or between the buckets
 that one client reaches, as for `S3Path`. `checksum()` is the object's `md5Hash` or `crc32c` (`supported_checksums()`
 is `{"md5", "crc32c"}`); a composite object has no `md5Hash`, and an
@@ -2131,6 +2134,7 @@ class BaseAzBackend:
     def client(self): ...
 
 COPY_POLL_TIMEOUT = 300.0
+READ_CHUNK = 524288
 ```
 
 `account`, `container`, `key` (one trailing `/` dropped, interior `//`
@@ -2149,8 +2153,12 @@ children are the containers; a path with no account and no `backend=`
 does not exist; `rmdir()` of the container root → `PermissionError`;
 `rename()` within one container waits for the server-side copy for at most
 `schemes.az.COPY_POLL_TIMEOUT` (300 s), then aborts it and raises
-`TimeoutError` with the source untouched; reads load the whole object into
-memory (the stream is seekable) and writes buffer in memory until close;
+`TimeoutError` with the source untouched; reads fetch the blob in ranged
+requests of `schemes.az.READ_CHUNK` (512 KiB; the SDK holds about nine times
+a response while it handles it, so assign a larger number to trade memory for
+requests) as they are read, so the stream stays seekable and holds one
+chunk; `"w"`/`"x"`/`"r+"` spool in memory up to 4 MiB, then in a temp file,
+and upload on close (one request up to 4 MiB, blocks above);
 `"x"` sends `If-None-Match: *`; `"a"` unsupported; `st_mtime` from `last_modified`.
 A file `copy()` within one container is one service copy (the call `rename()`
 waits for), as for `S3Path`. `checksum("md5")` is the blob's `Content-MD5` property (`supported_checksums()`

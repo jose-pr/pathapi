@@ -196,8 +196,22 @@ def _translate_errors(path, *, create=False):
         raise translated from None
 
 
-_AzWriteStream = _store.BufferedUploadStream
+_AzWriteStream = _store.SpoolUploadStream
 
+
+class _ReadOnly:
+    """`file` seen through `read()` alone. The SDK uploads a stream it
+    cannot measure in blocks, and one it can measure in a single request
+    that holds all of it."""
+
+    def __init__(self, file):
+        self.read = file.read
+
+
+READ_CHUNK = 512 * 1024
+"""Bytes of a blob that one request of a streamed read asks for. The SDK holds
+about nine times a response while it handles it: assign a larger number to
+trade that memory for fewer requests."""
 
 COPY_POLL_TIMEOUT = 300.0
 """Seconds `AzPath.rename()` waits for the server-side copy to finish. A copy
@@ -365,20 +379,29 @@ class AzPath(_store.ObjectStorePath):
             # SDK or an unusable default backend raises as itself instead of
             # FileNotFoundError.
             blob_client = self._container.get_blob_client(self.key)
+
+            def fetch(start, length):
+                return self._read_range(blob_client, start, length)
+
             try:
-                with _translate_errors(self):
-                    content = blob_client.download_blob().readall()
+                first = fetch(0, READ_CHUNK)
             except FileNotFoundError:
                 if self.is_dir():
                     raise IsADirectoryError(
                         _errno.EISDIR, "Is a directory", str(self)
                     ) from None
                 raise
+            raw = _store.RangeReader(
+                fetch, lambda: self.stat().st_size, first, READ_CHUNK
+            )
             if mode == "r+":
                 # Read-modify-write: what is written is uploaded on close.
-                return _AzWriteStream(self, initial=content)
-            # Read-only, like a local file opened "rb".
-            return _io.BufferedReader(_io.BytesIO(content))
+                with raw:
+                    return _AzWriteStream(self, initial=raw)
+            if buffering == 0:
+                return raw
+            size = _io.DEFAULT_BUFFER_SIZE if buffering in (-1, 1) else buffering
+            return _io.BufferedReader(raw, size)
         if mode not in ("w", "x"):
             raise NotImplementedError(f"open(mode={mode!r})")
         if mode == "x" and self.exists():
@@ -388,6 +411,30 @@ class AzPath(_store.ObjectStorePath):
         if mode == "w" and self._holds_keys(self.key):
             raise IsADirectoryError(_errno.EISDIR, "Is a directory", str(self))
         return _AzWriteStream(self, exclusive=(mode == "x"))
+
+    def _read_range(self, blob_client, start: int, length: int) -> bytes:
+        """The bytes of the blob from `start`, at most `length`; none at or
+        past its end (a range there is answered 416, which is also an empty
+        blob's answer)."""
+        try:
+            return blob_client.download_blob(offset=start, length=length).readall()
+        except Exception as error:
+            if _http_status(error) == 416:
+                return b""
+            translated = _oserror(error, self)
+            if translated is None:
+                raise
+            raise translated from None
+
+    def _upload_file(self, file, size: int, *, exclusive=False) -> None:
+        """Upload the `size` bytes of `file` as the blob: one request while it
+        fits in memory, else in blocks."""
+        if size <= _store.SPOOL_SIZE:
+            self._upload(file.read(), exclusive=exclusive)
+            return
+        blob_client = self._container.get_blob_client(self.key)
+        with _translate_errors(self, create=exclusive):
+            blob_client.upload_blob(_ReadOnly(file), overwrite=not exclusive)
 
     def _upload(self, data: bytes, *, key=None, exclusive=False) -> None:
         blob_client = self._container.get_blob_client(self.key if key is None else key)

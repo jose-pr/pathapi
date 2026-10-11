@@ -199,7 +199,10 @@ class _BatchReplyError(Exception):
         self.code = code
 
 
-_GsWriteStream = _store.BufferedUploadStream
+_GsWriteStream = _store.SpoolUploadStream
+
+_UPLOAD_CHUNK = 2 * 1024**2
+"""Bytes of one request of a resumable upload (a multiple of 256 KiB)."""
 
 
 class GsPath(_store.ObjectStorePath):
@@ -313,20 +316,27 @@ class GsPath(_store.ObjectStorePath):
             # The client is resolved outside the translation, so a missing
             # SDK raises ImportError instead of FileNotFoundError.
             blob = self._bucket.blob(self.key)
+
+            def fetch(start, length):
+                return self._read_range(blob, start, length)
+
             try:
-                with _translate_errors(self):
-                    content = blob.download_as_bytes(**self._options)
+                first = fetch(0, _store.READ_CHUNK)
             except FileNotFoundError:
                 if self.is_dir():
                     raise IsADirectoryError(
                         _errno.EISDIR, "Is a directory", str(self)
                     ) from None
                 raise
+            raw = _store.RangeReader(fetch, lambda: self.stat().st_size, first)
             if mode == "r+":
                 # Read-modify-write: what is written is uploaded on close.
-                return _GsWriteStream(self, initial=content)
-            # Read-only, like a local file opened "rb".
-            return _io.BufferedReader(_io.BytesIO(content))
+                with raw:
+                    return _GsWriteStream(self, initial=raw)
+            if buffering == 0:
+                return raw
+            size = _io.DEFAULT_BUFFER_SIZE if buffering in (-1, 1) else buffering
+            return _io.BufferedReader(raw, size)
         if mode not in ("w", "x"):
             raise NotImplementedError(f"open(mode={mode!r})")
         if mode == "x" and self.exists():
@@ -336,6 +346,34 @@ class GsPath(_store.ObjectStorePath):
         if mode == "w" and self._holds_keys(self.key):
             raise IsADirectoryError(_errno.EISDIR, "Is a directory", str(self))
         return _GsWriteStream(self, exclusive=(mode == "x"))
+
+    def _read_range(self, blob, start: int, length: int) -> bytes:
+        """The bytes of `blob` from `start`, at most `length`; none at or past
+        its end (a range there is answered 416, which is also an empty
+        object's answer)."""
+        try:
+            return blob.download_as_bytes(
+                start=start, end=start + length - 1, checksum=None, **self._options
+            )
+        except Exception as error:
+            if _http_status(error) == 416:
+                return b""
+            translated = _oserror(error, self)
+            if translated is None:
+                raise
+            raise translated from None
+
+    def _upload_file(self, file, size: int, *, exclusive=False) -> None:
+        """Upload the `size` bytes of `file` as the object: one request while it
+        fits in memory, else a resumable upload in `_UPLOAD_CHUNK` requests."""
+        if size <= _store.SPOOL_SIZE:
+            self._upload(file.read(), exclusive=exclusive)
+            return
+        blob = self._bucket.blob(self.key, chunk_size=_UPLOAD_CHUNK)
+        # Generation 0 matches only a missing object, as in _upload().
+        conditions = {"if_generation_match": 0} if exclusive else {}
+        with _translate_errors(self, create=exclusive):
+            blob.upload_from_file(file, size=size, **conditions, **self._options)
 
     def _upload(self, data: bytes, *, key=None, exclusive=False) -> None:
         blob = self._bucket.blob(self.key if key is None else key)
