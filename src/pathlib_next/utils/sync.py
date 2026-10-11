@@ -548,9 +548,8 @@ class PathSyncer(object):
     trip), the pair is treated as in sync WITHOUT calling `checksum` at
     all, native or streamed. Times match at the resolution of the coarser
     side: in whole seconds when either has no fractional part (SFTP, FTP and
-    the object stores report seconds), to a microsecond otherwise; so a time
-    one second apart is a mismatch and one within the same second is not,
-    whenever either side reports whole seconds. A mismatch on either falls through to a real
+    the object stores report seconds), to a microsecond otherwise. A mismatch
+    on either falls through to a real
     checksum comparison rather than being treated as "changed" -- mtime can
     be unreliable across backends/clock skew, so a false "needs copy" from
     a mismatch is merely wasteful, while a false "in sync" would be a

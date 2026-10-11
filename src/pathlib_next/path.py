@@ -1649,8 +1649,8 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
                         recursive=True,
                         ignore_error=ignore_error,
                         progress=progress,
-                        # Passed on only when given, so a `copy()` written
-                        # before the keyword still works as a child.
+                        # Passed on only when given, so a `copy()` override
+                        # without the keyword still works as a child.
                         **({} if offering is None else {"on_error": offering}),
                     )
                 except Exception as e:

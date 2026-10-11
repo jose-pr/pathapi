@@ -890,7 +890,7 @@ class SftpPath(UriPath):
         fan-out calls it from a worker thread, once per failing child.
         """
         offering = copy_error_predicate(ignore_error, on_error)
-        # Passed on only when given: a backend or a `copy()` written before
+        # Passed on only when given: a backend or a `copy()` override without
         # the keyword has no parameter for it.
         extra = {} if offering is None else {"on_error": offering}
         if (

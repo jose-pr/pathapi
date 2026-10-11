@@ -220,7 +220,7 @@ def test_copy_ignore_error_still_notifies_and_swallows():
 
 def test_copy_passes_on_error_to_a_child_only_when_it_was_given():
     class Old(MemPath):
-        """A `copy()` written before `on_error` existed."""
+        """A `copy()` override whose signature has no `on_error`."""
 
         __slots__ = ()
         keywords = []
