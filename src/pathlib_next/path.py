@@ -34,6 +34,7 @@ __all__ = [
     "PurePathLike",
     "check_follow",
     "contains",
+    "copy_error_predicate",
 ]
 
 P = _ty.TypeVar("P", bound="Path")
@@ -1182,9 +1183,9 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         check_follow("follow_symlinks", follow_symlinks)
         check_follow("follow_binds", follow_binds)
 
-        # An error the handler declined, on its way out: each enclosing
-        # directory's `except` catches it again, and consulting the handler
-        # there reported one failure once per ancestor.
+        # An error the handler declined, or raised itself, on its way out:
+        # each enclosing directory's `except` catches it again, and consulting
+        # the handler there reported one failure once per ancestor.
         declined = []
 
         def _handle(error, path):
@@ -1193,7 +1194,12 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
                 raise error
             if any(error is seen for seen in declined):
                 raise error
-            if not _onerror(error, path):
+            try:
+                swallowed = _onerror(error, path)
+            except BaseException as raised:
+                declined.append(raised)
+                raise
+            if not swallowed:
                 declined.append(error)
                 raise error
 
@@ -1485,6 +1491,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         recursive=False,
         ignore_error=None,
         progress: "_ty.Callable[[_ty.Self, int, _ty.Optional[int]], None]" = None,
+        on_error: "bool | _ty.Callable[[Exception, _ty.Self], bool] | None" = None,
     ):
         """Copy this file's content to `target`.
 
@@ -1495,14 +1502,21 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         (unlike 3.14's False) to match this method's pre-existing behavior
         of always propagating st_mode; only st_mode is preserved, not
         timestamps/xattrs -- full metadata preservation is not implemented.
-        `ignore_error` accepts a bool or a callable, matching `Path.rm()`'s
-        bool-or-callable contract. `True` ignores every error; `False` and
-        `None` (the default) fail on the first error. A callable is invoked
-        as `ignore_error(error)` -- this call site's own arity -- and, as it
-        always has here, is a *notification* hook: the error is suppressed
-        regardless of what it returns, so handlers like `errors.append`
-        (returning None) keep working. Only errors from *child* copies
-        during a `recursive=True` copy are routed here.
+        `ignore_error` accepts a bool or a callable. `True` ignores every
+        error; `False` and `None` (the default) fail on the first error. A
+        callable is invoked as `ignore_error(error)` and, as it always has
+        here, is a *notification* hook: the error is suppressed regardless of
+        what it returns, so handlers like `errors.append` (returning None)
+        keep working. Only errors from *child* copies during a
+        `recursive=True` copy are routed here.
+
+        `on_error` is `rm()`'s predicate: a callable `(error, path) -> bool`
+        (or a bool) asked once per child error, with `path` the source entry
+        that failed. `True` skips the entry and goes on, `False` raises the
+        error, and a predicate that raises ends the copy with its own
+        exception. An error it declined is not offered again by the
+        directories above. `ignore_error` and `on_error` are two spellings of
+        one policy: passing both raises `TypeError` before anything is copied.
 
         `progress`, when given, is called as `progress(path, bytes_copied,
         total_size)` for every chunk written during each *file* copy (`path`
@@ -1517,6 +1531,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         `SftpPath`'s asyncssh concurrent fan-out) do not invoke `progress`;
         see `docs/divergences.md`'s "Deliberate extensions" section.
         """
+        offering = copy_error_predicate(ignore_error, on_error)
         if isinstance(target, str):
             target = self._coerce_target(target)
         src = self
@@ -1582,14 +1597,17 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
                         recursive=True,
                         ignore_error=ignore_error,
                         progress=progress,
+                        # Passed on only when given, so a `copy()` written
+                        # before the keyword still works as a child.
+                        **({} if offering is None else {"on_error": offering}),
                     )
                 except Exception as e:
-                    # A callable stays a notify-and-suppress hook (its return
-                    # value was never consulted here, and callers such as
-                    # `errors.append` rely on that). Bools are new: True
-                    # suppresses, False/None raise -- matching rm()'s bool
-                    # semantics without changing the callable contract.
-                    if callable(ignore_error):
+                    if offering is not None:
+                        if not offering(e, child):
+                            raise
+                    elif callable(ignore_error):
+                        # A notify-and-suppress hook: its return value is not
+                        # consulted, so `errors.append` works.
                         ignore_error(e)
                     elif not ignore_error:
                         raise
@@ -1681,6 +1699,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         recursive=False,
         ignore_error=None,
         progress: "_ty.Callable[[_ty.Self, int, _ty.Optional[int]], None]" = None,
+        on_error: "bool | _ty.Callable[[Exception, _ty.Self], bool] | None" = None,
     ) -> "Path":
         """Copy this file or directory into the directory `target_dir`, under
         its own name, and return the new path (pathlib 3.14 parity).
@@ -1698,6 +1717,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
             recursive=recursive,
             ignore_error=ignore_error,
             progress=progress,
+            **({} if on_error is None else {"on_error": on_error}),
         )
         return target
 
@@ -1912,6 +1932,17 @@ def _listing(path: Path) -> "_ty.Iterator[_ty.Tuple[str, _ty.Optional[FileStat]]
         except OSError:
             stat = None
         yield entry.name, stat
+
+
+def copy_error_predicate(ignore_error, on_error) -> "_utils.OfferedOnce | None":
+    """The `(error, path) -> bool` predicate for `copy()`'s `on_error=`, or
+    None when it was not given. Raises `TypeError` when `ignore_error=` was
+    given too: a `copy()` override calls this before it copies anything."""
+    if on_error is None:
+        return None
+    if ignore_error is not None:
+        raise TypeError("copy() takes ignore_error or on_error, not both")
+    return _utils.as_error_predicate(on_error)
 
 
 def _stat_or_none(path: Path, follow_symlinks: bool):

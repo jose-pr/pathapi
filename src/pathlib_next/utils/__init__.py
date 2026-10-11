@@ -13,7 +13,9 @@ from threading import RLock
 __all__ = [
     "LRU",
     "UNCHANGED",
+    "OfferedOnce",
     "as_error_handler",
+    "as_error_predicate",
     "as_mode",
     "as_owner",
     "is_safe_child_name",
@@ -229,11 +231,12 @@ def as_error_handler(
 ) -> _ty.Callable[..., bool]:
     """Normalize an `ignore_error` argument into a *callable* error policy.
 
-    Every `ignore_error` parameter in this library accepts either a bool or
-    a callable, but the callables have **deliberately different arities**
-    per call site (`Path.rm()` -> `(error, path)`, `Path.copy()` ->
-    `(error)`, `PathSyncer.sync()` -> `(error, source, target, event)`).
-    Unifying those arities would break existing callers, so this helper only
+    Every `ignore_error` (and `copy()`'s `on_error`) parameter in this library
+    accepts either a bool or a callable, but the callables have **different
+    arities** per call site (`Path.rm()` and `Path.copy(on_error=)` ->
+    `(error, path)`, `Path.copy(ignore_error=)` -> `(error)`,
+    `PathSyncer.sync()` -> `(error, source, target, event)`). Changing the
+    arity of an existing keyword would break its callers, so this helper only
     normalizes the *bool* case and passes a supplied callable through
     untouched -- it is invoked with whatever arguments its own call site
     already uses.
@@ -252,6 +255,47 @@ def as_error_handler(
         ignore_error = default
     result = bool(ignore_error)
     return lambda *args, **kwargs: result
+
+
+class OfferedOnce:
+    """An `(error, path) -> bool` error predicate that sees each error once.
+
+    `True` swallows the error. An error it answered `False` for, and an
+    exception it raised itself, are not offered again when they travel up
+    through the enclosing directories of a recursive operation: they are
+    raised as they are. Build one with `as_error_predicate()`.
+    """
+
+    __slots__ = ("_predicate", "_seen")
+
+    def __init__(self, predicate: _ty.Callable[[Exception, _ty.Any], bool]) -> None:
+        self._predicate = predicate
+        self._seen: "list[BaseException]" = []
+
+    def __call__(self, error: Exception, path: _ty.Any) -> bool:
+        if any(error is seen for seen in self._seen):
+            return False
+        try:
+            swallow = self._predicate(error, path)
+        except BaseException as raised:
+            self._seen.append(raised)
+            raise
+        if swallow:
+            return True
+        self._seen.append(error)
+        return False
+
+
+def as_error_predicate(
+    on_error: _ty.Union[bool, _ty.Callable[[Exception, _ty.Any], bool], None],
+) -> OfferedOnce:
+    """`on_error` as an `OfferedOnce` predicate: a bool becomes a constant
+    answer (`None` is `False`), a callable is called as `(error, path)`, and
+    an `OfferedOnce` is returned as it is, so a recursive call that is handed
+    the predicate of its caller shares what that predicate has seen."""
+    if isinstance(on_error, OfferedOnce):
+        return on_error
+    return OfferedOnce(as_error_handler(on_error))
 
 
 #: A `st_mode` is 16 bits: four of file type, twelve of permissions.

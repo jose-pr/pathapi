@@ -172,12 +172,12 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
     def copy(
         self, target, *, overwrite=False, follow_symlinks=True,
         preserve_metadata=True, recursive=False, ignore_error=None,
-        progress=None,
+        progress=None, on_error=None,
     ): ...
     def copy_into(
         self, target_dir, *, overwrite=False, follow_symlinks=True,
         preserve_metadata=True, recursive=False, ignore_error=None,
-        progress=None,
+        progress=None, on_error=None,
     ) -> Path: ...
     def move_into(self, target_dir, *, overwrite=False) -> Path: ...
     def replace(self, target) -> Path: ...
@@ -325,7 +325,8 @@ Base class for I/O paths.
 - `unlink()`, `rmdir()` — stubs.
 - `rm()` — extension.
   `ignore_error` is a bool or `callable(error, path) -> bool` (True
-  swallows); each error is offered once. Recursive removal is bottom-up and
+  swallows); each error is offered once, and a predicate that raises ends
+  the call with its own exception, which is not offered to it again. Recursive removal is bottom-up and
   never descends through a directory symlink or a binding (a Windows
   junction, a mount point — `is_dir_binding()`): the entry itself is
   removed, never what is behind it, which is what `rm -r` does.
@@ -403,6 +404,19 @@ Base class for I/O paths.
     `False`/`None` raise; a callable is called as `ignore_error(error)` and
     the error is **always** suppressed (its return value is ignored — not
     `rm()`'s `(error, path)` predicate).
+  - `on_error`: `rm()`'s predicate for a recursive copy, `(error, path) ->
+    bool` (or a bool), asked once per child error with `path` the source
+    entry that failed. `True` skips that entry and the copy goes on, `False`
+    raises the error, and a predicate that raises ends the copy with its own
+    exception. An error it declined, or raised, is not offered again by the
+    directories above (not even for a nested `copy()`). Errors outside the
+    children — the root, the target directory, a refused prefix of an object
+    store — are raised and never offered. Passing `ignore_error` and
+    `on_error` together raises `TypeError` before anything is copied.
+    Every `copy()` override (`sftp:`, `s3:`, `gs:`, `az:`) takes it and
+    passes it on only when it was given; the asyncssh walk calls it from a
+    worker thread, and children already running when one is declined are
+    each offered their own error before the copy stops.
   - `progress(path, bytes_copied, total_size | None)` per chunk of each file
     streamed; not called by `SftpPath`'s asyncssh recursive fan-out.
   - A `str` target goes through `_coerce_target()`: `with_segments()` by
@@ -473,6 +487,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
 
 def check_follow(name, policy) -> None: ...
 def contains(src, target) -> bool: ...
+def copy_error_predicate(ignore_error, on_error) -> OfferedOnce | None: ...
 def detect_format(name, peek=None) -> str: ...
 
 class CommitOnClose(BytesIO):
@@ -492,6 +507,11 @@ class CommitOnClose(BytesIO):
   looking through symlinks and deciding as `copy()` does (`_node_key()`,
   else `_same_filesystem()` and `==`). A `copy()` override that copies a
   tree natively refuses a target inside the source with it.
+- `copy_error_predicate(ignore_error, on_error)` — `None` when `on_error` was
+  not given, else the `OfferedOnce` predicate to ask about each failing child;
+  `TypeError` when `ignore_error` was given too. A `copy()` override calls it
+  first, passes `on_error=` on to `super().copy()` and to its children only
+  when it is not `None`, and offers the source child that failed.
 - `detect_format(name, peek=None)` — `"zip"` or `"tar"` from the extension of
   `name`, else from the first bytes `peek()` returns (called only then).
 - `CommitOnClose(commit, initial=None)` — an in-memory `BytesIO` that calls
@@ -758,8 +778,9 @@ One-way tree sync between any two
   dry_run: bool)` is called for every event (structural ones included) with
   the call's `dry_run`.
 - `ignore_error`: bool or `callable(error, source, target, event) -> bool`
-  (`source` and `target` are `PathAndStat`), offered once per error; a
-  tolerated error is logged at WARNING on logger
+  (`source` and `target` are `PathAndStat`), offered once per error, and a
+  callable that raises ends the sync with its own exception, which is not
+  offered back to it; a tolerated error is logged at WARNING on logger
   `pathlib_next.sync` and reported to `hook` as `SyncEvent.Error`.
   `.log(msg, *args)` (INFO on the same logger) is overridable by a subclass;
   `EVENT_LOG_FORMAT` (`"[%s] Source:%s Target:%s DryRun:%s"`) is the format
@@ -934,6 +955,9 @@ def as_owner(uid, gid) -> Tuple[Optional[int], Optional[int]]: ...
 def as_error_handler(
     ignore_error, *, default=False,
 ) -> Callable[..., bool]: ...
+def as_error_predicate(on_error) -> OfferedOnce: ...
+class OfferedOnce:
+    def __call__(self, error, path) -> bool: ...
 def notimplemented(method): ...
 def sizeof_fmt(num) -> str: ...
 def parsedate(date): ...
@@ -968,9 +992,16 @@ UNCHANGED = None
   `str` names pass through; a `bool` → `TypeError`, an id outside
   0..2**32-1 → `ValueError`. **`UNCHANGED = None`**.
 - **`as_error_handler()`** — a
-  callable passes through untouched (arity is the call site's: `rm` `(error,
-  path)`, `copy` `(error)`, `PathSyncer` `(error, source, target, event)`);
-  a bool (or `None` → `default`) becomes a constant-returning callable.
+  callable passes through untouched (arity is the call site's: `rm` and
+  `copy(on_error=)` `(error, path)`, `copy(ignore_error=)` `(error)`,
+  `PathSyncer` `(error, source, target, event)`); a bool (or `None` →
+  `default`) becomes a constant-returning callable.
+  **`as_error_predicate()`** — `on_error` as an `OfferedOnce`: a bool becomes a
+  constant answer, a callable is called as `(error, path)`, and an
+  `OfferedOnce` is returned as it is. An `OfferedOnce` answers `False`, without
+  calling the predicate, for an error it already answered `False` for and
+  for an exception the predicate itself raised, so a recursive operation that
+  passes it down never offers one failure twice.
 - **`notimplemented()`** — decorator; calling raises
   `NotImplementedError("Method not implemented: <name>")`.
 - **`sizeof_fmt()`** — `1536` → `"1.5K"`.
@@ -1703,7 +1734,7 @@ class BaseSftpBackend:
     supports_hardlink = False
     def tree_copy(
         self, path, target, *, overwrite, follow_symlinks, preserve_metadata,
-        ignore_error,
+        ignore_error, on_error=None,
     ) -> None: ...
     def tree_rm(self, path, *, missing_ok, on_error) -> None: ...
     def checksum(self, path, algorithm) -> str: ...
@@ -1759,7 +1790,8 @@ class BaseSftpBackend:
   `supported_checksums()`). `supports_tree` (False; asyncssh True) says the
   backend has its own concurrent recursive `copy()` and `rm()`
   (`tree_copy(path, target, *, overwrite, follow_symlinks, preserve_metadata,
-  ignore_error)`, `tree_rm(path, *, missing_ok, on_error)`), which `SftpPath`
+  ignore_error, on_error=None)`, `tree_rm(path, *, missing_ok, on_error)`),
+  which `SftpPath`
   then uses for a directory on one host; otherwise (and for every backend
   that does not set it) the generic walks run, and no SSH library is
   imported by `copy()` or `rm()`. Listing a directory and testing each child

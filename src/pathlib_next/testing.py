@@ -665,6 +665,63 @@ class PathContract(ReadPathContract):
             (root / "missing_rm").rm()
         (root / "missing_rm").rm(missing_ok=True)
 
+    def test_one_error_predicate_means_the_same_to_rm_and_copy(self, root):
+        # `(error, path) -> bool`: True skips the entry, False raises the
+        # error, and a predicate that raises ends the call with its own
+        # exception. `rm()` is offered a missing path, `copy()` a child whose
+        # target is a directory.
+        self._require("supports_mkdir")
+
+        class Stop(Exception):
+            pass
+
+        def attempt(call):
+            try:
+                call()
+            except Stop:
+                return "stop"
+            except OSError:
+                return "error"
+            return "returned"
+
+        outcomes = {}
+        for decision in ("swallow", "decline", "raise"):
+            offered = []
+
+            def predicate(error, path):
+                offered.append((isinstance(error, OSError), path.name))
+                if decision == "raise":
+                    raise Stop()
+                return decision == "swallow"
+
+            source = root / f"predicate_{decision}_src"
+            target = root / f"predicate_{decision}_dst"
+            source.mkdir()
+            (source / "clash.txt").write_text("source")
+            (target / "clash.txt").mkdir(parents=True)
+            (target / "clash.txt" / "kept.txt").write_text("target")
+
+            removed = attempt(
+                lambda: (root / f"predicate_{decision}_gone").rm(ignore_error=predicate)
+            )
+            copied = attempt(
+                lambda: source.copy(
+                    target, recursive=True, overwrite=True, on_error=predicate
+                )
+            )
+            outcomes[decision] = (removed, copied)
+            assert offered == [
+                (True, f"predicate_{decision}_gone"),
+                (True, "clash.txt"),
+            ], decision
+            assert (target / "clash.txt" / "kept.txt").read_text() == "target"
+
+        assert outcomes == {
+            "swallow": ("returned", "returned"),
+            "decline": ("error", "error"),
+            "raise": ("stop", "stop"),
+        }
+
     def test_copy_preserves_source(self, root):
         src = root / "a.txt"
         dst = root / "dst_copy.txt"

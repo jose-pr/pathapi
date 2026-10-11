@@ -982,6 +982,7 @@ class AsyncsshSftpBackend(_checkfile.CheckFileSftpBackend):
         follow_symlinks,
         preserve_metadata,
         ignore_error,
+        on_error=None,
     ):
         return _run(
             _concurrent_copy(
@@ -992,6 +993,7 @@ class AsyncsshSftpBackend(_checkfile.CheckFileSftpBackend):
                 preserve_metadata=preserve_metadata,
                 max_concurrency=self.max_concurrency,
                 ignore_error=ignore_error,
+                on_error=on_error,
                 aclient=path._sftpclient._aclient,
             ),
             None,
@@ -1108,12 +1110,15 @@ async def _concurrent_copy(
     max_concurrency: int,
     ignore_error,
     aclient=None,
+    on_error=None,
 ):
     """Concurrent recursive child copies, bounded by max_concurrency.
 
     `aclient` must be resolved on the calling thread (`SftpPath.copy` does):
     looking it up here, on the bridge loop, would open the connection
-    through a blocking `_run()` on the loop thread itself.
+    through a blocking `_run()` on the loop thread itself. `on_error` runs in
+    a worker thread, once per failing child, as `(error, source child)`; a
+    child it declines fails the copy as soon as it does, as with no policy.
 
     Every task the walk creates belongs to one `_TaskOwner`, which cancels
     and awaits the ones still running before this coroutine returns or
@@ -1249,6 +1254,7 @@ async def _concurrent_copy(
                     preserve_metadata=preserve_metadata,
                     recursive=True,
                     ignore_error=ignore_error,
+                    **({} if on_error is None else {"on_error": on_error}),
                 )
             )
 
@@ -1275,7 +1281,7 @@ async def _concurrent_copy(
 
             await settle(
                 [
-                    owner.spawn(copy_node(child, dst / child.name, child_stat))
+                    owner.spawn(guarded(child, dst / child.name, child_stat))
                     for child, child_stat in await _read_children(
                         aclient, semaphore, src
                     )
@@ -1288,6 +1294,17 @@ async def _concurrent_copy(
             return
 
         await apply_mode(dst, src_stat)
+
+    async def guarded(child, dst, listed):
+        # `on_error` is asked about each failing child where it fails, so a
+        # declined error stops the copy at once and a swallowed one ends only
+        # that child. User code: off the loop thread, so it may call sync Path
+        # methods (which _run() back onto this loop).
+        try:
+            await copy_node(child, dst, listed)
+        except Exception as error:
+            if on_error is None or not await _in_thread(on_error, error, child):
+                raise
 
     async def settle(tasks):
         # Path.copy()'s contract: a callable is notified and the error
@@ -1311,7 +1328,7 @@ async def _concurrent_copy(
     try:
         await settle(
             [
-                owner.spawn(copy_node(child, target / child.name, child_stat))
+                owner.spawn(guarded(child, target / child.name, child_stat))
                 for child, child_stat in await _read_children(aclient, semaphore, path)
             ]
         )
@@ -1351,7 +1368,13 @@ async def _concurrent_rm(
     async def handled(error, current) -> bool:
         if on_error is None or any(error is seen for seen in declined):
             return False
-        if await _in_thread(on_error, error, current):
+        try:
+            swallow = await _in_thread(on_error, error, current)
+        except BaseException as raised:
+            # Its own exception is not offered back by the directories above.
+            declined.append(raised)
+            raise
+        if swallow:
             return True
         declined.append(error)
         return False

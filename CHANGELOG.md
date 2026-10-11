@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **`copy(on_error=)` and `copy_into(on_error=)` take `rm()`'s error
+  predicate.** `on_error(error, path) -> bool` (or a bool) is asked once for
+  each child of a recursive copy that fails, with `path` the source entry:
+  `True` skips it and the copy goes on, `False` raises the error. The same
+  function used to mean opposite things to the two methods (`lambda *a: False`
+  made `rm()` raise and `copy()` suppress every error), and a predicate
+  written for one raised `TypeError` in the other. `ignore_error=` keeps its
+  notify-only callable; use `on_error=` for a predicate. Passing both raises
+  `TypeError` before anything is copied. `sftp:` (the asyncssh concurrent walk
+  included), `s3:`, `gs:` and `az:` accept it, and `PathContract` gains a test
+  that gives one predicate to `rm()` and `copy()`.
 - **The names the built-in schemes take from the core are documented, and the
   helpers among them are public.** The shipped API header gains "For path
   implementers" and "For scheme implementers" sections, each hook with its
@@ -47,6 +58,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   class that overrides `samefile()` is still asked.
 
 ### Fixed
+- **A predicate that raises ends `rm()` and `PathSyncer` with its own
+  exception.** Each directory above the failing entry offered that exception
+  back to the predicate as one more failure, so a predicate that raised for
+  one kind of error could swallow its own exception a level up. It now
+  propagates as it is and is not offered again (also in the asyncssh
+  concurrent `rm()`). Nothing to change for a caller.
 - **On Python 3.12 a literal pattern component typed in another case yields
   the stored name.** On a case-insensitive filesystem `glob("SUB")` selected
   `SUB` where pathlib 3.12 selects the entry as the directory lists it (`sub`),

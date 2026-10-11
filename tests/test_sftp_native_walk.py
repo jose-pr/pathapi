@@ -849,6 +849,122 @@ def test_errors_the_handler_swallows_are_offered_one_by_one(
     _native(kind, native_calls, "_concurrent_rm")
 
 
+class _Stop(Exception):
+    """What a predicate raises to end the operation."""
+
+
+def _copy_tree(root):
+    """root/src/a/b/c/{locked.txt, fine.txt}: the copy of `locked.txt` is the
+    one the tests make fail."""
+    folder = root / "src" / "a" / "b" / "c"
+    folder.mkdir(parents=True)
+    (folder / "locked.txt").write_bytes(b"locked")
+    (folder / "fine.txt").write_bytes(b"fine")
+    (root / "dst").mkdir()
+
+
+@pytest.mark.parametrize("decision", ["swallow", "decline", "raise"])
+def test_copy_on_error_decides_each_failing_child_once(
+    decision, kind, server, root, wire, backends, native_calls
+):
+    _copy_tree(root)
+    backend = _backend(kind, backends)
+    wire.before["open"] = _deny(
+        lambda p: p.endswith(b"/dst/a/b/c/locked.txt"), onward=True
+    )
+    offered = []
+
+    def predicate(error, path):
+        offered.append((type(error).__name__, path.name, type(path).__name__))
+        if decision == "raise":
+            raise _Stop()
+        return decision == "swallow"
+
+    copy = lambda: _path(server, backend, "src").copy(  # noqa: E731
+        _path(server, backend, "dst"),
+        recursive=True,
+        overwrite=True,
+        on_error=predicate,
+    )
+    if decision == "swallow":
+        copy()
+        assert _files(root / "dst") == {"a/b/c/fine.txt": b"fine"}
+    else:
+        with pytest.raises(PermissionError if decision == "decline" else _Stop):
+            copy()
+
+    # The source child that failed, offered once, whatever the directories
+    # above it did with the error.
+    assert offered == [("PermissionError", "locked.txt", "SftpPath")]
+    _native(kind, native_calls, "_concurrent_copy")
+
+
+def test_copy_that_declines_an_error_stops_after_the_children_already_running(
+    kind, server, root, wire, backends, native_calls
+):
+    expected = _make_tree(root / "src")
+    (root / "dst").mkdir()
+    backend = _backend(kind, backends)
+    wire.before["open"] = _deny(lambda p: b"/dst/" in p, nth=5, onward=True)
+    offered = []
+
+    def decline(error, path):
+        offered.append(path.name)
+        return False
+
+    with pytest.raises(PermissionError):
+        _path(server, backend, "src").copy(
+            _path(server, backend, "dst"),
+            recursive=True,
+            overwrite=True,
+            on_error=decline,
+        )
+
+    # Children already running when one fails are each asked about their own
+    # error; the walk then stops.
+    assert 1 <= len(offered) <= (1 if kind == "paramiko" else _IN_FLIGHT)
+    assert len(_files(root / "dst")) < len(expected)
+    _native(kind, native_calls, "_concurrent_copy")
+
+
+def test_copy_with_both_error_keywords_raises_before_any_request(
+    kind, server, root, wire, backends, native_calls
+):
+    _copy_tree(root)
+    backend = _backend(kind, backends)
+
+    with pytest.raises(TypeError):
+        _path(server, backend, "src").copy(
+            _path(server, backend, "dst"),
+            recursive=True,
+            ignore_error=True,
+            on_error=lambda error, path: True,
+        )
+
+    assert wire.total() == 0
+    assert _files(root / "dst") == {}
+    _native(kind, native_calls, "_concurrent_copy", times=0)
+
+
+def test_rm_handler_that_raises_is_not_offered_its_own_exception(
+    kind, server, root, wire, backends, native_calls
+):
+    _chain(root)
+    backend = _backend(kind, backends)
+    wire.before["remove"] = _deny(lambda p: p.endswith(b"locked.txt"))
+    offered = []
+
+    def stop(error, path):
+        offered.append(type(error).__name__)
+        raise _Stop()
+
+    with pytest.raises(_Stop):
+        _path(server, backend, "tree").rm(recursive=True, ignore_error=stop)
+
+    assert offered == ["PermissionError"]
+    _native(kind, native_calls, "_concurrent_rm")
+
+
 def test_missing_ok_covers_the_path_itself_and_not_what_vanished_below_it(
     kind, server, root, wire, backends, native_calls
 ):

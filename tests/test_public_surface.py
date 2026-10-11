@@ -49,6 +49,7 @@ EXPORTS = {
         "PurePathLike",
         "check_follow",
         "contains",
+        "copy_error_predicate",
     },
     "pathlib_next.fspath": {"LocalPath", "PosixPathname", "WindowsPathname"},
     "pathlib_next.protocols": {
@@ -64,7 +65,9 @@ EXPORTS = {
     "pathlib_next.utils": {
         "LRU",
         "UNCHANGED",
+        "OfferedOnce",
         "as_error_handler",
+        "as_error_predicate",
         "as_mode",
         "as_owner",
         "is_safe_child_name",

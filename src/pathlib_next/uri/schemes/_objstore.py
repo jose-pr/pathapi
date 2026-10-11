@@ -16,7 +16,7 @@ import threading as _threading
 import typing as _ty
 
 from ... import utils as _utils
-from ...path import check_follow
+from ...path import check_follow, copy_error_predicate
 from ...utils.stat import FileStat
 from .. import UriPath as _UriPath
 
@@ -476,9 +476,12 @@ class ObjectStorePath(_UriPath):
         recursive=False,
         ignore_error=None,
         progress=None,
+        on_error=None,
     ):
         # A prefix is copied by walking it; one that holds keys the walk
         # cannot reach is refused up front rather than copied incompletely.
+        # That refusal is not a per-child error: `on_error` is never asked.
+        copy_error_predicate(ignore_error, on_error)
         with checked_copy(self, recursive):
             return super().copy(
                 target,
@@ -488,6 +491,7 @@ class ObjectStorePath(_UriPath):
                 recursive=recursive,
                 ignore_error=ignore_error,
                 progress=progress,
+                **({} if on_error is None else {"on_error": on_error}),
             )
 
     def rename(self, target):

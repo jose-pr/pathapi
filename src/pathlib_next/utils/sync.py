@@ -165,13 +165,23 @@ def _offer_error(policy, error: Exception, source, target, event) -> bool:
     level without asking again."""
     if getattr(error, _OFFERED_ATTR, False):
         return False
-    if policy(error, source, target, event):
-        return True
+    try:
+        if policy(error, source, target, event):
+            return True
+    except BaseException as raised:
+        # The policy's own exception ends the sync: an enclosing level must
+        # not offer it back to the policy as a failure of its own.
+        _mark_offered(raised)
+        raise
+    _mark_offered(error)
+    return False
+
+
+def _mark_offered(error: BaseException) -> None:
     try:
         setattr(error, _OFFERED_ATTR, True)
     except Exception:
         pass
-    return False
 
 
 def _implements(path: Path, name: str) -> bool:

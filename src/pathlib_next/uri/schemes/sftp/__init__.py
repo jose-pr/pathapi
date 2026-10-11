@@ -11,7 +11,7 @@ import typing as _ty
 import weakref as _weakref
 
 from .... import utils as _utils
-from ....path import check_follow, contains
+from ....path import check_follow, contains, copy_error_predicate
 from ....utils.stat import FileStat
 from ... import Source, Uri, UriPath, same_authority
 
@@ -129,9 +129,12 @@ class BaseSftpBackend(object):
         follow_symlinks: bool,
         preserve_metadata: bool,
         ignore_error,
+        on_error=None,
     ) -> None:
         """Copy the directory `path` into the existing `target` directory,
-        on the host both are on. Only called when `supports_tree`."""
+        on the host both are on. Only called when `supports_tree`.
+        `on_error(error, path)`, when given, decides whether a failure of one
+        child is skipped; `ignore_error` is then None."""
         raise NotImplementedError("tree_copy()")
 
     def tree_rm(self, path: "SftpPath", *, missing_ok: bool, on_error) -> None:
@@ -854,6 +857,7 @@ class SftpPath(UriPath):
         recursive=False,
         ignore_error=None,
         progress=None,
+        on_error=None,
     ):
         """Copy with concurrent fan-out on the asyncssh backend.
 
@@ -865,7 +869,13 @@ class SftpPath(UriPath):
         generic single-file fallback path below, but **not** called during
         the concurrent native fan-out itself -- see `docs/divergences.md`'s
         "Deliberate extensions" section for the documented limitation.
+        `on_error(error, path)` is `Path.copy()`'s predicate; the native
+        fan-out calls it from a worker thread, once per failing child.
         """
+        offering = copy_error_predicate(ignore_error, on_error)
+        # Passed on only when given: a backend or a `copy()` written before
+        # the keyword has no parameter for it.
+        extra = {} if offering is None else {"on_error": offering}
         if (
             not recursive
             or not self.backend.supports_tree
@@ -888,6 +898,7 @@ class SftpPath(UriPath):
                 recursive=recursive,
                 ignore_error=ignore_error,
                 progress=progress,
+                **extra,
             )
 
         if contains(self, target):
@@ -917,4 +928,5 @@ class SftpPath(UriPath):
             follow_symlinks=follow_symlinks,
             preserve_metadata=preserve_metadata,
             ignore_error=ignore_error,
+            **extra,
         )
