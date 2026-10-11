@@ -241,8 +241,8 @@ Base class for I/O paths.
   containing `/` or NUL): every URI scheme's listing skips such a name, the
   `UriPath` default included, and an override must too.
 - `glob()` —
-  pathlib semantics: hidden entries included, `**` never descends into
-  directory symlinks (`recurse_symlinks=True` → `NotImplementedError`), a
+  pathlib semantics: hidden entries included, `**` does not descend into
+  directory symlinks unless `recurse_symlinks=True`, a
   trailing `**` selects files too on 3.13+, a missing or non-directory base
   yields nothing, `""` → `ValueError`, an absolute pattern →
   `glob.NonRelativePatternError`. `recursive=None` enables recursion when a
@@ -254,7 +254,12 @@ Base class for I/O paths.
   must be a directory (`a.txt/..` selects nothing), and from 3.12 the last
   is tested without following a link, so a dangling symlink is selected.
   An explicit `case_sensitive` compares literals against the listing too
-  and yields the name as stored; `.` and `..` stay literal. A pattern with
+  and yields the name as stored, and so does 3.12 without it (3.12 lists
+  every literal; later versions join it as typed); `.` and `..` stay
+  literal. From 3.13 on Windows a final literal with a trailing separator is
+  tested as `os.path.lexists(name + os.sep)`, so a dangling directory link
+  is selected (`LocalPath` and stdlib paths; `native=False` tests it by
+  following the link). A pattern with
   no component (`.`) is a `ValueError`; `rglob(".")` selects every entry
   below.
   - **`pattern=None`** expands the pattern THIS PATH CARRIES
@@ -280,6 +285,14 @@ Base class for I/O paths.
     seen, the same line `find -L` draws. A backend whose stat carries no
     identity (`MemPath`, most remote schemes, a `st_ino` of 0 or `None`) is
     walked unbounded.
+  - **`recurse_symlinks=True`** lets `**` descend through symlinks to
+    directories, as pathlib 3.13 does (the keyword is accepted on every
+    version). A link to a directory the descent is already inside
+    (`(st_dev, st_ino)` equal) is an entry and is not entered, and where the
+    stat carries no identity no more than 40 links are followed in one
+    descent, so a loop ends where pathlib follows it until the system refuses
+    it; those repeated entries are the only difference. A backend without
+    symlinks answers as before.
   - **`native=True`** (default) follows the running interpreter on the three
     rules pathlib changed mid-series: a trailing `/` is ignored before 3.11
     and selects directories only from 3.11; `a**` raises `ValueError`
@@ -686,7 +699,7 @@ empty) is advisory and never raises.
 def glob(
     path, *, dironly=False, root_dir=None, recursive=False,
     include_hidden=False, case_sensitive=None, native=True, on_error=None,
-    bound_loops=False,
+    bound_loops=False, recurse_symlinks=False,
 ) -> Iterator[_Globable]: ...
 def compile_pattern(pat, case_sensitive): ...
 WILCARD_PATTERN = WILDCARD_PATTERN
@@ -694,6 +707,7 @@ def parse_pattern(pattern, *, native=True) -> Tuple[List[str], bool]: ...
 def select(
     base, parts, *, dironly=False, recursive=True, include_hidden=True,
     case_sensitive=None, native=True, on_error=None, bound_loops=False,
+    recurse_symlinks=False,
 ) -> Iterator[_Globable]: ...
 def full_match(segments, pattern, case_sensitive) -> bool: ...
 

@@ -246,10 +246,12 @@ def test_localpath_drive_inside_pattern_stays_under_self(tree):
     assert list(root.glob("sub\\*.py")) == [root / "sub" / "c.py"]
 
 
-def test_recurse_symlinks_true_is_unsupported(impl):
+def test_recurse_symlinks_adds_nothing_where_the_tree_has_no_links(impl):
     assert _ours(impl, "glob", "*.py", recurse_symlinks=False) == {"b.py"}
-    with pytest.raises(NotImplementedError):
-        impl.glob("**", recurse_symlinks=True)
+    for method, pattern in (("glob", "**"), ("glob", "**/*.py"), ("rglob", "*")):
+        assert _ours(impl, method, pattern, recurse_symlinks=True) == _ours(
+            impl, method, pattern
+        )
 
 
 def test_uripath_question_mark_is_a_wildcard(tree):

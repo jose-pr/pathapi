@@ -814,12 +814,19 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
 
         Pathlib semantics: hidden entries are matched (`include_hidden=False`
         filters them out and skips hidden directories), a trailing separator
-        selects directories only, "**" never descends into a directory
-        symlink, and a trailing "**" also selects files on Python 3.13+
+        selects directories only, "**" does not descend into a directory
+        symlink by default, and a trailing "**" also selects files on Python 3.13+
         (directories only before). A missing or non-directory parent selects
         nothing. An empty pattern raises `ValueError`, an absolute one
         `glob.NonRelativePatternError` (a `NotImplementedError` and a
-        `ValueError`). `recurse_symlinks=True` is not supported.
+        `ValueError`).
+
+        `recurse_symlinks=True` lets "**" descend through symlinks to
+        directories, as pathlib 3.13 does. Where that would loop it stops: a
+        link to a directory the descent is already inside (compared by
+        `st_dev`/`st_ino`) is an entry but is not entered, and where the stat
+        carries no identity no more than 40 links are followed in one
+        descent. A backend without symlinks is not affected.
 
         `pattern=None` expands the pattern THIS PATH CARRIES
         (`LocalPath("/etc/*.conf").glob(None)`) instead of applying one to a
@@ -862,8 +869,6 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         Note for remote schemes (http/sftp): a recursive glob walks the
         whole remote subtree, one request/roundtrip per directory.
         """
-        if recurse_symlinks:
-            raise NotImplementedError("glob(recurse_symlinks=True)")
         if pattern is None:
             # The pattern is the path itself; `glob()` splits at the first
             # wildcard, so an absolute one is fine here (unlike a pattern
@@ -877,6 +882,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
                 native=native,
                 on_error=on_error,
                 bound_loops=bound_loops,
+                recurse_symlinks=recurse_symlinks,
             )
         # Validates eagerly (like pathlib 3.13+); the returned selection is
         # lazy. The pattern is never joined onto self: `self / pattern` let an
@@ -894,6 +900,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
             native=native,
             on_error=on_error,
             bound_loops=bound_loops,
+            recurse_symlinks=recurse_symlinks,
         )
 
     def rglob(

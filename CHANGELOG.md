@@ -24,6 +24,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   import and are the same objects, so nothing has to change; a scheme written
   outside this package can use the documented names instead. `path.__all__`
   now lists `check_follow` and `contains`.
+- **`glob(recurse_symlinks=True)` and `rglob(recurse_symlinks=True)` work.**
+  They raised `NotImplementedError` on every class. `**` now descends through
+  symlinks to directories, as pathlib 3.13 does, and the keyword is accepted
+  on every Python version. A loop ends where pathlib 3.13 would follow it
+  until the system refuses: a link to a directory the descent is already
+  inside (`st_dev`/`st_ino`) is listed as an entry and not entered, and a
+  backend whose stat has no identity follows at most 40 links in one descent.
+  `utils.glob.glob()` and `utils.glob.select()` take the keyword too. The
+  default stays `False`; a caller that caught the `NotImplementedError` to
+  fall back to its own walk can drop the fallback.
 
 ### Changed
 - **`move()` asks a backend about each end once.** A move that falls back to
@@ -35,6 +45,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   directory move makes fewer requests. Every refusal `move()` made is made as
   before, in the same order. Nothing to change in a caller or a subclass; a
   class that overrides `samefile()` is still asked.
+
+### Fixed
+- **On Python 3.12 a literal pattern component typed in another case yields
+  the stored name.** On a case-insensitive filesystem `glob("SUB")` selected
+  `SUB` where pathlib 3.12 selects the entry as the directory lists it (`sub`),
+  because 3.12 reads every literal from the listing. `native=True` (the
+  default) follows 3.12 there; other versions and `native=False` still join a
+  literal as typed. Nothing to change for a caller.
+- **On Windows with Python 3.13 and later `glob("name/")` selects a dangling
+  directory symlink**, as pathlib does. `LocalPath` selected nothing for it;
+  a trailing separator on a literal is now tested the way pathlib tests it.
+  Other platforms and versions are unchanged.
 
 ## [0.9.13] - 2026-10-09
 

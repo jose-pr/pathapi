@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import fnmatch as _fnmatch
 import functools as _func
+import os as _os
+import pathlib as _pathlib
 import re as _re
 import sys as _sys
 import typing as _ty
@@ -50,6 +52,22 @@ _PARTIAL_DOUBLESTAR_ALLOWED = _sys.version_info >= (3, 13)
 #     dangling symlink is selected; before that it is tested with `exists()`.
 _INTERMEDIATE_LITERAL_IS_CHECKED = _sys.version_info < (3, 13)
 _FINAL_LITERAL_IS_NOT_FOLLOWED = _sys.version_info >= (3, 12)
+
+# Two more rules of the same kind, followed when `native=True`:
+#   - 3.12 selects every literal component (but "..") from the directory
+#     listing, as it does a wildcard, so a literal typed in another case yields
+#     the stored name where the filesystem ignores case. Other versions join a
+#     literal as typed.
+#   - from 3.13 pathlib tests a final literal with a trailing separator as
+#     `lexists(name + os.sep)`, and Windows' lstat does not follow a directory
+#     link given that spelling, so a dangling one is selected there.
+_LITERALS_ARE_LISTED = _sys.version_info[:2] == (3, 12)
+_DIRONLY_LITERAL_IS_LEXISTS = _os.name == "nt" and _sys.version_info >= (3, 13)
+
+#: Symlinks one descent may pass through when `recurse_symlinks=True` and the
+#: backend's stat carries no identity to tell a loop by: what the operating
+#: system allows in resolving one path.
+_MAX_LINK_TRAVERSALS = 40
 
 #: Components that name a directory relative to the one before them.
 _SPECIAL_PARTS = (".", "..")
@@ -219,6 +237,7 @@ def glob(
     native: bool = True,
     on_error: "_ty.Callable[[OSError], None] | None" = None,
     bound_loops: bool = False,
+    recurse_symlinks: bool = False,
 ) -> _ty.Iterator[_Globable]:
     """Return an iterator which yields the paths matching a pathname pattern.
 
@@ -234,7 +253,8 @@ def glob(
     otherwise. `recursive=None` decides
     from the pattern itself, as `Path.glob()` does: a "**" component enables
     it. `native=` follows the running interpreter's rules, or applies one
-    rule on every version -- see `parse_pattern()`.
+    rule on every version -- see `parse_pattern()`. `recurse_symlinks=True`
+    lets "**" descend through symlinks to directories, see `select()`.
 
     The pattern is validated when this is called and the paths are selected
     lazily. The path's anchor (a drive, an extended-length drive prefix) is
@@ -279,6 +299,7 @@ def glob(
         native=native,
         on_error=on_error,
         bound_loops=bound_loops,
+        recurse_symlinks=recurse_symlinks,
     )
 
 
@@ -301,6 +322,7 @@ def select(
     native: bool = True,
     on_error: "_ty.Callable[[OSError], None] | None" = None,
     bound_loops: bool = False,
+    recurse_symlinks: bool = False,
 ) -> _ty.Iterator[_Globable]:
     """Yield the paths under `base` matching the pattern components `parts`
     (see `parse_pattern()`); the engine behind `Path.glob()`.
@@ -312,11 +334,17 @@ def select(
     also selects files on Python 3.13+ and directories only before, which is
     the third rule `native=False` pins: it then selects files on every
     version (3.13's rule, the one current pathlib applies).
+
+    With `recurse_symlinks=True` "**" also descends through a symlink to a
+    directory, as pathlib 3.13 does, and ends where that would loop: a link
+    to a directory the descent is already inside (`st_dev`/`st_ino`) is an
+    entry but is not entered, and so is any link beyond the 40th in one
+    descent where the stat has no identity.
     """
     # An explicit `case_sensitive` asks for names to be compared, so a literal
     # is looked for in the listing and yields the name as stored, as pathlib
     # does when it is given. "." and ".." are never names to find.
-    explicit_case = case_sensitive is not None
+    explicit_case = case_sensitive is not None or (native and _LITERALS_ARE_LISTED)
     if case_sensitive is None:
         case_sensitive = getattr(base, "_is_case_sensitive", True)
     if recursive:
@@ -339,6 +367,8 @@ def select(
         bound_loops,
         _INTERMEDIATE_LITERAL_IS_CHECKED and native,
         _FINAL_LITERAL_IS_NOT_FOLLOWED or not native,
+        recurse_symlinks,
+        _DIRONLY_LITERAL_IS_LEXISTS and native,
     )
     selected = _select(base, steps, 0, opts, None)
     if sum(1 for _, kind in steps if kind is None) < 2:
@@ -360,6 +390,8 @@ class _Options(_ty.NamedTuple):
     bound_loops: bool = False
     check_intermediate_literal: bool = _INTERMEDIATE_LITERAL_IS_CHECKED
     unfollowed_final_literal: bool = _FINAL_LITERAL_IS_NOT_FOLLOWED
+    recurse_symlinks: bool = False
+    dironly_literal_is_lexists: bool = False
 
 
 def _select(
@@ -387,10 +419,15 @@ def _select(
                 with_files,
                 opts.on_error,
                 opts.bound_loops,
+                opts.recurse_symlinks,
             )
             return
         for directory, listing in _recurse_dirs(
-            path, opts.include_hidden, opts.on_error, opts.bound_loops
+            path,
+            opts.include_hidden,
+            opts.on_error,
+            opts.bound_loops,
+            opts.recurse_symlinks,
         ):
             yield from _select(directory, steps, index + 1, opts, True, listing)
         return
@@ -417,7 +454,7 @@ def _select(
                 return
             yield from _select(child, steps, index + 1, opts, None)
         elif opts.dironly:
-            if child.is_dir():
+            if _names_a_directory(child, opts.dironly_literal_is_lexists):
                 yield child
         elif (
             child.exists(follow_symlinks=False)
@@ -448,9 +485,11 @@ def _recurse(
     with_files: bool,
     on_error=None,
     bound_loops: bool = False,
+    recurse_symlinks: bool = False,
 ) -> _ty.Iterator[_Globable]:
     """Yield `top` and every directory below it (plus every other entry when
-    `with_files`), never descending through a directory symlink.
+    `with_files`), never descending through a directory symlink unless
+    `recurse_symlinks` (see `_follow_guard()`).
 
     With `bound_loops`, a directory whose identity (`st_dev`, `st_ino`) is
     already on the CURRENT DESCENT PATH is skipped: that is what a loop is
@@ -471,23 +510,33 @@ def _recurse(
     yield top
     top_key = _identity(top) if bound_loops else None
     # Each stack entry carries the identities of the directories the walk is
-    # currently inside -- pushed on descent, dropped with the branch.
-    stack = [(top, (top_key,) if top_key is not None else ())]
+    # currently inside -- pushed on descent, dropped with the branch -- and,
+    # for `recurse_symlinks`, the directories themselves and the links passed.
+    stack = [(top, (top_key,) if top_key is not None else (), (top,), 0)]
     while stack:
-        directory, ancestors = stack.pop()
+        directory, ancestors, chain, links = stack.pop()
         for child, stat in _scan(directory, on_error):
             if not include_hidden and child.is_hidden():
                 continue
-            is_dir = _entry_is_dir(child, stat, follow_symlinks=False)
-            child_ancestors = ancestors
+            is_dir = _entry_is_dir(child, stat, follow_symlinks=recurse_symlinks)
+            child_ancestors, child_chain, child_links = ancestors, chain, links
+            enter = is_dir
             if is_dir:
-                descend, child_ancestors = _loop_guard(child, ancestors, bound_loops)
-                if not descend:
-                    continue
+                if recurse_symlinks:
+                    # A link that would loop is still an entry, but not entered.
+                    enter, child_chain, child_links = _follow_guard(
+                        child, stat, chain, links
+                    )
+                if enter:
+                    descend, child_ancestors = _loop_guard(
+                        child, ancestors, bound_loops
+                    )
+                    if not descend:
+                        continue
             if is_dir or with_files:
                 yield child
-            if is_dir:
-                stack.append((child, child_ancestors))
+            if enter:
+                stack.append((child, child_ancestors, child_chain, child_links))
 
 
 def _recurse_dirs(
@@ -495,6 +544,7 @@ def _recurse_dirs(
     include_hidden: bool,
     on_error=None,
     bound_loops: bool = False,
+    recurse_symlinks: bool = False,
 ) -> _ty.Iterator[_ty.Tuple[_Globable, _ty.Sequence]]:
     """`_recurse()` over directories only, as `(directory, its listing)`: the
     caller lists each one next, and gets the listing that found the
@@ -506,28 +556,80 @@ def _recurse_dirs(
     top_key = _identity(top) if bound_loops else None
     stack = [
         (
-            _subdirectories(entries, include_hidden),
+            _subdirectories(entries, include_hidden, recurse_symlinks),
             (top_key,) if top_key is not None else (),
+            (top,),
+            0,
         )
     ]
     while stack:
-        children, ancestors = stack.pop()
-        for child in children:
+        children, ancestors, chain, links = stack.pop()
+        for child, stat in children:
+            child_chain, child_links = chain, links
+            if recurse_symlinks:
+                descend, child_chain, child_links = _follow_guard(
+                    child, stat, chain, links
+                )
+                if not descend:
+                    continue
             descend, child_ancestors = _loop_guard(child, ancestors, bound_loops)
             if not descend:
                 continue
             entries = _scan(child, on_error)
             yield child, entries
-            stack.append((_subdirectories(entries, include_hidden), child_ancestors))
+            stack.append(
+                (
+                    _subdirectories(entries, include_hidden, recurse_symlinks),
+                    child_ancestors,
+                    child_chain,
+                    child_links,
+                )
+            )
 
 
-def _subdirectories(entries, include_hidden: bool) -> "list[_Globable]":
+def _subdirectories(
+    entries, include_hidden: bool, recurse_symlinks: bool = False
+) -> "list[tuple[_Globable, _ty.Any]]":
+    """`(child, its listing stat)` for each directory among `entries`; through
+    a symlink to a directory only when `recurse_symlinks`."""
     return [
-        child
+        (child, stat)
         for child, stat in entries
         if (include_hidden or not child.is_hidden())
-        and _entry_is_dir(child, stat, follow_symlinks=False)
+        and _entry_is_dir(child, stat, follow_symlinks=recurse_symlinks)
     ]
+
+
+def _follow_guard(child: _Globable, stat, chain: tuple, links: int):
+    """`(descend, chain, links)` for a directory `child` of the last
+    directory of `chain` (the directories the descent is inside, the top
+    first), `links` of which were entered through a symlink.
+
+    A directory reached through a symlink is not entered when it is one of
+    the directories already in `chain` -- a loop, which would match everything
+    under it again and again. Where the stat has no identity (most remote
+    backends) a link is not entered after 40 of them. A directory reached
+    without a link cannot close a loop by itself and costs no stat."""
+    if not _is_link(child, stat):
+        return True, chain + (child,), links
+    key = _identity(child)
+    if key is not None:
+        if any(_identity(directory) == key for directory in chain):
+            return False, chain, links
+    elif links >= _MAX_LINK_TRAVERSALS:
+        return False, chain, links
+    return True, chain + (child,), links + 1
+
+
+def _is_link(path: _Globable, stat) -> bool:
+    """Whether `path` is a symlink, by the listing's non-following stat when
+    there is one."""
+    if stat is not None:
+        return stat.is_symlink()
+    try:
+        return path.is_symlink()
+    except (OSError, NotImplementedError, ValueError):
+        return False
 
 
 def _loop_guard(child: _Globable, ancestors: tuple, bound_loops: bool):
@@ -608,6 +710,16 @@ def _child(directory: _Globable, name: str, stat=None) -> _Globable:
         # listing's stat saves a round trip per entry.
         return directory._make_child_relpath(name, stat_hint=stat)
     return directory / name
+
+
+def _names_a_directory(path: _Globable, lexists: bool) -> bool:
+    """Whether the literal `path`, given with a trailing separator, is a
+    directory. `lexists` is pathlib 3.13+'s test on Windows (see
+    `_DIRONLY_LITERAL_IS_LEXISTS`), made on the file `path` is; any other path
+    is a directory when it follows to one."""
+    if lexists and isinstance(path, _pathlib.Path):
+        return _os.path.lexists(_os.fspath(path) + _os.sep)
+    return path.is_dir()
 
 
 def _entry_is_dir(path: _Globable, stat, *, follow_symlinks: bool) -> bool:
