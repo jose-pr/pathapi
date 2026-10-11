@@ -30,7 +30,8 @@ rule sets the matching capability attribute to False on its test class; the
 affected tests then report as skipped, never as passed. Every attribute
 defaults to True except `supports_question_mark_names`:
 
-- `ReadPathContract.supports_listing` -- `iterdir()`, `glob()`, `walk()`.
+- `ReadPathContract.supports_listing` -- `iterdir()`, `glob()`, `walk()`
+  (a listing's stat whose `size_known` is False is held to its type only).
 - `ReadPathContract.supports_empty_directories` -- `empty_dir/` lists as
   empty (git trees cannot hold an empty directory, so a placeholder file
   lives there).
@@ -271,7 +272,8 @@ class ReadPathContract(PurePathContract):
     def test_listing_metadata_agrees_with_stat(self, root):
         # `_scandir()` carries the metadata `walk()`, `rm()` and `PathSyncer`
         # trust without a `stat()` per entry; `None` means unknown, never a
-        # different answer.
+        # different answer, and a stat with `size_known` False answers the
+        # type alone.
         self._require("supports_listing")
         listed = dict(root._scandir())
         assert set(listed) == {"a.txt", "b.py", ".hidden.txt", "sub", "empty_dir"}
@@ -280,7 +282,7 @@ class ReadPathContract(PurePathContract):
                 continue
             real = (root / name).stat()
             assert _stat.S_ISDIR(entry.st_mode) == _stat.S_ISDIR(real.st_mode), name
-            if not _stat.S_ISDIR(real.st_mode):
+            if not _stat.S_ISDIR(real.st_mode) and getattr(entry, "size_known", True):
                 assert entry.st_size == real.st_size, name
 
     def test_stat_missing_raises_file_not_found(self, root):

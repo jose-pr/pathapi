@@ -1014,9 +1014,10 @@ class HttpPath(UriPath):
                 )
             else:
                 # No exact byte count or no date in the listing (the stdlib
-                # `<ul>` index, a "1.2K" column): a hint would hand the
-                # child's first `stat()` a made-up size/mtime.
-                stat = None
+                # `<ul>` index, a "1.2K" column): the entry is a file, but a
+                # size or time here would be made up, so the hint is
+                # type-only and `stat()` asks the server.
+                stat = FileStat(is_dir=False, size_known=False)
             yield name, stat
 
     def _is_dir(self, resp: _req.Response):

@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `TypeError` before anything is copied. `sftp:` (the asyncssh concurrent walk
   included), `s3:`, `gs:` and `az:` accept it, and `PathContract` gains a test
   that gives one predicate to `rm()` and `copy()`.
+- **`FileStat.size_known`, and listings that know a type but not a size.**
+  A listing can now say "this is a file" without inventing its size: a stat
+  with `size_known=False` answers `is_dir()`, `is_file()`, `exists()`,
+  `walk()`, `glob()` and `rm(recursive=True)`, while `stat()` of the listed
+  child asks the server for the real size and time, and `PathSyncer`, the
+  progress total of `copy()` and `quick_check` never read the placeholder.
+  `gitlab:` blobs, an Apache index with sizes like `1.2K` and the stdlib
+  bulleted-list index (`http:`) used to give no hint at all, so walking a tree
+  cost a request per file; it now costs one per directory. An exact size from a
+  listing that has one stays a full hint. A scheme of your own may yield
+  `FileStat(is_dir=False, size_known=False)` from `_scandir()`; code that reads
+  a listing's `st_size` or `st_mtime` should check `size_known`.
 - **`PathSyncer(follow_mounts=False)` and `uripath sync --no-follow-mounts`.**
   A mount point found below the target root (a mounted volume, a bind mount)
   is still synced into by default, as `rsync` does. With `follow_mounts=False`

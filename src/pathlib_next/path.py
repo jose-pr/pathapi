@@ -1669,7 +1669,11 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
                         total_size=(
                             _ASK_STAT
                             if src_stat is None
-                            else getattr(src_stat, "st_size", None)
+                            else (
+                                getattr(src_stat, "st_size", None)
+                                if getattr(src_stat, "size_known", True)
+                                else None
+                            )
                         ),
                     )
             except BaseException:

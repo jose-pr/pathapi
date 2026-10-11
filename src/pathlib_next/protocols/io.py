@@ -188,7 +188,8 @@ class BinaryOpen(_ty.Protocol):
 
         if total_size is _ASK_STAT:
             try:
-                total_size = self.stat().st_size
+                stat = self.stat()
+                total_size = stat.st_size if getattr(stat, "size_known", True) else None
             except (AttributeError, NotImplementedError, OSError):
                 total_size = None
 

@@ -32,7 +32,7 @@ class FileStat(_FStat):
         "st_mtime",
         "st_ctime",
     )
-    __slots__ = _FIELDS + ("mode_known",)
+    __slots__ = _FIELDS + ("mode_known", "size_known")
 
     st_mode: int
     st_nlink: int
@@ -50,13 +50,22 @@ class FileStat(_FStat):
     #: False, so an invented read-only mode never lands on a real file.
     mode_known: bool
 
+    #: False when the listing this stat came from knew the entry's type but
+    #: not its size and time: `st_size` and `st_mtime` are then placeholders
+    #: (0), and only the type answers (`is_dir()`, `is_file()`). A consumer of
+    #: a listing's stat that needs a size or a time asks the path itself, as it
+    #: does for a stat that is `None`.
+    size_known: bool
+
     def __init__(
         self,
         st_mode: int | None = None,
         st_size: int = 0,
         st_mtime: float = 0,
         is_dir: bool = False,
+        size_known: bool = True,
     ):
+        self.size_known = size_known
         self.mode_known = bool(st_mode)
         if st_mode and not _stat.S_IFMT(st_mode):
             # Permission bits alone: the type comes from `is_dir`.
@@ -124,6 +133,7 @@ class FileStat(_FStat):
         result.mode_known = bool(getattr(stat, "mode_known", True)) and bool(
             result.st_mode
         )
+        result.size_known = bool(getattr(stat, "size_known", True))
         return result
 
     @classmethod

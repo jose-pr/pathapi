@@ -834,10 +834,12 @@ class PathSyncer(object):
                 # `_sweep()` removes the stale ones.
                 continue
             elif not follow:
-                # `None` means "stat unknown" (GitLab blobs, FTP's NLST
-                # fallback), not "missing": ask the path itself before
-                # remove_missing can treat the entry as gone.
-                if stat is None:
+                # `None` means "stat unknown" (FTP's NLST fallback), not
+                # "missing": ask the path itself before remove_missing can
+                # treat the entry as gone. So does a stat that knows the type
+                # and not the size (GitLab blobs, an HTTP index without sizes):
+                # the comparison and the copy read the size and the time.
+                if stat is None or not getattr(stat, "size_known", True):
                     stat = FileStat.from_path(child, follow_symlink=False)
                 children.append((name, PathAndStat.from_stat(child, stat)))
             else:
@@ -919,7 +921,7 @@ class PathSyncer(object):
         try:
             if listed is not None:
                 listed = FileStat.from_stat(listed)
-                if not listed.is_symlink():
+                if listed.size_known and not listed.is_symlink():
                     return PathAndStat.from_stat(child, listed)
             return PathAndStat(child, follow_symlink=True)
         except FileNotFoundError:

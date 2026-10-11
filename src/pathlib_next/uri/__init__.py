@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import pathlib as _pathlib
 import re as _re
+import stat as _stat
 import posixpath as _posix
 import threading as _threading
 import typing as _ty
@@ -1595,10 +1596,27 @@ class UriPath(Uri, Path):
     def _pop_stat_hint(self) -> "FileStat | None":
         """Consume this instance's pre-seeded stat (from `_scandir()`), if
         any -- single-use: the next `stat()` call on this same object always
-        re-fetches, so a live mutation is never masked by a stale hint."""
+        re-fetches, so a live mutation is never masked by a stale hint. A
+        type-only hint (`size_known` False) is consumed and not returned:
+        `stat()` has to give a size and a time, which it does not hold."""
         hint = self._stat_hint
         self._stat_hint = None
+        if hint is not None and not hint.size_known:
+            return None
         return hint
+
+    def _st_mode(self, *, follow_symlinks=True):
+        # The type questions (`is_dir()`, `is_file()`, `exists()`, ...) are
+        # answered by a type-only hint without a request. The hint is the
+        # answer to a non-following stat, so it speaks for a followed one only
+        # when the entry is not a link.
+        hint = self._stat_hint
+        if hint is not None and not hint.size_known:
+            self._stat_hint = None
+            mode = hint.st_mode
+            if _stat.S_IFMT(mode) and (not follow_symlinks or not _stat.S_ISLNK(mode)):
+                return mode
+        return super()._st_mode(follow_symlinks=follow_symlinks)
 
     def iterdir(self) -> "_ty.Iterator[Self]":
         for name, stat in self._scandir():

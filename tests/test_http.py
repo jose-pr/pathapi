@@ -623,8 +623,8 @@ def test_approximate_listing_size_is_not_a_stat_hint(monkeypatch):
         ],
     )
     entries = dict(HttpPath("http://example.com/d/")._scandir())
-    assert entries["f.txt"] is None
-    assert entries["g.txt"].st_size == 7
+    assert entries["f.txt"].is_file() and not entries["f.txt"].size_known
+    assert entries["g.txt"].st_size == 7 and entries["g.txt"].size_known
 
 
 def test_listing_parser_marks_human_readable_sizes_approximate():

@@ -913,7 +913,10 @@ class FileStat:
     st_mtime: float
     st_ctime: float
     mode_known
-    def __init__(self, st_mode=None, st_size=0, st_mtime=0, is_dir=False): ...
+    size_known
+    def __init__(
+        self, st_mode=None, st_size=0, st_mtime=0, is_dir=False, size_known=True,
+    ): ...
     @classmethod
     def from_stat(cls, stat) -> FileStat: ...
     @classmethod
@@ -925,10 +928,17 @@ class FileStat:
 
 Slotted stat for non-`os` backends, with the fields of `os.stat_result`
 (`st_mode`, `st_nlink`, `st_uid`, `st_gid`, `st_size`, `st_atime`, `st_mtime`,
-`st_ctime`) and `mode_known`. Without `st_mode`, a placeholder
+`st_ctime`), `mode_known` and `size_known`. Without `st_mode`, a placeholder
 (`S_IFREG|0o444` / `S_IFDIR|0o555`) with `mode_known=False`. A bare
 permission `st_mode` (`0o644`) gets the type bits of `is_dir` ORed in and
-counts as reported; one that carries a type keeps it.
+counts as reported; one that carries a type keeps it. `size_known=False`
+(default `True`) marks a listing's **type-only** stat: the entry is known to
+be a file (or a directory) and `st_size` and `st_mtime` are placeholders (0).
+It answers the type (`is_dir()`, `is_file()`, `exists()`, `walk()`, `glob()`,
+`rm(recursive=True)`) and nothing else: `UriPath` does not hand it to
+`stat()`, which asks the server, and `PathSyncer`, `copy()`'s progress total and
+`quick_check` ask the path for a size or a time instead of reading the
+placeholder (`from_stat()` copies the flag from a foreign stat that has one).
 `from_stat(stat)` (a `FileStat` passes through; `None` fields become 0),
 `from_path(path, *, follow_symlink=True) -> FileStat | None` (`None` only
 on `FileNotFoundError`), `settime(value)`, `setmode(value, isdir=None)`,
@@ -1493,6 +1503,13 @@ Building and deriving a path:
   is narrower than the authority (an archive, an Azure container).
 - `_pop_stat_hint()` — the stat `_scandir()` attached to this child, once: a
   `stat()` that returns it saves the request, and the next call asks again.
+  A type-only hint (`size_known` False) is consumed and not returned, so
+  `stat()` asks the server; `is_dir()`, `is_file()`, `exists()` and
+  `is_symlink()` of the child use it instead (`_st_mode()`), once. A scheme
+  whose listing knows a file's type and not its size yields
+  `FileStat(is_dir=False, size_known=False)` rather than `None`: `walk()`,
+  `glob()` and `rm(recursive=True)` then cost one request per directory.
+  `gitlab:` (blobs) and `http:` (an index without exact sizes) do.
 - `_listdir()` — the names `_scandir()` lists by default; a stub.
 - `_schemes()` — the scheme names this class registers.
 
@@ -2142,10 +2159,11 @@ Same backend, properties and read-only
 contract; API root `https://host[:port]/api/v4` (`gitlab.com` by
 default). Without `?ref=` the default branch is fetched once
 (`GET /projects/:id`) and cached in `backend.cache`. Tree listings are
-paginated (100 per page); file entries carry no stat hint (a `stat()` per
-file, which is a `HEAD` of the files endpoint reading `X-Gitlab-Size`; a
-reply without it, or a refused `HEAD`, is followed by a `GET` of the file's
-metadata); `st_mtime` is `0`. Replies of the wrong shape are
+paginated (100 per page); a blob entry is a type-only hint
+(`size_known=False`), so `walk()`, `glob()` and `rm(recursive=True)` cost one
+request per directory; the `stat()` of a file is a `HEAD` of the files
+endpoint reading `X-Gitlab-Size` (a reply without it, or a refused `HEAD`, is
+followed by a `GET` of the file's metadata); `st_mtime` is `0`. Replies of the wrong shape are
 `OSError(EIO)` as for `GitHubPath`.
 
 ### `GitPath` — `git:` (`pathlib_next.uri.schemes.git`)

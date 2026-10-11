@@ -188,10 +188,10 @@ def test_gitlab_stat_missing_path_raises_file_not_found(gitlab_api_server):
         p.stat()
 
 
-def test_gitlab_scandir_blob_entries_have_no_stat_hint(gitlab_api_server):
+def test_gitlab_scandir_blob_entries_are_type_only_hints(gitlab_api_server):
     p = _gitlab(gitlab_api_server)
     entries = dict(p._scandir())
-    assert entries["a.txt"] is None
+    assert entries["a.txt"].is_file() and not entries["a.txt"].size_known
     assert entries["sub"].is_dir()
 
 

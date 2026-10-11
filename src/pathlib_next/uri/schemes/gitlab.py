@@ -225,8 +225,16 @@ class GitLabPath(_RepoApiPath):
             # The API's names are not trusted to be one path component.
             if not _utils.is_safe_child_name(entry["name"]):
                 continue
-            is_dir = entry["type"] == "tree"
-            yield entry["name"], (FileStat(is_dir=True) if is_dir else None)
+            # The tree listing carries no size: a blob is known to be a file
+            # (and a tree a directory), which is all `walk()` and `glob()` ask.
+            # Any other type (a submodule) is left to a `stat()`.
+            if entry["type"] == "tree":
+                hint = FileStat(is_dir=True)
+            elif entry["type"] == "blob":
+                hint = FileStat(is_dir=False, size_known=False)
+            else:
+                hint = None
+            yield entry["name"], hint
 
     def _open(self, mode="r", buffering=-1):
         self._check_read_mode(mode)
