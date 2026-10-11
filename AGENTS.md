@@ -101,6 +101,10 @@ Workflows live in `.github/workflows/`:
    SemVer in tags and the changelog).
 3. Before 1.0, bump the minor only when the documented API breaks. New methods,
    new optional arguments and fixes are patch releases.
+   A fix that corrects behaviour (to `pathlib` parity, to what the
+   documentation intends, or to remove a way to lose data) is a patch even
+   where an earlier header described the old behaviour; when a caller can
+   notice it, its changelog entry goes under `Changed` and says what to do.
 4. Run the full suite on the floor and latest interpreters, `mkdocs build
    --strict`, `python -m build`, and the maintainer's leak check (a scan for
    private references and agent-attribution commit trailers). Judge it by exit
