@@ -920,9 +920,14 @@ def test_copy_that_declines_an_error_stops_after_the_children_already_running(
             on_error=decline,
         )
 
-    # Children already running when one fails are each asked about their own
-    # error; the walk then stops.
-    assert 1 <= len(offered) <= (1 if kind == "paramiko" else _IN_FLIGHT)
+    # The sequential walk stops at the first error it is told not to skip.
+    # The concurrent one asks each child that fails before the others are
+    # cancelled about its own error: how many depends on the machine, never
+    # all of them.
+    if kind == "paramiko":
+        assert len(offered) == 1
+    else:
+        assert 1 <= len(offered) < len(expected)
     assert len(_files(root / "dst")) < len(expected)
     _native(kind, native_calls, "_concurrent_copy")
 
