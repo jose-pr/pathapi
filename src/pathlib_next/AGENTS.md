@@ -383,6 +383,9 @@ Base class for I/O paths.
     target with `unlink(missing_ok=True)` just before writing: a backend
     whose write replaces the file and which cannot delete implements
     `unlink()` so that `missing_ok=True` returns without removing.
+  - A recursive copy runs inside `target._write_batch()`: onto a `zip:`
+    archive it is one rewrite of the file, and a copy that raises leaves
+    the archive as it was.
   - A recursive copy refuses any child name that would not stay inside
     `target` — `..`, and when the target reads names with Windows rules
     (`utils.is_windows_flavoured()`) `\`, `:`, a trailing dot or space, and
@@ -491,6 +494,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
     def _copy_from(
         self, source, follow_symlinks=True, preserve_metadata=False,
     ) -> None: ...
+    def _write_batch(self) -> ContextManager[object]: ...
 
 def check_follow(name, policy) -> None: ...
 def contains(src, target) -> bool: ...
@@ -525,6 +529,13 @@ class CommitOnClose(BytesIO):
   modification time where the class can set them (`chmod()`, `_utime()`).
   `Path.copy()` of this library does not call it. A class that mixes a
   stdlib path keeps stdlib's.
+- `_write_batch()` — a context manager that `copy(recursive=True)` enters
+  around the writes it makes below its target and `PathSyncer.sync()`
+  around a whole sync of its root target (never for a dry run). Override it
+  in a class whose every write is expensive, to hold them and commit them
+  together when the block ends (`ArchiveUri` returns its `batch()`): entries
+  nest and must join, and an exception must undo what was held. It must
+  read nothing and raise nothing; the default does nothing.
 - `_scandir()`, `_same_filesystem()`, `_coerce_target()` — see `Path`.
   `_open()`, `_chown()` and `_utime()` — see `BinaryOpen` and `Chmod`.
 - `check_follow(name, policy)` — `ValueError` naming `name` unless `policy` is
@@ -820,6 +831,9 @@ One-way tree sync between any two
   target that cannot set one (`NotImplementedError`), or refuses
   (`OSError`), keep the time the copy gave them, and the sync does not
   report it. `False` leaves every copy with the time it was written at.
+- A `sync()` that is not a dry run runs inside the root target's
+  `_write_batch()`: onto a `zip:` archive the whole tree is one rewrite
+  of the file, and a sync that raises leaves the archive as it was.
 - `hook(source: PathAndStat, target: PathAndStat, event: SyncEvent,
   dry_run: bool)` is called for every event (structural ones included) with
   the call's `dry_run`.
@@ -2278,6 +2292,7 @@ MEMBER_SPOOL_BYTES = 16777216
 
 class ArchiveUri(UriPath):
     def refresh(self) -> None: ...
+    def batch(self) -> ContextManager[None]: ...
 class ZipUri(ArchiveUri): ...
 class TarUri(ArchiveUri): ...
 ArchiveZipUri = ZipUri
@@ -2379,6 +2394,25 @@ with the scheme it was written with.
   writing user owns the result; an archive the caller may not write
   (`os.access(..., W_OK)`) is refused with `PermissionError`, on every
   platform, before anything is written.
+- `batch()` — for a writable archive (`NotImplementedError` otherwise, as
+  for any write): inside the block every change (`"w"`/`"x"`/`"r+"`,
+  `mkdir()`, `unlink()`, `rmdir()`, `rename()`, `rm()`) goes to a member
+  list held in memory (written data up to `MEMBER_SPOOL_BYTES`, then an
+  unnamed temporary file), every path of the archive reads it, and the
+  file is not touched. When the outermost block ends without an exception
+  the archive is replaced ONCE, with the members, order and metadata that
+  the same changes made one by one would leave; an archive that does not
+  exist yet is created then. An exception leaves the file byte for byte as
+  it was and drops the changes, and so does an archive another process
+  replaced meanwhile (`OSError(EBUSY)`; their file stays). A block inside
+  another joins it and commits or drops nothing itself. The block holds the
+  archive for its thread: another thread's use of the archive waits for it.
+  Adding a member costs nothing in the size of the archive; deleting or
+  renaming one makes the next lookup derive the member list again.
+  `copy(recursive=True)` into a zip and `PathSyncer.sync()` onto one enter
+  it themselves, so each is one replacement; a copy or sync that raises
+  leaves the archive as it was, where the members written before the error
+  used to stay.
 - Removing a file never removes its directory: when `unlink()`, `rename()`
   or `rm()` takes the last member out of a directory that exists only
   through its members, the directory's own entry (`name/`) is written in

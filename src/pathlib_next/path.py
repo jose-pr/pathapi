@@ -1373,6 +1373,14 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         a local name."""
         return type(target) is type(self)
 
+    def _write_batch(self) -> "_ty.ContextManager[object]":
+        """A context manager that `copy(recursive=True)` and `PathSyncer` enter
+        around the writes they make to this path's tree, so a backend that
+        pays for every write (a zip rewrites its file) can commit them
+        together when the block ends. It must read nothing and raise nothing;
+        the default does nothing."""
+        return _contextlib.nullcontext()
+
     def _same_filesystem(self, other: "Path") -> bool:
         """Whether `other`'s segments are resolved in the same namespace as
         this path's: the same host, store or tree. Only when they are do
@@ -1610,64 +1618,67 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
                     "Cannot copy a directory into itself",
                     str(target),
                 )
-            # Listed before the target exists, as shutil.copytree does.
-            children = list(src.iterdir())
-            if not target_absent and target.exists():
-                if not target.is_dir():
-                    raise FileExistsError(target)
-                if not overwrite:
-                    raise FileExistsError(target)
-            else:
-                target.mkdir()
-            windows_target = _utils.is_windows_flavoured(target)
-            for child in children:
-                try:
-                    # The names come from a listing the destination does not
-                    # control (an archive, a remote index, an object-store
-                    # key), so one that is not a single component inside
-                    # `target` must never be joined onto it: on a Windows
-                    # target "C:x" joins to a drive-relative path outside it
-                    # entirely, and so does "a\\b"; "report." is stored as
-                    # "report", over whatever that file held. Reported through
-                    # `ignore_error` like any other per-child failure, not
-                    # silently skipped. `PathSyncer` and
-                    # `utils.unpack_archive()` apply the same rule per
-                    # destination; an archive listing keeps such names,
-                    # because they are ordinary filenames on POSIX.
-                    if not _utils.is_safe_child_name(
-                        child.name, windows=windows_target
-                    ):
-                        raise ValueError(
-                            f"refusing unsafe child name {child.name!r} "
-                            f"under {target}"
+            # The writes below may be committed together by a backend that
+            # pays for each one (see `_write_batch`).
+            with _write_batch_of(target):
+                # Listed before the target exists, as shutil.copytree does.
+                children = list(src.iterdir())
+                if not target_absent and target.exists():
+                    if not target.is_dir():
+                        raise FileExistsError(target)
+                    if not overwrite:
+                        raise FileExistsError(target)
+                else:
+                    target.mkdir()
+                windows_target = _utils.is_windows_flavoured(target)
+                for child in children:
+                    try:
+                        # The names come from a listing the destination does not
+                        # control (an archive, a remote index, an object-store
+                        # key), so one that is not a single component inside
+                        # `target` must never be joined onto it: on a Windows
+                        # target "C:x" joins to a drive-relative path outside it
+                        # entirely, and so does "a\\b"; "report." is stored as
+                        # "report", over whatever that file held. Reported through
+                        # `ignore_error` like any other per-child failure, not
+                        # silently skipped. `PathSyncer` and
+                        # `utils.unpack_archive()` apply the same rule per
+                        # destination; an archive listing keeps such names,
+                        # because they are ordinary filenames on POSIX.
+                        if not _utils.is_safe_child_name(
+                            child.name, windows=windows_target
+                        ):
+                            raise ValueError(
+                                f"refusing unsafe child name {child.name!r} "
+                                f"under {target}"
+                            )
+                        child.copy(
+                            target / child.name,
+                            overwrite=overwrite,
+                            follow_symlinks=follow_symlinks,
+                            preserve_metadata=preserve_metadata,
+                            recursive=True,
+                            ignore_error=ignore_error,
+                            progress=progress,
+                            # Passed on only when given, so a `copy()` override
+                            # without the keyword still works as a child.
+                            **({} if offering is None else {"on_error": offering}),
                         )
-                    child.copy(
-                        target / child.name,
-                        overwrite=overwrite,
-                        follow_symlinks=follow_symlinks,
-                        preserve_metadata=preserve_metadata,
-                        recursive=True,
-                        ignore_error=ignore_error,
-                        progress=progress,
-                        # Passed on only when given, so a `copy()` override
-                        # without the keyword still works as a child.
-                        **({} if offering is None else {"on_error": offering}),
-                    )
-                except Exception as e:
-                    if offering is not None:
-                        if not offering(e, child):
+                    except Exception as e:
+                        if offering is not None:
+                            if not offering(e, child):
+                                raise
+                        elif callable(ignore_error):
+                            # A notify-and-suppress hook: its return value is not
+                            # consulted, so `errors.append` works.
+                            ignore_error(e)
+                        elif not ignore_error:
                             raise
-                    elif callable(ignore_error):
-                        # A notify-and-suppress hook: its return value is not
-                        # consulted, so `errors.append` works.
-                        ignore_error(e)
-                    elif not ignore_error:
-                        raise
-            if preserve_metadata:
-                # After the children: a read-only directory could not take
-                # them, and its mode is only settled once they are in.
-                _copy_mode(src, target, follow_symlinks, src_stat)
-            return
+                if preserve_metadata:
+                    # After the children: a read-only directory could not take
+                    # them, and its mode is only settled once they are in.
+                    _copy_mode(src, target, follow_symlinks, src_stat)
+                return
 
         # What needs no I/O first; the stats below settle the rest.
         if _same_file(src, target, identity=False):
@@ -1937,6 +1948,13 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
             with handing:
                 src.copy(target, overwrite=overwrite)
             src.unlink()
+
+
+def _write_batch_of(path) -> "_ty.ContextManager[object]":
+    """`path._write_batch()`, where a path without the hook (a stdlib path)
+    gets a block that does nothing."""
+    hook = getattr(path, "_write_batch", None)
+    return hook() if callable(hook) else _contextlib.nullcontext()
 
 
 def _is_junction(path: "Path") -> bool:

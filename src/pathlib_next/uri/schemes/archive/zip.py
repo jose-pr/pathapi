@@ -14,7 +14,14 @@ from contextlib import contextmanager as _contextmanager
 
 from ....utils.stat import FileStat
 from ..file import FileUri
-from ._base import ArchiveUri, _ArchiveBackend, _LazyReadFile, _spool
+from ._base import (
+    MEMBER_SPOOL_BYTES,
+    ArchiveUri,
+    _ArchiveBackend,
+    _LazyReadFile,
+    _Snapshot,
+    _spool,
+)
 
 _ZIP64_EXTRA_ID = 0x0001
 
@@ -137,10 +144,132 @@ def _copy_entry(original, dst, info, new_name: str, end: "int | None") -> bool:
     return True
 
 
+def _remapper(exclude, rename):
+    """`remap(name) -> (new name | None, renamed)` for a rewrite: a name in
+    `exclude` goes, one in `rename` takes its new name, and a `<name>/` key of
+    `rename` also renames every entry nested under that prefix."""
+    prefixes = {old: new for old, new in rename.items() if old.endswith("/")}
+
+    def remap(name: str) -> "tuple[str | None, bool]":
+        if name in exclude:
+            return None, False
+        if name in rename:
+            return rename[name], True
+        for old_prefix, new_prefix in prefixes.items():
+            if name.startswith(old_prefix):
+                return new_prefix + name[len(old_prefix) :], True
+        return name, False
+
+    return remap
+
+
+def _collapse(items, remap):
+    """`[(new name, payload, renamed)]` for the `(name, payload)` pairs of an
+    archive after `remap`, in archive order. A renamed entry replaces any
+    entry at its new name (POSIX rename); otherwise the last of several
+    entries with one name is the one `zipfile` reads, and the others go."""
+    plan = []
+    winner = {}
+    for name, payload in items:
+        new_name, renamed = remap(name)
+        if new_name is None:
+            continue
+        previous = winner.get(new_name)
+        if previous is None or renamed or not plan[previous][2]:
+            winner[new_name] = len(plan)
+        plan.append((new_name, payload, renamed))
+    return [step for index, step in enumerate(plan) if winner[step[0]] == index]
+
+
+def _now() -> "tuple[int, ...]":
+    """The current local time as a zip stores it: whole even seconds."""
+    now = _time.localtime()[:6]
+    return (*now[:5], now[5] & ~1)
+
+
+def _new_info(name: str, size: int) -> _zipfile.ZipInfo:
+    """The `ZipInfo` `ZipFile.writestr(name, data)` would give a new entry of
+    `size` bytes."""
+    info = _zipfile.ZipInfo(name, date_time=_now())
+    info.compress_type = _zipfile.ZIP_DEFLATED
+    if info.filename.endswith("/"):
+        info.external_attr = (0o40775 << 16) | 0x10
+    else:
+        info.external_attr = 0o600 << 16
+    info.file_size = size
+    return info
+
+
+def _renamed_info(info: _zipfile.ZipInfo, name: str) -> _zipfile.ZipInfo:
+    """`_copy_zipinfo()` that also keeps the size a listing reports."""
+    copied = _copy_zipinfo(info, name)
+    copied.file_size = info.file_size
+    return copied
+
+
+class _Scratch:
+    """The data a batch holds for members written in it: in memory up to
+    `MEMBER_SPOOL_BYTES` altogether, in an unnamed temporary file past that."""
+
+    __slots__ = ("_file", "_end")
+
+    def __init__(self):
+        self._file = _tempfile.SpooledTemporaryFile(max_size=MEMBER_SPOOL_BYTES)
+        self._end = 0
+
+    def add(self, data: bytes) -> "tuple[int, int]":
+        self._file.seek(self._end)
+        self._file.write(data)
+        reference = (self._end, len(data))
+        self._end += len(data)
+        return reference
+
+    def get(self, reference: "tuple[int, int]") -> bytes:
+        offset, length = reference
+        self._file.seek(offset)
+        return self._file.read(length)
+
+    def close(self) -> None:
+        self._file.close()
+
+
+class _Pending:
+    """One member of a batch: the `ZipInfo` a listing reports for it, the
+    entry of the archive file whose stored bytes it is (`origin`, None for a
+    member written in the batch) and where the written bytes are (`data`)."""
+
+    __slots__ = ("info", "origin", "data")
+
+    def __init__(self, info, origin, data):
+        self.info = info
+        self.origin = origin
+        self.data = data
+
+
+class _Batch:
+    """What a batch changed. `table` maps each member's name to its `_Pending`
+    in archive order and is read from the archive on the first change;
+    `signature` is the file it was read from (None: there was none), checked
+    again before the archive is replaced."""
+
+    __slots__ = ("table", "signature", "scratch", "dirty", "snapshot")
+
+    def __init__(self):
+        self.table = None
+        self.signature = None
+        self.scratch = _Scratch()
+        self.dirty = False
+        self.snapshot = None
+
+
 class _ZipBackend(_ArchiveBackend):
-    __slots__ = ()
+    __slots__ = ("_batch",)
 
     _FORMAT_ERROR = _zipfile.BadZipFile
+
+    def __init__(self, outer):
+        super().__init__(outer)
+        self._batch = None
 
     def _is_format_error(self, error):
         # `zipfile` lets the decoders' own errors through for a damaged
@@ -218,18 +347,149 @@ class _ZipBackend(_ArchiveBackend):
             is_dir=info.filename.endswith("/"),
         )
 
+    def snapshot(self) -> _Snapshot:
+        with self._lock:
+            batch = self._batch
+            if batch is None or not batch.dirty:
+                return super().snapshot()
+            if batch.snapshot is None:
+                table = self._table()
+                batch.snapshot = _Snapshot(
+                    type(self), [(name, entry.info) for name, entry in table.items()]
+                )
+            return batch.snapshot
+
     def read_member(self, path):
-        with self._reading() as handle:
-            # Copied out rather than returned as the live ZipExtFile: callers
-            # may hold the returned stream open across further mutations
-            # (unlink/rename/write) on this same shared backend, and those
-            # close+reopen the underlying handle. A large member goes to a
-            # temporary file, not to memory.
-            with handle.open(path) as source:  # raises KeyError if missing
-                return _spool(source)
+        with self._lock:
+            batch = self._batch
+            if batch is not None and batch.dirty:
+                entry = self._table()[path]  # raises KeyError if missing
+                if entry.data is not None:
+                    return _io.BytesIO(batch.scratch.get(entry.data))
+                path = entry.origin
+            with self._reading() as handle:
+                # Copied out rather than returned as the live ZipExtFile:
+                # callers may hold the returned stream open across further
+                # mutations (unlink/rename/write) on this same shared backend,
+                # and those close+reopen the underlying handle. A large member
+                # goes to a temporary file, not to memory.
+                with handle.open(path) as source:  # raises KeyError if missing
+                    return _spool(source)
+
+    @_contextmanager
+    def batch(self):
+        """Holds every change made while it is open, for every path of this
+        archive, and writes them in ONE replacement of the archive when the
+        outermost block ends cleanly. An exception leaves the archive as it
+        was. The block owns the archive: another thread waits for it."""
+        with self._lock:
+            outermost = self._batch is None
+            if outermost:
+                self._batch = _Batch()
+            try:
+                yield
+                if outermost:
+                    self._flush(self._batch)
+            finally:
+                if outermost:
+                    batch, self._batch = self._batch, None
+                    batch.scratch.close()
+
+    def _changed(self) -> OSError:
+        return OSError(
+            _errno.EBUSY,
+            "The archive changed while a batch of changes to it was open",
+            str(self.outer.filepath),
+        )
+
+    def _table(self) -> "dict[str, _Pending]":
+        """The members of the open batch by name, read from the archive on
+        first use. Must be called with `self._lock` held."""
+        batch = self._batch
+        if batch.table is not None:
+            if self._outer_signature() != batch.signature:
+                raise self._changed()
+            return batch.table
+        table: "dict[str, _Pending]" = {}
+        outer_path = str(self.outer.filepath)
+        try:
+            with self._reading() as handle:
+                for info in handle.infolist():
+                    # The last of several entries of one name is the live one.
+                    table.pop(info.filename, None)
+                    table[info.filename] = _Pending(info, info, None)
+            signature = self._signature
+        except FileNotFoundError:
+            if _os.path.lexists(outer_path):
+                raise
+            signature = None  # the first change creates the archive
+        else:
+            self._check_writable(_os.path.realpath(outer_path))
+        batch.table, batch.signature = table, signature
+        return table
+
+    def _put(self, path: str, data: bytes) -> None:
+        """Set member `path` to `data`, keeping an existing member's place and
+        metadata. Must be called with `self._lock` held."""
+        batch = self._batch
+        table = self._table()
+        info = _new_info(path, len(data))
+        old = table.get(info.filename)
+        if old is not None:
+            info = _copy_zipinfo(old.info, info.filename)
+            info.date_time = _now()
+            info.file_size = len(data)
+        table[info.filename] = _Pending(info, None, batch.scratch.add(data))
+        batch.dirty = True
+        # A snapshot only the batch reads takes one more entry in place; any
+        # other change to the members derives it again on the next read.
+        if batch.snapshot is not None and not batch.snapshot.add(info.filename, info):
+            batch.snapshot = None
+
+    def _flush(self, batch: _Batch) -> None:
+        if not batch.dirty:
+            return
+        table = batch.table
+        outer_path = _os.path.realpath(str(self.outer.filepath))
+
+        def steps():
+            for name, entry in table.items():
+                if entry.data is not None:
+                    yield name, None, entry.info, batch.scratch.get(entry.data)
+                else:
+                    yield name, entry.origin, None, None
+
+        if batch.signature is None:
+            created = False
+            try:
+                with open(outer_path, "xb") as fp:
+                    created = True
+                    with _zipfile.ZipFile(fp, "w", _zipfile.ZIP_DEFLATED) as dst:
+                        for _name, _origin, zinfo, data in steps():
+                            dst.writestr(zinfo, data)
+            except BaseException:
+                if created:
+                    try:
+                        _os.unlink(outer_path)
+                    except OSError:
+                        pass
+                raise
+            return
+        if self._outer_signature() != batch.signature:
+            raise self._changed()
+
+        def fill(tmp):
+            with open(outer_path, "rb") as original:
+                with _zipfile.ZipFile(original, "r") as src:
+                    self._emit(tmp, original, src, steps())
+
+        self._replace_outer(fill)
 
     def write_member(self, path: str, data: bytes):
         with self._lock:
+            if self._batch is not None:
+                self._put(path, data)
+                return
             outer_path = str(self.outer.filepath)
             if not _os.path.lexists(outer_path):
                 # First write into a missing archive creates it ("x": never
@@ -271,6 +531,16 @@ class _ZipBackend(_ArchiveBackend):
 
         self._replace_outer(fill)
 
+    @staticmethod
+    def _check_writable(outer_path: str) -> None:
+        if not _os.access(outer_path, _os.W_OK):
+            # Replacing swaps the file for a new one and so ignores its mode:
+            # a read-only archive is refused here, as an `open(..., "ab")`
+            # would refuse it.
+            raise PermissionError(
+                _errno.EACCES, _os.strerror(_errno.EACCES), outer_path
+            )
+
     def _replace_outer(self, fill):
         """Build the new archive with `fill(tmp)` in a temp file next to the
         archive -- resolving a symlink, so the link's target is what gets
@@ -279,13 +549,7 @@ class _ZipBackend(_ArchiveBackend):
         leaves the original untouched and no temp file behind. Must be
         called with `self._lock` held."""
         outer_path = _os.path.realpath(str(self.outer.filepath))
-        if not _os.access(outer_path, _os.W_OK):
-            # Replacing swaps the file for a new one and so ignores its mode:
-            # a read-only archive is refused here, as an `open(..., "ab")`
-            # would refuse it.
-            raise PermissionError(
-                _errno.EACCES, _os.strerror(_errno.EACCES), outer_path
-            )
+        self._check_writable(outer_path)
         self._close_handle()
         fd, tmp_name = _tempfile.mkstemp(
             dir=_os.path.dirname(outer_path), prefix=".pathlib_next-zip-", suffix=".tmp"
@@ -310,6 +574,15 @@ class _ZipBackend(_ArchiveBackend):
         (`"a/b/"`) is written in the same rewrite as a directory entry: a
         directory that exists only through its members must outlive them."""
         with self._lock:
+            if self._batch is not None:
+                table = self._table()
+                for name in names:
+                    table.pop(name, None)
+                self._batch.dirty = True
+                self._batch.snapshot = None
+                if keep_dir:
+                    self._put(keep_dir, b"")
+                return
             self._rewrite(
                 exclude=set(names),
                 overwrite={keep_dir: b""} if keep_dir else None,
@@ -330,11 +603,33 @@ class _ZipBackend(_ArchiveBackend):
         names entries the rename overwrites, and `keep_dir` is a directory
         entry written in the same rewrite (see `delete_members`)."""
         with self._lock:
+            rename = dict(members) if members else {old: new}
+            if self._batch is not None:
+                self._rename_pending(set(replace), rename)
+                if keep_dir:
+                    self._put(keep_dir, b"")
+                return
             self._rewrite(
                 exclude=set(replace),
-                rename=dict(members) if members else {old: new},
+                rename=rename,
                 overwrite={keep_dir: b""} if keep_dir else None,
             )
+
+    def _rename_pending(self, exclude, rename) -> None:
+        """`_rewrite()`'s exclusions and renames, applied to the open batch."""
+        batch = self._batch
+        renamed: "dict[str, _Pending]" = {}
+        for name, entry, _moved in _collapse(
+            self._table().items(), _remapper(exclude, rename)
+        ):
+            if name != entry.info.filename:
+                entry = _Pending(
+                    _renamed_info(entry.info, name), entry.origin, entry.data
+                )
+            renamed[name] = entry
+        batch.table = renamed
+        batch.dirty = True
+        batch.snapshot = None
 
     def _rewrite(
         self,
@@ -361,41 +656,42 @@ class _ZipBackend(_ArchiveBackend):
         mutators above already do)."""
         rename = dict(rename or {})
         overwrite = dict(overwrite or {})
-        prefix_renames = {old: new for old, new in rename.items() if old.endswith("/")}
-
-        def _remap(name: str) -> "tuple[str | None, bool]":
-            if name in exclude:
-                return None, False
-            if name in rename:
-                return rename[name], True
-            for old_prefix, new_prefix in prefix_renames.items():
-                if name.startswith(old_prefix):
-                    return new_prefix + name[len(old_prefix) :], True
-            return name, False
-
+        remap = _remapper(exclude, rename)
         outer_path = _os.path.realpath(str(self.outer.filepath))
+
+        def steps(src):
+            written = set()
+            for new_name, info, _renamed in _collapse(
+                ((info.filename, info) for info in src.infolist()), remap
+            ):
+                data = overwrite.pop(new_name, None)
+                if data is None:
+                    data = overwrite.pop(info.filename, None)
+                if data is not None:
+                    zinfo = _copy_zipinfo(info, new_name)
+                    zinfo.date_time = _time.localtime()[:6]
+                    yield new_name, None, zinfo, data
+                else:
+                    yield new_name, info, None, None
+                written.add(new_name)
+            for name, data in overwrite.items():
+                if name not in written:
+                    yield name, None, None, data
 
         def fill(tmp):
             with open(outer_path, "rb") as original:
                 with _zipfile.ZipFile(original, "r") as src:
-                    self._fill(tmp, original, src, _remap, overwrite)
+                    self._emit(tmp, original, src, steps(src))
 
         self._replace_outer(fill)
 
     @staticmethod
-    def _fill(tmp, original, src, remap, overwrite):
+    def _emit(tmp, original, src, steps):
+        """Write the entries `steps` yields as `(name, origin, zinfo, data)`
+        to `tmp`, after the bytes the archive `src` holds before its first
+        member: with `data`, a new entry (`zinfo`, else a default one);
+        without, the entry `origin` of `src`'s file, copied as it lies."""
         infos = src.infolist()
-        plan = []
-        winner = {}
-        for info in infos:
-            new_name, renamed = remap(info.filename)
-            if new_name is None:
-                continue
-            previous = winner.get(new_name)
-            if previous is None or renamed or not plan[previous][2]:
-                winner[new_name] = len(plan)
-            plan.append((new_name, info, renamed))
-
         # Where each entry's record ends: where the next one starts, or the
         # central directory.
         starts = sorted({info.header_offset for info in infos} | {src.start_dir})
@@ -405,25 +701,13 @@ class _ZipBackend(_ArchiveBackend):
 
         with _zipfile.ZipFile(tmp, "w", _zipfile.ZIP_DEFLATED) as dst:
             dst.comment = src.comment
-            written = set()
-            for index, (new_name, info, _renamed) in enumerate(plan):
-                if winner[new_name] != index:
-                    continue
-                data = overwrite.pop(new_name, None)
-                if data is None:
-                    data = overwrite.pop(info.filename, None)
+            for name, origin, zinfo, data in steps:
                 if data is not None:
-                    zinfo = _copy_zipinfo(info, new_name)
-                    zinfo.date_time = _time.localtime()[:6]
-                    dst.writestr(zinfo, data)
+                    dst.writestr(name if zinfo is None else zinfo, data)
                 elif not _copy_entry(
-                    original, dst, info, new_name, ends.get(info.header_offset)
+                    original, dst, origin, name, ends.get(origin.header_offset)
                 ):
-                    dst.writestr(_copy_zipinfo(info, new_name), src.read(info))
-                written.add(new_name)
-            for name, data in overwrite.items():
-                if name not in written:
-                    dst.writestr(name, data)
+                    dst.writestr(_copy_zipinfo(origin, name), src.read(origin))
 
 
 class ZipUri(ArchiveUri):

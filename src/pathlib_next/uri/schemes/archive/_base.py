@@ -343,6 +343,35 @@ class _Snapshot:
         self.implicit = implicit
         self.children = children
 
+    def add(self, raw: str, info) -> bool:
+        """Adds the entry `raw`, or replaces its info, in place, giving the
+        snapshot the entries it would have been built from with this one
+        last. False, and nothing changed, when `raw` names a member the
+        snapshot already holds under another spelling. For a snapshot that no
+        other thread reads."""
+        normalized = _normalize_member_name(raw)
+        current = self.index.get(normalized) if normalized else None
+        if current is not None and current != raw:
+            return False
+        self.infos[raw] = info
+        if not normalized or current is not None:
+            return True
+        self.index[normalized] = raw
+        directory = normalized.endswith("/") or self._format._is_directory(info)
+        if not directory:
+            self.files.add(normalized)
+        directory_path = ""
+        parts = normalized.rstrip("/").split("/")
+        for position, part in enumerate(parts):
+            self.children.setdefault(directory_path, {})[part] = None
+            path = f"{directory_path}/{part}" if directory_path else part
+            if position < len(parts) - 1:
+                self.implicit.add(path)
+            directory_path = path
+        if directory:
+            self.children.setdefault(directory_path, {})
+        return True
+
     def hidden(self, member: str) -> bool:
         """Whether a file member sits above `member`. A file has no children:
         `y/z` next to a file `y` does not exist, as for a name that escapes
@@ -868,6 +897,30 @@ class ArchiveUri(UriPath):
             f"{self.source.scheme}: write support is only available for "
             "zip-format archives"
         )
+
+    def batch(self) -> "_ty.ContextManager[None]":
+        """A context manager that holds every change made to this archive
+        while it is open and writes them in one replacement of the archive
+        file when the outermost block ends without an exception; an exception
+        leaves the archive as it was. Inside it every path of the archive
+        reads the held changes, and the file is not touched until the block
+        ends. A block inside another joins it. `NotImplementedError` when the
+        archive cannot be written (see `_require_writable`)."""
+        self._require_writable()
+        return self.backend.batch()
+
+    def _write_batch(self) -> "_ty.ContextManager[object]":
+        # Entered by `copy(recursive=True)` and `PathSyncer` around a tree of
+        # writes. It must read nothing and fail never: the write that follows
+        # reports a missing or unwritable archive itself.
+        try:
+            backend = self.backend
+            writable = getattr(backend, "writable", False)
+        except Exception:
+            writable = False
+        if not (writable and hasattr(backend, "batch")):
+            return _contextlib.nullcontext()
+        return backend.batch()
 
     def _read_member(self):
         member = self._member

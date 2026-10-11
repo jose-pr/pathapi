@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib as _contextlib
 import enum as _enum
 import errno as _errno
 import logging as _logging
@@ -13,7 +14,7 @@ import typing as _ty
 import uuid as _uuid
 
 from .. import utils as _utils
-from ..path import Path, _listing, _relation
+from ..path import Path, _listing, _relation, _write_batch_of
 from ..utils.stat import FileStat
 from . import checksum as _checksum
 from . import glob as _glob
@@ -973,7 +974,11 @@ class PathSyncer(object):
             if ignore_error is None
             else _utils.as_error_handler(ignore_error)
         )
-        return self._sync(source, target, dry_run, _ignore_error, True, set(), {})
+        root = target.path if isinstance(target, PathAndStat) else target
+        # One commit for the whole tree where the target pays for each write;
+        # a dry run writes nothing.
+        with _contextlib.nullcontext() if dry_run else _write_batch_of(root):
+            return self._sync(source, target, dry_run, _ignore_error, True, set(), {})
 
     def _sync(
         self,
