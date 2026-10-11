@@ -58,8 +58,11 @@ deletes when `rename()` is missing) or raise `NotImplementedError`:
 
 `rm()` is derived from `stat()`, `_scandir()`, `unlink()` and `rmdir()`. An
 implementation that overrides it to remove a tree natively still accepts
-`follow_symlinks=` and `follow_binds=` (the shared contract calls both), and
-forwards them to `super().rm()` wherever it falls back to the generic walk.
+`follow_symlinks=` and `follow_binds=` (the shared contract calls both), checks
+them with `pathlib_next.path.check_follow(name, policy)` before it removes
+anything, and forwards them to `super().rm()` wherever it falls back to the
+generic walk. An override of `copy()` that copies a tree natively refuses a
+target inside the source with `pathlib_next.path.contains(source, target)`.
 
 When a method accepts a `str` path, turn it into a path with
 `self.with_segments(value)`, never `type(self)(value)`, which drops
@@ -205,6 +208,21 @@ Conventions for a scheme implementation:
 - Set `_host_filesystem_path = True` only when `self.path` is a real
   filesystem path on the remote host (as for `sftp:`); `os.fspath()` and
   `host_fspath()` then return it.
+- Build a child by name with `_make_child_relpath(name)` and a path from
+  decoded components with `_from_parsed_parts(source, path, query, fragment)`;
+  neither parses its argument. A constructor-level override goes in
+  `_init(source, path, query, fragment, **kwargs)`, which every construction
+  ends in, and calls `super()._init()`. Two paths are on one endpoint when
+  `pathlib_next.uri.same_authority(a.source, b.source)`.
+- A backend that cannot be written piecewise (an FTP `STOR`, an archive
+  rewrite) is returned from `_open()` as
+  `pathlib_next.utils._commit.CommitOnClose(commit)`: `commit(buffer)` runs once,
+  when the stream is closed.
+
+The shipped API header (`AGENTS.md` inside the package) lists every one of
+these hooks and helpers with its signature, under "For path implementers" and
+"For scheme implementers"; the built-in schemes use no other underscore name
+of the core.
 
 The built-in schemes are worked examples of increasing size:
 [`FileUri`](../api/schemes/local.md) delegates to `LocalPath`,
