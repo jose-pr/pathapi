@@ -319,8 +319,10 @@ Base class for I/O paths.
 - `touch()` — `FileExistsError` when `exist_ok=False`
   and the path exists; never truncates; creates with `open("x")` (falls
   back to `"w"` when `x` is unsupported); `chmod(mode)` only when `mode` is
-  passed (unmasked); does not update an existing file's mtime.
-  `LocalPath`/`FileUri` use pathlib's `touch()`.
+  passed (unmasked); sets an existing file's access and modification times
+  to now through `_utime()`, and leaves them as they are where the class
+  cannot set one (`NotImplementedError`). `LocalPath`/`FileUri` use
+  pathlib's `touch()`.
 - `_mkdir()` (stub) / `mkdir()`.
 - `unlink()`, `rmdir()` — stubs.
 - `rm()` — extension.
@@ -484,6 +486,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
     def _coerce_target(self, target) -> Path: ...
     def _open(self, mode="r", buffering=-1) -> IOBase: ...
     def _chown(self, uid, gid, *, follow_symlinks=True) -> None: ...
+    def _utime(self, *, atime=None, mtime=None) -> None: ...
 
 def check_follow(name, policy) -> None: ...
 def contains(src, target) -> bool: ...
@@ -499,7 +502,7 @@ class CommitOnClose(BytesIO):
   stops there. Override it when the root is spelled differently (`FileUri`
   anchors at a Windows drive or share).
 - `_scandir()`, `_same_filesystem()`, `_coerce_target()` — see `Path`.
-  `_open()` and `_chown()` — see `BinaryOpen` and `Chmod`.
+  `_open()`, `_chown()` and `_utime()` — see `BinaryOpen` and `Chmod`.
 - `check_follow(name, policy)` — `ValueError` naming `name` unless `policy` is
   `True`, `False`, `None` or a callable. An `rm()` override calls it for
   `follow_symlinks` and `follow_binds` before it removes anything.
@@ -534,6 +537,7 @@ class LocalPath(pathlib.Path, Path):
     def write_text(self, data, encoding=None, errors=None, newline=None): ...
     def _scandir(self): ...
     def _chown(self, uid, gid, *, follow_symlinks=True) -> None: ...
+    def _utime(self, *, atime=None, mtime=None) -> None: ...
     #  Path's signatures: glob, rglob, walk, symlink_to, _symlink_to, copy,
     #  copy_into, move, move_into, rm
 ```
@@ -544,7 +548,7 @@ class LocalPath(pathlib.Path, Path):
 `stat()`/`chmod()` (`follow_symlinks=` on 3.9; `chmod` accepts octal
 strings), `is_dir()`/`is_file()` (`follow_symlinks=` before 3.13),
 `_symlink_to()`, `_chown()` (`shutil.chown`; `NotImplementedError` where
-`os.chown` is missing, i.e. Windows), plus pathlib_next's `copy`, `move`,
+`os.chown` is missing, i.e. Windows), `_utime()` (`os.utime`), plus pathlib_next's `copy`, `move`,
 `copy_into`, `move_into`, `exists`, `rglob`, `read_text`, `write_text` and
 `symlink_to`.
 `exists()` returns `False` for any `OSError`/`ValueError` on every Python
@@ -604,6 +608,9 @@ An unknown keyword → `TypeError`.
   `a` handles on one file both land (each adds only what it wrote).
 - `rmdir()` of the root → `OSError(EBUSY)`, so `root.rm(recursive=True)`
   empties the tree and then raises that.
+- `_utime()` sets a file's modification time (the access time is not
+  kept); a directory has none (`NotImplementedError`), so `touch()` leaves
+  one alone.
 - Not implemented (`NotImplementedError`): `relative_to()`,
   `rename()` (`move()` copies), `chmod()`, `symlink_to()`.
 - A `str` destination to `copy()`/`move()` stays on the same backend.
@@ -662,6 +669,7 @@ class Chmod(Protocol):
     def lchmod(self, mode): ...
     def chown(self, uid=None, gid=None, *, follow_symlinks=True) -> None: ...
     def _chown(self, uid, gid, *, follow_symlinks=True) -> None: ...
+    def _utime(self, *, atime=None, mtime=None) -> None: ...
 ```
 
 `chmod()` (stub; every
@@ -669,7 +677,12 @@ implementation normalizes through `utils.as_mode()`, so `"0755"` works),
 `lchmod()`, `_chown()` (stub, receives a
 canonical pair) / `chown()` —
 `None` or `-1` leaves a field unchanged, `int` is an id, `str` a name; an
-all-unchanged call returns without touching the backend.
+all-unchanged call returns without touching the backend. `_utime(*, atime=None,
+mtime=None)` (stub) is the primitive for setting an existing entry's times, in
+seconds since the epoch (float): `None` leaves that time alone, a backend that
+keeps whole seconds or no access time sets what it can, and one that cannot set
+a time at all raises `NotImplementedError`. `touch()` of an existing file and
+`PathSyncer(preserve_mtime=True)` call it; there is no public `utime()`.
 
 ### `io.BinaryOpen`
 
@@ -757,7 +770,7 @@ class PathSyncer:
     def __init__(
         self, checksum=None, /, remove_missing=False, follow_symlinks=True,
         symlink_mode="preserve", hook=None, ignore_error=False,
-        quick_check=True,
+        quick_check=True, preserve_mtime=True,
     ) -> None: ...
     def sync(self, source, target, /, dry_run=False, ignore_error=None): ...
     def log(self, msg, *args): ...
@@ -773,7 +786,16 @@ One-way tree sync between any two
   `checksum(entry: PathAndStat)` is compared with `==`.
 - `quick_check=True`: when either side is non-local (`is_local()`), equal
   `st_size` and `st_mtime` skip the checksum; `st_mtime == 0` never matches;
-  a mismatch still checksums.
+  a mismatch still checksums. Times match at the resolution of the coarser
+  side: in whole seconds when either has no fractional part (SFTP, FTP and the
+  object stores report seconds), else to a microsecond. So 100.0 and 100.9
+  match, 100.0 and 101.0 do not, and neither do 100.25 and 100.5.
+- `preserve_mtime=True`: after it copies a file, the sync gives the target the
+  source's `st_mtime` through `_utime()` (not for a directory or a link),
+  so the next run's quick check can match. A source that reports no time and a
+  target that cannot set one (`NotImplementedError`), or refuses
+  (`OSError`), keep the time the copy gave them, and the sync does not
+  report it. `False` leaves every copy with the time it was written at.
 - `hook(source: PathAndStat, target: PathAndStat, event: SyncEvent,
   dry_run: bool)` is called for every event (structural ones included) with
   the call's `dry_run`.
@@ -1080,6 +1102,7 @@ class PathContract(ReadPathContract):
     supports_delete = True
     supports_move = True
     supports_unusual_names = True
+    supports_utime = True
     supports_question_mark_names = False
 ```
 
@@ -1098,9 +1121,12 @@ onto a separately built spelling of itself (`OSError`, content kept) and
 `supports_mkdir` (every test that creates a directory), `supports_delete`
 (`unlink()`, `rmdir()`, `rm()`, and the overwriting half of `copy()`),
 `supports_move` (`move()`, by `rename()` or copy and delete),
-`supports_unusual_names`, and `supports_question_mark_names` (names holding
-`?`; **False by default**, because a Windows file system cannot store one:
-set it `True` for a URI scheme or a remote store).
+`supports_unusual_names`, `supports_utime` (`_utime()` sets an existing
+file's modification time and `touch()` moves it; set it `False` for a backend
+that cannot set a time and leaves `_utime()` raising `NotImplementedError`),
+and `supports_question_mark_names` (names holding `?`; **False by default**,
+because a Windows file system cannot store one: set it `True` for a URI
+scheme or a remote store).
 
 - Both I/O contracts need `root` to be a **fresh, function-scoped** directory
   populated with `populate_fixture_tree()` (which uses `mkdir()` and
@@ -1705,6 +1731,9 @@ class BaseFtpBackend:
   server reads as its working directory).
 - Reads download the whole file into memory; `"w"`/`"x"`/`"a"` (`APPE`)/
   `"r+"` buffer in memory and upload on close (`"x"` checks then writes).
+- `_utime()` sends `MFMT` (the modification time, UTC, whole seconds; the
+  access time cannot be set) when the server's `FEAT` lists it (asked once
+  per connection), else raises `NotImplementedError` without sending it.
 - `rename()` on the same server. Whether an existing target is replaced
   is the server's: a POSIX one replaces it, a Windows one answers `550 File
   exists`, which is `FileExistsError` when the target is there (a reply that
@@ -1805,7 +1834,9 @@ class BaseSftpBackend:
   the field it leaves alone: a server that names owners instead of numbering
   them (SFTP version 4) makes it `NotImplementedError` naming the field, and
   nothing is sent (`st_uid`/`st_gid` are 0 for an owner name that is not a
-  number).
+  number). `_utime()` sets the times with one attributes request on both
+  backends, in whole seconds; SFTPv3 carries the access and modification time
+  as a pair, so the one left alone is read first (one more request).
   `rename()` replaces an existing target via `posix-rename@openssh.com`
   where supported, else `FileExistsError`. `checksum()`/
   `supported_checksums()` (`NativeChecksum`): both backends send the

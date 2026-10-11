@@ -644,6 +644,23 @@ class SftpPath(UriPath):
             gid = current.st_gid if gid is None else gid
         return self._sftpclient.chown(self.path, uid, gid)
 
+    def _utime(
+        self, *, atime: "float | None" = None, mtime: "float | None" = None
+    ) -> None:
+        # SFTPv3 setstat sets the access and modification time as a pair, in
+        # whole seconds: the one left alone is read from the server first.
+        if atime is None or mtime is None:
+            current = self._sftpclient.stat(self.path)
+            if atime is None:
+                # A server that reports no atime reads 0 here, which would
+                # put the file's access time at the epoch.
+                atime = current.st_atime or (
+                    current.st_mtime if mtime is None else mtime
+                )
+            if mtime is None:
+                mtime = current.st_mtime
+        self._sftpclient.utime(self.path, (atime, mtime))
+
     def supported_checksums(self) -> "_ty.FrozenSet[str]":
         """`protocols.checksum.NativeChecksum` implementation: delegates to
         `self.backend.supported_checksums(self)` -- a real per-connection

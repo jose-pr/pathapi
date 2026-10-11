@@ -107,6 +107,8 @@ class TestZipContract(PathContract):
     # Members are rewritten whole; open("a") raises NotImplementedError.
     supports_append = False
     supports_question_mark_names = True
+    # A zip member's time is the one written with the member: no `_utime()`.
+    supports_utime = False
 
     @pytest.fixture
     def root(self, tmp_path_factory, fixture_tree):
@@ -131,6 +133,7 @@ class TestTarContract(ReadPathContract):
 class TestArchiveZipContract(PathContract):
     supports_append = False
     supports_question_mark_names = True
+    supports_utime = False
 
     scheme = "archive"
 
@@ -234,6 +237,8 @@ class TestDavContract(PathContract):
     # The test server (WsgiDAV) cuts a MOVE destination at a percent-decoded
     # "?", so a rename to such a name lands under the part before it.
     supports_question_mark_names = False
+    # WebDAV keeps a resource's time as the server's own property.
+    supports_utime = False
 
     @pytest.fixture
     def root(self, dav_server):
@@ -250,6 +255,8 @@ class TestS3Contract(PathContract):
     enforces_directory_hierarchy = False
     supports_append = False
     supports_question_mark_names = True
+    # An object's time is when the store last wrote it.
+    supports_utime = False
 
     @pytest.fixture
     def root(self, s3_server):
@@ -391,6 +398,7 @@ class TestGsContract(PathContract):
     enforces_directory_hierarchy = False
     supports_append = False
     supports_question_mark_names = True
+    supports_utime = False
 
     @pytest.fixture
     def root(self, gs_server):
@@ -405,6 +413,7 @@ class TestAzContract(PathContract):
     enforces_directory_hierarchy = False
     supports_append = False
     supports_question_mark_names = True
+    supports_utime = False
 
     @pytest.fixture
     def root(self, az_server):

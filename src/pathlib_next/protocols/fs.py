@@ -112,7 +112,8 @@ class Stat(_ty.Protocol):
 
 
 class Chmod(_ty.Protocol):
-    """Composable protocol for objects supporting permission changes."""
+    """Composable protocol for objects supporting permission, owner and time
+    changes."""
 
     __slots__ = ()
 
@@ -156,6 +157,15 @@ class Chmod(_ty.Protocol):
         the caller's input is `chown()`'s job, not the primitive's.
         """
         return _utils._unimplemented("_chown")
+
+    def _utime(self, *, atime: float | None = None, mtime: float | None = None) -> None:
+        """Backend primitive: set the access and/or modification time of the
+        entry, in seconds since the epoch. `None` leaves that time alone. A
+        backend that keeps no such time (or no atime, or whole seconds only)
+        sets what it can and ignores the rest; one that cannot set a time at
+        all raises `NotImplementedError`, which is the default. `touch()` of an
+        existing file and `PathSyncer(preserve_mtime=True)` call it."""
+        return _utils._unimplemented("_utime")
 
     def chown(
         self,

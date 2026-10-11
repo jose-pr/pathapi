@@ -560,6 +560,15 @@ def ftp_server(fixture_tree):
         from pyftpdlib.ioloop import Select
         from pyftpdlib.servers import FTPServer
 
+    # pyftpdlib's MFMT calls datetime.utcfromtimestamp(), deprecated since
+    # 3.12: under "warnings as errors" its server thread would raise and drop
+    # the connection. The filter lasts for the test that uses the fixture.
+    warnings.filterwarnings(
+        "ignore",
+        message=r".*utcfromtimestamp.*",
+        category=DeprecationWarning,
+    )
+
     authorizer = DummyAuthorizer()
     authorizer.add_user("user", "12345", str(fixture_tree), perm="elradfmwMT")
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import enum as _enum
 import errno as _errno
 import logging as _logging
+import math as _math
 import os as _os
 import pathlib as _pathlib
 import re as _re
@@ -130,6 +131,23 @@ def _is_local(path) -> bool:
         return True
 
 
+#: Two floats of one instant differ by less than this after a filesystem has
+#: stored them as nanoseconds and handed them back.
+_MTIME_TICK = 1e-6
+
+
+def _same_mtime(first: float, second: float) -> bool:
+    """Whether two modification times name the same instant at the resolution
+    of the coarser: whole seconds when either has no fractional part (SFTP,
+    FTP and the object stores report seconds, a local filesystem fractions),
+    else to a microsecond."""
+    if first == second:
+        return True
+    if first % 1 == 0 or second % 1 == 0:
+        return _math.floor(first) == _math.floor(second)
+    return abs(first - second) < _MTIME_TICK
+
+
 def _quick_check_in_sync(source: "PathAndStat", target: "PathAndStat") -> bool:
     """The rsync-style "quick check" pre-check: True only when BOTH
     `st_size` and `st_mtime` already match between the two cached stats --
@@ -140,16 +158,22 @@ def _quick_check_in_sync(source: "PathAndStat", target: "PathAndStat") -> bool:
 
     An `st_mtime` of 0 (or missing) on either side is "unknown", never a
     timestamp: MemPath, GitHub/GitLab, `data:` and HTTP without
-    Last-Modified all report 0, and two unknowns are not a match.
+    Last-Modified all report 0, and two unknowns are not a match. So is a
+    stat whose listing did not report a size (`size_known` False). Times
+    match as `_same_mtime()` says.
     """
     source_stat, target_stat = source.stat, target.stat
     if source_stat is None or target_stat is None:
         return False
+    if not (
+        getattr(source_stat, "size_known", True)
+        and getattr(target_stat, "size_known", True)
+    ):
+        return False
     if not source_stat.st_mtime or not target_stat.st_mtime:
         return False
-    return (
-        source_stat.st_size == target_stat.st_size
-        and source_stat.st_mtime == target_stat.st_mtime
+    return source_stat.st_size == target_stat.st_size and _same_mtime(
+        source_stat.st_mtime, target_stat.st_mtime
     )
 
 
@@ -513,7 +537,11 @@ class PathSyncer(object):
     treated as local): if `st_size` AND `st_mtime` already match (from the
     listing/stat metadata `PathAndStat` already carries -- no extra round
     trip), the pair is treated as in sync WITHOUT calling `checksum` at
-    all, native or streamed. A mismatch on either falls through to a real
+    all, native or streamed. Times match at the resolution of the coarser
+    side: in whole seconds when either has no fractional part (SFTP, FTP and
+    the object stores report seconds), to a microsecond otherwise; so a time
+    one second apart is a mismatch and one within the same second is not,
+    whenever either side reports whole seconds. A mismatch on either falls through to a real
     checksum comparison rather than being treated as "changed" -- mtime can
     be unreliable across backends/clock skew, so a false "needs copy" from
     a mismatch is merely wasteful, while a false "in sync" would be a
@@ -524,6 +552,15 @@ class PathSyncer(object):
     guarantee mtime propagation on every path, see `docs/divergences.md`).
     Set `quick_check=False` to disable the pre-check entirely and always
     checksum, matching pre-`quick_check` behavior for non-local pairs too.
+
+    `preserve_mtime=True` (the default) gives each file the sync copies the
+    modification time the source reported, where the target's class can set one
+    (`LocalPath`, `FileUri`, `MemPath`, `SftpPath`, and `FtpPath` on a server
+    that lists `MFMT`), so that the next run's quick check can match. A source
+    that reports no time (0), and a target that cannot set one, leave the
+    time the copy gave the file; neither is an error. Directories and links are
+    not touched. `preserve_mtime=False` leaves every copy with the time it was
+    written at.
 
     `follow_symlinks` (default `True`) controls whether a symlink source is
     resolved during traversal (content synced as if it weren't a link) or
@@ -600,6 +637,7 @@ class PathSyncer(object):
         "symlink_mode",
         "ignore_error",
         "quick_check",
+        "preserve_mtime",
     )
     EVENT_LOG_FORMAT = "[%s] Source:%s Target:%s DryRun:%s"
 
@@ -613,6 +651,7 @@ class PathSyncer(object):
         hook: _ty.Callable[[PathAndStat, PathAndStat, SyncEvent, bool], None] = None,
         ignore_error: _OnPathSyncerError | bool = False,
         quick_check: bool = True,
+        preserve_mtime: bool = True,
     ) -> None:
         # `None` (the default) resolves to `_default_checksum` -- a sentinel
         # `sync()` recognizes (via `is`) to route through
@@ -636,6 +675,7 @@ class PathSyncer(object):
             _OnPathSyncerError, _utils.as_error_handler(ignore_error)
         )
         self.quick_check = quick_check
+        self.preserve_mtime = preserve_mtime
 
     def log(self, msg: str, *args: object):
         # Overridable hook: a subclass overrides `log` to route sync
@@ -672,6 +712,29 @@ class PathSyncer(object):
         if self._hook:
             self._hook(source, target, event, dry_run)
         self.log(self.EVENT_LOG_FORMAT, event, source, target, dry_run)
+
+    def _copy_mtime(self, source: PathAndStat, target: Path) -> None:
+        """Give the file just copied to `target` the modification time the
+        source reported, where `target`'s class can set one. Not an error of
+        the sync when it cannot: the next run compares the content."""
+        stat = source.stat
+        mtime = getattr(stat, "st_mtime", 0)
+        utime = getattr(target, "_utime", None)
+        if not (
+            self.preserve_mtime
+            and utime is not None
+            and mtime
+            and getattr(stat, "size_known", True)
+        ):
+            return
+        try:
+            utime(mtime=mtime)
+        except NotImplementedError:
+            pass
+        except Exception as error:
+            _logger.debug(
+                "could not set the modification time of %s: %s", target, error
+            )
 
     def _tolerate(
         self,
@@ -1144,6 +1207,7 @@ class PathSyncer(object):
                         elif target.exists():
                             target.path.rm(recursive=target.is_dir())
                         source.path.copy(target.path)
+                    self._copy_mtime(source, target.path)
 
                 if target.is_file() and _implements(target.path, "rename"):
                     self._sweep(

@@ -19,6 +19,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `TypeError` before anything is copied. `sftp:` (the asyncssh concurrent walk
   included), `s3:`, `gs:` and `az:` accept it, and `PathContract` gains a test
   that gives one predicate to `rm()` and `copy()`.
+- **`touch()` moves an existing file's time, and a sync leaves its copies with
+  their source's time.** The generic `touch()` of an existing file did nothing;
+  it now sets the access and modification times to now through a new `_utime()`
+  hook (`_utime(*, atime=None, mtime=None)`, seconds since the epoch, `None`
+  leaves that time alone), implemented by `LocalPath`, `FileUri`, `MemPath`,
+  `SftpPath` on both client libraries (whole seconds) and `FtpPath` on a server
+  whose `FEAT` lists `MFMT` (modification time only). A class that does not
+  implement it raises `NotImplementedError` from `_utime()` and `touch()`
+  leaves the file as it was, as before. `PathContract` gains
+  `supports_utime` (default `True`; set it `False` on a test class whose
+  backend cannot set a time) and a test behind it.
+- **`PathSyncer(preserve_mtime=True)`.** A file the sync copies is given the
+  modification time its source reported, where the target's class implements
+  `_utime()`; a source that reports no time, a target that cannot set one or
+  refuses it, keep the time the copy gave the file, and the sync reports
+  nothing. Directories and links are left alone. `quick_check` (default on for
+  a pair with a non-local side) could never succeed after this library's own
+  copy, so a remote tree was checksummed, and so downloaded, again by every
+  later run; the second run of an unchanged tree now reads no file.
 - **The names the built-in schemes take from the core are documented, and the
   helpers among them are public.** The shipped API header gains "For path
   implementers" and "For scheme implementers" sections, each hook with its
@@ -47,6 +66,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   fall back to its own walk can drop the fallback.
 
 ### Changed
+- **A sync leaves each copy with its source's modification time
+  (`preserve_mtime=True`, the default).** A copy used to carry the time it was
+  written at. Pass `preserve_mtime=False` to keep that. `quick_check` now
+  compares two times at the resolution of the coarser side: in whole seconds
+  when either has no fractional part (SFTP, FTP and the object stores report
+  seconds, a local file system fractions), else to a microsecond; times one
+  second apart still differ. A pair that is local on both sides still skips the
+  quick check.
 - **`move()` asks a backend about each end once.** A move that falls back to
   copy and delete stat-ed the source and the target several times each before
   it started to copy (the same-entry check, `move()`'s own checks, then

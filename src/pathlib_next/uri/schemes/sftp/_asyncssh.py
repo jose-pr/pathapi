@@ -611,6 +611,11 @@ class _SyncSftpClient:
         self._run(self._aclient.chown(path, uid, gid))
 
     @_reraise_sftp_errors
+    def utime(self, path: str, times: "tuple[float, float]") -> None:
+        # (atime, mtime) in seconds: SFTPv3 carries both, whole seconds only.
+        self._run(self._aclient.utime(path, times))
+
+    @_reraise_sftp_errors
     def remove(self, path: str) -> None:
         self._run(self._aclient.remove(path))
 

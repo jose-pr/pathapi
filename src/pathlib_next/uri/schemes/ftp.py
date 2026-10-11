@@ -137,15 +137,16 @@ _now = _time.monotonic
 
 class _Session:
     """What is known of one cached connection: when it last answered, whether
-    the server offers `MLST`, and whether a command is running on it. A
-    connection dropped from the cache while a command runs on it is closed
-    when that command ends."""
+    the server offers `MLST` and `MFMT`, and whether a command is running on
+    it. A connection dropped from the cache while a command runs on it is
+    closed when that command ends."""
 
-    __slots__ = ("last_used", "mlst", "busy", "retired")
+    __slots__ = ("last_used", "mlst", "mfmt", "busy", "retired")
 
     def __init__(self):
         self.last_used: "float | None" = None
         self.mlst: "bool | None" = None
+        self.mfmt: "bool | None" = None
         self.busy = 0
         self.retired = False
 
@@ -272,13 +273,18 @@ def _parse_fact_line(line: str) -> "tuple[str, dict]":
     return name, facts
 
 
-def _lists_mlst(reply: str) -> bool:
-    """Whether a `FEAT` reply has an `MLST` feature line (RFC 2389)."""
+def _lists_feature(reply: str, feature: str) -> bool:
+    """Whether a `FEAT` reply has a `feature` line (RFC 2389)."""
     for line in reply.splitlines():
         words = line.split(None, 1)
-        if line[:1] == " " and words and words[0].upper() == "MLST":
+        if line[:1] == " " and words and words[0].upper() == feature:
             return True
     return False
+
+
+def _lists_mlst(reply: str) -> bool:
+    """Whether a `FEAT` reply has an `MLST` feature line (RFC 2389)."""
+    return _lists_feature(reply, "MLST")
 
 
 def _mlst_facts(reply: str) -> "dict | None":
@@ -509,6 +515,27 @@ class FtpPath(UriPath):
                 return offered
         except _ftplib.error_temp:
             return False  # not remembered: the next stat asks again
+
+    def _offers_mfmt(self) -> bool:
+        """Whether the server of this path's connection lists `MFMT` in its
+        `FEAT` reply, asked once per connection."""
+        try:
+            with self._wire() as client:
+                session = _session_of(client)
+                if session is not None and session.mfmt is not None:
+                    return session.mfmt
+                send = getattr(client, "sendcmd", None)
+                offered = False
+                if send is not None:
+                    try:
+                        offered = _lists_feature(send("FEAT"), "MFMT")
+                    except _ftplib.error_perm:
+                        pass  # 500/502: the server has no FEAT
+                if session is not None:
+                    session.mfmt = offered
+                return offered
+        except _ftplib.error_temp:
+            return False  # not remembered: the next call asks again
 
     def _stat_entry(self):
         """This entry's facts, asked of the server in the fewest replies it
@@ -788,6 +815,26 @@ class FtpPath(UriPath):
         return FileExistsError(
             _errno.EEXIST, f"File exists ({error})", str(destination)
         )
+
+    def _utime(
+        self, *, atime: "float | None" = None, mtime: "float | None" = None
+    ) -> None:
+        # `MFMT` (draft-somers-ftp-mfxx) sets the modification time, in UTC and
+        # whole seconds; FTP has no access time to set. Only a server whose
+        # `FEAT` lists it is asked.
+        if mtime is None:
+            return
+        if not self._offers_mfmt():
+            raise NotImplementedError("MFMT is not offered by this server")
+        stamp = _time.strftime("%Y%m%d%H%M%S", _time.gmtime(mtime))
+        try:
+            self._call("voidcmd", f"MFMT {stamp} {self._wirepath}")
+        except _ftplib.error_perm as error:
+            if _reply_code(error) in _UNSUPPORTED_REPLIES:
+                raise NotImplementedError(
+                    f"MFMT not supported by this server ({error})"
+                ) from error
+            raise self._translate(error) from error
 
     def chmod(self, mode: int | str, *, follow_symlinks: bool = True):
         # SITE CHMOD is a non-standard FTP extension; pyftpdlib and many real

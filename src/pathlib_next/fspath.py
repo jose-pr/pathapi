@@ -402,6 +402,17 @@ class LocalPath(
             )
         return _shutil.chown(self, uid, gid)
 
+    def _utime(
+        self, *, atime: "float | None" = None, mtime: "float | None" = None
+    ) -> None:
+        # `os.utime` takes both times together: the one left alone is read
+        # from the file as it is.
+        if atime is None or mtime is None:
+            current = _os.stat(self)
+            atime = current.st_atime if atime is None else atime
+            mtime = current.st_mtime if mtime is None else mtime
+        _os.utime(self, times=(atime, mtime))
+
     def glob(
         self,
         pattern: "str | _proto.FsPathLike | None",

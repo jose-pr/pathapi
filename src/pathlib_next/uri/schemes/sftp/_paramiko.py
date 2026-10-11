@@ -246,7 +246,9 @@ class _SFTPClient(_paramiko.SFTPClient):
 
 for (
     _name
-) in "stat lstat listdir_attr open mkdir chmod chown remove rmdir readlink".split():
+) in (
+    "stat lstat listdir_attr open mkdir chmod chown utime remove rmdir readlink".split()
+):
     setattr(_SFTPClient, _name, _named_errors(getattr(_SFTPClient, _name)))
 for _name in "rename posix_rename symlink".split():
     setattr(_SFTPClient, _name, _named_errors(getattr(_SFTPClient, _name), True))

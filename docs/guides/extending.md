@@ -55,6 +55,7 @@ deletes when `rename()` is missing) or raise `NotImplementedError`:
 | `chmod(mode, *, follow_symlinks=True)` | normalize with `utils.as_mode(mode)` so octal strings work. |
 | `_symlink_to(target, target_is_directory=False)`, `readlink()` | `symlink_to(..., force=)` is derived; `target` is already a path object. |
 | `_chown(uid, gid, *, follow_symlinks=True)` | receives a canonical pair (`None` = unchanged); `chown()` is derived. |
+| `_utime(*, atime=None, mtime=None)` | set an existing entry's times, in seconds since the epoch (`None` = leave that one alone); whole seconds, or no access time, is fine. Raise `NotImplementedError` (the default) when the backend cannot set a time: `touch()` of an existing file then leaves it as it is, and `PathSyncer(preserve_mtime=True)` leaves the copy's own time. |
 
 `rm()` is derived from `stat()`, `_scandir()`, `unlink()` and `rmdir()`. An
 implementation that overrides it to remove a tree natively still accepts
@@ -279,6 +280,7 @@ A backend that genuinely cannot meet a rule sets the matching class attribute to
 | `supports_delete` | `PathContract` | `unlink()`, `rmdir()`, `rm()`, and replacing a file in `copy(overwrite=True)` | none (TFTP sets it) |
 | `supports_move` | `PathContract` | `move()`, by `rename()` or by copying and deleting | none (TFTP sets it) |
 | `supports_unusual_names` | `PathContract` | names holding a space, `#`, `%`, `+`, `&`, `=` and mixed case are stored and listed as written | none |
+| `supports_utime` | `PathContract` | `_utime()` sets an existing file's modification time and `touch()` of it moves the time | `ZipUri`, `archive:`/`archive+zip:`, `DavPath`, `S3Path`, `GsPath`, `AzPath` (no settable time) |
 | `supports_question_mark_names` | `PathContract` | the same for names holding `?`. **Defaults to `False`**: a Windows file system cannot store such a name | `True` for `MemPath`, `ZipUri`, `S3Path`, `GsPath`, `AzPath`, and where the machine can store one for `LocalPath`, `FileUri`, `FtpPath`, `DavPath`, `SftpPath` |
 
 ### Which contract runs against the built-in schemes?

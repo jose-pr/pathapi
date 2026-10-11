@@ -17,6 +17,7 @@ import pathlib as _pathlib
 import re as _re
 import stat as _stat
 import sys as _sys
+import time as _time
 import types as _types
 import typing as _ty
 
@@ -1060,8 +1061,9 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
           then verbatim: a remote server's umask is unknowable. The default
           (`None`) leaves a new file with the permissions the backend gives
           it, instead of chmod'ing it to a world-writable 0o666.
-        - An existing file's mtime is left unchanged: the generic protocol
-          has no timestamp primitive, and rewriting the content to bump it
+        - An existing file's access and modification times are set to the
+          current time through `_utime()`; a backend that cannot set a time
+          leaves the file as it is, since rewriting the content to bump it
           is not a touch. `LocalPath` and `FileUri` use pathlib's own touch.
         """
         # stat() directly, not exists(): exists() reads *any* OSError (a
@@ -1074,6 +1076,11 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         else:
             if not exist_ok:
                 raise _os_error(FileExistsError, _errno.EEXIST, self)
+            now = _time.time()
+            try:
+                self._utime(atime=now, mtime=now)
+            except NotImplementedError:
+                pass
             return
         try:
             with self.open("x"):

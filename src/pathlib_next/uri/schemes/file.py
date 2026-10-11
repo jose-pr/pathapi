@@ -182,6 +182,11 @@ class FileUri(UriPath):
         # canonicalized the pair, so pass it through untouched.
         return self.filepath._chown(uid, gid, follow_symlinks=follow_symlinks)
 
+    def _utime(
+        self, *, atime: "float | None" = None, mtime: "float | None" = None
+    ) -> None:
+        return self.filepath._utime(atime=atime, mtime=mtime)
+
     def unlink(self, missing_ok=False):
         return self.filepath.unlink(missing_ok)
 

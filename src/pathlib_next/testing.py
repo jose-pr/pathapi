@@ -60,6 +60,10 @@ defaults to True except `supports_question_mark_names`:
   `?`. False by default: a Windows file system cannot hold such a name, so
   a correct local backend there would fail; set it True for a URI scheme or
   a remote store.
+- `PathContract.supports_utime` -- `_utime()` sets an existing file's
+  modification time, and `touch()` of that file moves it. A backend that
+  keeps no settable time (an object store, an archive) is correct without
+  it: it leaves `_utime()` to raise `NotImplementedError` and sets this False.
 
 A test that needs an operation checks the matching switch first, so a
 backend without that operation needs no expected-failure marks. The tree
@@ -405,8 +409,8 @@ class PathContract(ReadPathContract):
     `supports_question_mark_names`; set one False only for a documented gap):
     `supports_rename`, `supports_append`, `supports_exclusive_create`,
     `enforces_directory_hierarchy`, `supports_mkdir`, `supports_delete`,
-    `supports_move`, `supports_unusual_names`, and `supports_question_mark_names`
-    (default False).
+    `supports_move`, `supports_unusual_names`, `supports_utime`, and
+    `supports_question_mark_names` (default False).
     """
 
     supports_rename = True
@@ -418,6 +422,7 @@ class PathContract(ReadPathContract):
     supports_move = True
     supports_unusual_names = True
     supports_question_mark_names = False
+    supports_utime = True
 
     def test_mkdir_and_is_dir(self, root):
         self._require("supports_mkdir")
@@ -847,6 +852,23 @@ class PathContract(ReadPathContract):
         assert f.read_bytes() == b""
         (root / "a.txt").touch()
         assert (root / "a.txt").read_text() == "a"
+
+    def test_utime_sets_the_time_of_an_existing_file_and_touch_moves_it(self, root):
+        self._require("supports_utime")
+        f = root / "utime_f.txt"
+        f.write_text("kept")
+        old = 1_000_000_000
+        f._utime(mtime=old)
+        assert int(f.stat().st_mtime) == old
+        f._utime(mtime=old + 600.5)
+        assert int(f.stat().st_mtime) == old + 600
+        f._utime(atime=old + 5)
+        assert int(f.stat().st_mtime) == old + 600
+        f.touch()
+        assert f.stat().st_mtime > old + 1_000
+        assert f.read_text() == "kept"
+        with pytest.raises(FileNotFoundError):
+            (root / "utime_absent.txt")._utime(mtime=old)
 
     def test_touch_exist_ok_false_raises_without_truncating(self, root):
         f = root / "touch_f.txt"

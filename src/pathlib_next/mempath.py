@@ -357,6 +357,18 @@ class MemPath(Path):
             st_mtime=getattr(content, "mtime", 0),
         )
 
+    def _utime(self, *, atime=None, mtime=None) -> None:
+        # Only a file's modification time is kept: a directory (a plain dict)
+        # and a bytearray put in the backend by hand have nowhere to put one.
+        parent, name = self._parent_container()
+        content = parent.get(name) if name else parent
+        if content is None:
+            raise _os_error(FileNotFoundError, _errno.ENOENT, self)
+        if not isinstance(content, MemFile):
+            raise NotImplementedError("_utime() of a directory or a plain bytearray")
+        if mtime is not None:
+            content.mtime = float(mtime)
+
     def iterdir(self):
         parent, name = self._parent_container()
         content = parent.get(name) if name else parent
