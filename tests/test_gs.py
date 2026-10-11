@@ -1,5 +1,7 @@
 import pytest
 
+import objstore_fakes
+
 pytest.importorskip("google.cloud.storage")
 
 from pathlib_next.uri.schemes.gs import GsPath, GsBackend
@@ -294,3 +296,59 @@ def test_gs_a_store_without_the_batch_endpoint_is_deleted_key_by_key(
     assert not [name for name in state.objects if name.startswith("bulk/")]
     methods = [method for method, _ in state.requests]
     assert methods.count("DELETE") == 4
+
+
+# --- checksum() and syncing -------------------------------------------------
+
+
+def _content_reads(state):
+    """The requests that download an object's bytes."""
+    return [
+        target
+        for method, target in state.requests
+        if method == "GET" and "alt=media" in target
+    ]
+
+
+def test_gs_checksum_is_the_md5_or_crc32c_of_the_object_and_downloads_nothing(
+    gs_server, gcs_api_server, fixture_tree
+):
+    import hashlib
+
+    path, _ = gs_server
+    state = gcs_api_server.state
+    content = (fixture_tree / "a.txt").read_bytes()
+    del state.requests[:]
+    assert (path / "a.txt").checksum() == hashlib.md5(content).hexdigest()
+    assert (path / "a.txt").checksum("crc32c") == "%08x" % objstore_fakes.crc32c(
+        content
+    )
+    assert _content_reads(state) == []
+
+
+def test_gs_checksum_of_an_object_without_an_md5_is_refused(gs_server, gcs_api_server):
+    path, _ = gs_server
+    gcs_api_server.state.metadata["a.txt"] = {"md5Hash": None}
+    with pytest.raises(NotImplementedError):
+        (path / "a.txt").checksum("md5")
+    assert (path / "a.txt").checksum("crc32c")
+    with pytest.raises(FileNotFoundError):
+        (path / "nothing").checksum()
+    with pytest.raises(IsADirectoryError):
+        (path / "sub").checksum()
+
+
+def test_gs_syncing_an_unchanged_tree_downloads_no_object(gs_server, gcs_api_server):
+    from pathlib_next.utils.sync import PathSyncer
+
+    path, _ = gs_server
+    state = gcs_api_server.state
+    for index in range(6):
+        state.objects[f"mirror/src/d{index % 2}/f{index}"] = bytes([index]) * 100
+    syncer = PathSyncer(quick_check=False)
+    syncer.sync(path / "mirror" / "src", path / "mirror" / "dst")
+    assert state.objects["mirror/dst/d1/f5"] == bytes([5]) * 100
+    del state.requests[:]
+    syncer.sync(path / "mirror" / "src", path / "mirror" / "dst")
+    assert _content_reads(state) == []
+    assert [method for method, _ in state.requests if method != "GET"] == []

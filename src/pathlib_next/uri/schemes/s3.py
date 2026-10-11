@@ -3,6 +3,7 @@ from __future__ import annotations
 import errno as _errno
 import io as _io
 import itertools as _itertools
+import re as _re
 import tempfile as _tempfile
 import threading as _threading
 import typing as _ty
@@ -160,6 +161,34 @@ def _oserror(error: Exception, path) -> OSError:
     else:
         kind = _store.FAILED
     return _store.transport_error(kind, "S3", path, error)
+
+
+_PLAIN_MD5 = _re.compile("[0-9a-fA-F]{32}")
+
+#: HeadObject fields that hold a checksum of the whole object, by the
+#: `hashlib`-style name `checksum()` takes.
+_CHECKSUM_FIELDS = {
+    "crc32": "ChecksumCRC32",
+    "crc32c": "ChecksumCRC32C",
+    "crc64nvme": "ChecksumCRC64NVME",
+    "sha1": "ChecksumSHA1",
+    "sha256": "ChecksumSHA256",
+}
+
+
+def _plain_md5(head) -> "str | None":
+    """The MD5 of the content that a HeadObject reply's ETag is, or None.
+    S3 makes the ETag the MD5 only for an object that a single request wrote
+    and that is not encrypted with KMS or a customer key; a multipart
+    object's ETag ends in `-<parts>`."""
+    etag = str(head.get("ETag", "")).strip('"')
+    if not _PLAIN_MD5.fullmatch(etag):
+        return None
+    if head.get("ServerSideEncryption") not in (None, "AES256"):
+        return None
+    if head.get("SSECustomerAlgorithm") or head.get("SSEKMSKeyId"):
+        return None
+    return etag.lower()
 
 
 def _object_key(path: str) -> str:
@@ -481,6 +510,29 @@ class S3Path(_store.ObjectStorePath):
             st_mtime=int(head["LastModified"].timestamp()),
             is_dir=False,
         )
+
+    def _stored_digests(self, key: str, algorithm: str) -> "dict[str, str] | None":
+        extra = {} if algorithm == "md5" else {"ChecksumMode": "ENABLED"}
+        try:
+            head = self._client.head_object(Bucket=self.bucket, Key=key, **extra)
+        except _botoexc.ClientError as error:
+            if _is_not_found(error):
+                return None
+            raise _oserror(error, self) from None
+        except _TRANSPORT_ERRORS as error:
+            raise _oserror(error, self) from None
+        digests = {}
+        md5 = _plain_md5(head)
+        if md5 is not None:
+            digests["md5"] = md5
+        # A composite checksum (of a multipart object's parts) ends in
+        # `-<parts>` and is never the digest of the content.
+        if head.get("ChecksumType") != "COMPOSITE":
+            for name, field in _CHECKSUM_FIELDS.items():
+                value = head.get(field)
+                if value and "-" not in value:
+                    digests[name] = _store.digest_hex(value)
+        return digests
 
     def _has_object(self, key: str) -> bool:
         try:

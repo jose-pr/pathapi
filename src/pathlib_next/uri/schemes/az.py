@@ -466,6 +466,14 @@ class AzPath(_store.ObjectStorePath):
             is_dir=False,
         )
 
+    def _stored_digests(self, key: str, algorithm: str) -> "dict[str, str] | None":
+        props = self._properties(key)
+        if props is None:
+            return None
+        settings = props.get("content_settings")
+        md5 = None if settings is None else settings.get("content_md5")
+        return {"md5": bytes(md5).hex()} if md5 else {}
+
     def _has_object(self, key: str) -> bool:
         return self._properties(key) is not None
 

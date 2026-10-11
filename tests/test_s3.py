@@ -5,6 +5,7 @@ paging shape, and copy_object+delete_object rename.
 
 import collections
 import datetime
+import hashlib
 import io
 
 import pytest
@@ -30,12 +31,13 @@ class _Paginator:
 class _FakeS3Client:
     def __init__(self):
         self.objects = {}  # key -> bytes
+        self.head_extra = {}  # key -> fields added to its HeadObject reply
         self.delete_errors = []
 
     def head_bucket(self, Bucket):
         return {}
 
-    def head_object(self, Bucket, Key):
+    def head_object(self, Bucket, Key, ChecksumMode=None):
         if Key not in self.objects:
             raise _client_error("404")
         data = self.objects[Key]
@@ -44,6 +46,8 @@ class _FakeS3Client:
             "LastModified": datetime.datetime(
                 2026, 1, 1, 12, 0, 0, tzinfo=datetime.timezone.utc
             ),
+            "ETag": '"%s"' % hashlib.md5(data).hexdigest(),
+            **self.head_extra.get(Key, {}),
         }
 
     def list_objects_v2(self, Bucket, Prefix="", Delimiter=None, MaxKeys=None):
@@ -935,3 +939,138 @@ def test_removing_a_prefix_lists_every_page(moto_s3):
     assert _moto_keys(moto_s3) == ["keep.txt"]
     assert sent.count("ListObjectsV2") >= 4
     assert sent.count("DeleteObjects") == 1
+
+
+# --- checksum(): the digest the store keeps ---------------------------------------
+
+
+def _multipart_object(client, key, parts=2):
+    upload = client.create_multipart_upload(Bucket="bkt", Key=key)
+    done = []
+    for number in range(1, parts + 1):
+        reply = client.upload_part(
+            Bucket="bkt",
+            Key=key,
+            UploadId=upload["UploadId"],
+            PartNumber=number,
+            Body=bytes([number]) * (5 * 1024**2),
+        )
+        done.append({"ETag": reply["ETag"], "PartNumber": number})
+    client.complete_multipart_upload(
+        Bucket="bkt",
+        Key=key,
+        UploadId=upload["UploadId"],
+        MultipartUpload={"Parts": done},
+    )
+
+
+def test_checksum_of_a_single_part_object_is_its_md5_and_reads_no_byte(moto_s3):
+    content = bytes(range(256)) * 40
+    moto_s3.put_object(Bucket="bkt", Key="d/a.bin", Body=content)
+    backend, sent = _recording_backend()
+    path = S3Path("s3://bkt/d/a.bin", backend=backend)
+    assert path.checksum("md5") == hashlib.md5(content).hexdigest()
+    assert path.checksum() == hashlib.md5(content).hexdigest()
+    assert sent == ["HeadObject", "HeadObject"]
+
+
+def test_checksum_refuses_the_etag_of_a_multipart_object(moto_s3):
+    from pathlib_next.utils import checksum as checksums
+
+    _multipart_object(moto_s3, "big.bin")
+    etag = moto_s3.head_object(Bucket="bkt", Key="big.bin")["ETag"]
+    assert etag.endswith('-2"')
+    path = S3Path("s3://bkt/big.bin")
+    with pytest.raises(NotImplementedError):
+        path.checksum("md5")
+    assert checksums.native(path, "md5") is None
+
+
+def test_checksum_refuses_the_etag_of_a_kms_encrypted_object(moto_s3):
+    moto_s3.put_object(
+        Bucket="bkt", Key="k.bin", Body=b"secret", ServerSideEncryption="aws:kms"
+    )
+    with pytest.raises(NotImplementedError):
+        S3Path("s3://bkt/k.bin").checksum("md5")
+    moto_s3.put_object(
+        Bucket="bkt", Key="s.bin", Body=b"secret", ServerSideEncryption="AES256"
+    )
+    assert (
+        S3Path("s3://bkt/s.bin").checksum("md5") == hashlib.md5(b"secret").hexdigest()
+    )
+
+
+def test_checksum_offers_a_full_object_checksum_the_store_keeps(moto_s3):
+    import zlib
+
+    content = b"the whole content"
+    moto_s3.put_object(
+        Bucket="bkt", Key="sha.bin", Body=content, ChecksumAlgorithm="SHA256"
+    )
+    moto_s3.put_object(
+        Bucket="bkt", Key="crc.bin", Body=content, ChecksumAlgorithm="CRC32"
+    )
+    sha, crc = S3Path("s3://bkt/sha.bin"), S3Path("s3://bkt/crc.bin")
+    assert sha.checksum("sha256") == hashlib.sha256(content).hexdigest()
+    assert crc.checksum("crc32") == "%08x" % zlib.crc32(content)
+    for path, other in ((sha, "crc32"), (crc, "sha256"), (crc, "sha512")):
+        with pytest.raises(NotImplementedError):
+            path.checksum(other)
+
+
+def test_checksum_refuses_a_composite_checksum():
+    sha256 = "LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ="
+    backend = _FakeBackend()
+    objects, extra = backend._client.objects, backend._client.head_extra
+    objects.update({"multi": b"hello", "typed": b"hello", "whole": b"hello"})
+    extra["multi"] = {"ChecksumSHA256": sha256 + "-2"}
+    extra["typed"] = {"ChecksumSHA256": sha256, "ChecksumType": "COMPOSITE"}
+    extra["whole"] = {"ChecksumSHA256": sha256, "ChecksumType": "FULL_OBJECT"}
+    for key in ("multi", "typed"):
+        with pytest.raises(NotImplementedError):
+            _s3(f"s3://bucket/{key}", backend).checksum("sha256")
+    whole = _s3("s3://bucket/whole", backend)
+    assert whole.checksum("sha256") == hashlib.sha256(b"hello").hexdigest()
+
+
+def test_checksum_of_a_missing_path_a_directory_and_the_bucket(moto_s3):
+    moto_s3.put_object(Bucket="bkt", Key="d/a.txt", Body=b"x")
+    with pytest.raises(FileNotFoundError):
+        S3Path("s3://bkt/nothing").checksum()
+    with pytest.raises(IsADirectoryError):
+        S3Path("s3://bkt/d").checksum()
+    with pytest.raises(IsADirectoryError):
+        S3Path("s3://bkt").checksum()
+
+
+def test_supported_checksums_asks_the_store_nothing():
+    backend = _FakeBackend()
+    path = _s3("s3://bucket/a", backend)
+    assert path.supported_checksums() == frozenset({"md5"})
+    assert backend._client.objects == {}
+
+
+def test_syncing_an_unchanged_tree_to_another_prefix_reads_no_object(moto_s3):
+    from pathlib_next.utils.sync import PathSyncer
+
+    for index in range(100):
+        moto_s3.put_object(
+            Bucket="bkt",
+            Key=f"src/d{index % 5}/f{index:03d}.bin",
+            Body=bytes([index]) * (index + 1),
+        )
+    backend, sent = _recording_backend()
+    syncer = PathSyncer(quick_check=False)
+    source = S3Path("s3://bkt/src", backend=backend)
+    target = S3Path("s3://bkt/dst", backend=backend)
+    syncer.sync(source, target)
+    assert len([key for key in _moto_keys(moto_s3) if key.startswith("dst/")]) > 100
+    del sent[:]
+    syncer.sync(source, target)
+    assert sent.count("GetObject") == 0
+    assert not {"PutObject", "CopyObject", "DeleteObject"} & set(sent)
+    # A changed object is still found and copied.
+    moto_s3.put_object(Bucket="bkt", Key="src/d0/f000.bin", Body=b"changed")
+    syncer.sync(source, target)
+    changed = S3Path("s3://bkt/dst/d0/f000.bin", backend=backend)
+    assert changed.read_bytes() == b"changed"

@@ -215,6 +215,7 @@ class GsPath(_store.ObjectStorePath):
     __SCHEMES = ("gs",)
     __slots__ = ()
     _LISTING_ERRORS = (Exception,)
+    _CHECKSUMS = frozenset({"md5", "crc32c"})
 
     if _ty.TYPE_CHECKING:
         backend: BaseGsBackend
@@ -376,6 +377,19 @@ class GsPath(_store.ObjectStorePath):
             st_mtime=int(blob.updated.timestamp()) if blob.updated else 0,
             is_dir=False,
         )
+
+    def _stored_digests(self, key: str, algorithm: str) -> "dict[str, str] | None":
+        blob = self._reload(key)
+        if blob is None:
+            return None
+        digests = {}
+        # An object stored with a content encoding is read back decoded, so
+        # the digests of the stored bytes are not those of what a read gives.
+        if getattr(blob, "content_encoding", None) in (None, "", "identity"):
+            for name, value in (("md5", blob.md5_hash), ("crc32c", blob.crc32c)):
+                if value:
+                    digests[name] = _store.digest_hex(value)
+        return digests
 
     def _has_object(self, key: str) -> bool:
         return self._reload(key) is not None

@@ -1,3 +1,4 @@
+import hashlib
 import time
 import datetime
 
@@ -63,11 +64,16 @@ class _FakeBlobClient:
             raise self._container.properties_errors[self.name]
         if self.name not in self._container.objects:
             raise _Missing(self.name)
+        content = self._container.objects[self.name]
+        md5 = self._container.content_md5.get(
+            self.name, bytearray(hashlib.md5(content).digest())
+        )
         return {
-            "size": len(self._container.objects[self.name]),
+            "size": len(content),
             "last_modified": datetime.datetime(
                 2026, 1, 1, 12, 0, 0, tzinfo=datetime.timezone.utc
             ),
+            "content_settings": {"content_md5": md5},
         }
 
     def delete_blob(self):
@@ -83,6 +89,7 @@ class _FakeBlobClient:
     def download_blob(self):
         if self.name not in self._container.objects:
             raise _Missing(self.name)
+        self._container.downloads.append(self.name)
         return _FakeDownloader(self._container.objects[self.name])
 
     def upload_blob(self, data, overwrite=False):
@@ -103,6 +110,8 @@ class _FakeBlobClient:
 class _FakeContainer:
     def __init__(self, *, bulk=True):
         self.objects = {}
+        self.downloads = []
+        self.content_md5 = {}
         self.deleted = []
         self.uploads = []
         self.delete_errors = set()
@@ -1172,3 +1181,37 @@ def test_a_copy_that_stays_pending_is_aborted_and_rename_times_out(monkeypatch):
     assert info.value.filename == "az://account/container/a.txt"
     assert aborted == ["copy-1"]
     assert container.objects == {"a.txt": b"x"}
+
+
+# --- checksum(): the Content-MD5 the service keeps --------------------------
+
+
+def test_checksum_is_the_content_md5_the_service_keeps():
+    backend, container = _container_with(**{"a.bin": b"content"})
+    path = _az("az://account/container/a.bin", backend)
+    assert path.checksum() == hashlib.md5(b"content").hexdigest()
+    assert path.supported_checksums() == frozenset({"md5"})
+    assert container.downloads == []
+
+
+def test_checksum_of_a_blob_without_a_content_md5_is_refused():
+    backend, container = _container_with(**{"big.bin": b"content"})
+    container.content_md5["big.bin"] = None
+    with pytest.raises(NotImplementedError):
+        _az("az://account/container/big.bin", backend).checksum("md5")
+
+
+def test_checksum_refuses_an_algorithm_the_service_does_not_keep():
+    backend, _container = _container_with(**{"a.bin": b"content"})
+    with pytest.raises(NotImplementedError):
+        _az("az://account/container/a.bin", backend).checksum("sha256")
+
+
+def test_checksum_of_a_missing_path_a_directory_and_the_container():
+    backend, _container = _container_with(**{"d/a.txt": b"x"})
+    with pytest.raises(FileNotFoundError):
+        _az("az://account/container/nothing", backend).checksum()
+    with pytest.raises(IsADirectoryError):
+        _az("az://account/container/d", backend).checksum()
+    with pytest.raises(IsADirectoryError):
+        _az("az://account/container", backend).checksum()

@@ -9,6 +9,7 @@ listing of the prefix holds all of them."""
 
 from __future__ import annotations
 
+import base64 as _base64
 import contextlib as _contextlib
 import errno as _errno
 import io as _io
@@ -129,6 +130,11 @@ def restore_backend(backend, state: dict) -> None:
         setattr(backend, name, value)
     backend._client = None
     backend._client_lock = _threading.Lock()
+
+
+def digest_hex(encoded: str) -> str:
+    """The hex digest of `encoded`, the base64 text a store reports one in."""
+    return _base64.b64decode(encoded).hex()
 
 
 def unreachable_keys(
@@ -257,12 +263,16 @@ class ObjectStorePath(_UriPath):
       `_delete_keys(keys, on_error)`.
     - `_rename_source(key)` -> a store-specific record, or None when there is
       no object; `_rename_copy(source, dest, dest_key)`.
+    - `_stored_digests(key, algorithm)` -> `{name: hex}`, or None when there is
+      no object: the digests of the whole content the store keeps.
     """
 
     __slots__ = ()
 
     #: What the store calls its top level, for the refusals to remove it.
     _TOP = "bucket"
+    #: The algorithms `supported_checksums()` offers.
+    _CHECKSUMS: "frozenset[str]" = frozenset({"md5"})
     #: Exceptions `rm(recursive=True)` offers to `ignore_error` when listing a
     #: prefix fails (a missing bucket is not one).
     _LISTING_ERRORS: "tuple[type[BaseException], ...]" = (OSError,)
@@ -300,6 +310,13 @@ class ObjectStorePath(_UriPath):
     def _rename_copy(self, source, dest: "ObjectStorePath", dest_key: str) -> None:
         raise NotImplementedError
 
+    def _stored_digests(self, key: str, algorithm: str) -> "dict[str, str] | None":
+        """The digests of the whole content of the object `key` that the store
+        keeps (at least `algorithm`'s, when it keeps it), by lower-case
+        `hashlib` name and as hex; empty when it keeps none a reader can rely
+        on. None when no object has that key."""
+        raise NotImplementedError
+
     def _rename_dest(self, target) -> "ObjectStorePath":
         """The path `rename(target)` produces."""
         return self.with_path(target.path)
@@ -319,6 +336,37 @@ class ObjectStorePath(_UriPath):
         if found is not None:
             return found
         return self._stat_prefix()
+
+    def supported_checksums(self) -> "frozenset[str]":
+        """The digest algorithms the store usually keeps for an object, so a
+        caller can choose one two paths share (`NativeChecksum`). It asks
+        nothing of the store; `checksum()` is what decides, per object."""
+        return self._CHECKSUMS
+
+    def checksum(self, algorithm: str = "md5") -> str:
+        """The hex digest of this object's whole content under `algorithm`
+        (a `hashlib` name), as the store keeps it: no byte is read
+        (`NativeChecksum`).
+
+        Raises `NotImplementedError` when the store keeps no such digest of
+        the content -- an ETag that is not the plain MD5 (multipart,
+        KMS-encrypted), a composite checksum, an absent property -- never
+        returning one that might not be. `FileNotFoundError` for a missing
+        path and `IsADirectoryError` for a prefix directory; a request that
+        fails raises the `OSError` it always does."""
+        key = self.key
+        digests = self._stored_digests(key, algorithm.lower()) if key else None
+        if digests is None:
+            # No object at the key: the name of a directory, or of nothing.
+            if key:
+                self._stat_prefix()
+            raise IsADirectoryError(_errno.EISDIR, "Is a directory", str(self))
+        try:
+            return digests[algorithm.lower()]
+        except KeyError:
+            raise NotImplementedError(
+                f"the store keeps no {algorithm} digest of the content of {self}"
+            ) from None
 
     def _stat_prefix(self) -> FileStat:
         """`stat()` of a key already known not to be an object -- emulate a

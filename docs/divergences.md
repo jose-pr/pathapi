@@ -202,8 +202,16 @@ because a behavioral decision needed documenting:
   keeps `PathSyncer` (see its class docstring, `utils/sync.py`) from ever
   comparing a native digest to a streamed one under a mismatched algorithm,
   or trusting something hash-shaped but not actually a content hash (e.g.
-  S3's ETag for a multipart upload, deliberately NOT implemented here for
-  exactly that reason). `utils.checksum.md5`/`sha256`/`stream` (the
+  S3's ETag for a multipart upload, which `S3Path.checksum()` refuses for
+  exactly that reason: it offers the ETag only when it is the plain MD5 of
+  the content). `S3Path`, `GsPath` and `AzPath` implement it from what the
+  store keeps (S3's plain-MD5 ETag and stored full-object checksums, GCS's
+  `md5Hash` and `crc32c`, Azure's `Content-MD5`), and raise
+  `NotImplementedError` for a multipart or KMS-encrypted S3 object, a
+  composite checksum, a GCS object with a content encoding or no `md5Hash`,
+  and a blob without `Content-MD5`; Azure's property is one a client can
+  set, which the service does not verify against the content in every case.
+  `utils.checksum.md5`/`sha256`/`stream` (the
   pre-existing streaming helpers) are unaffected and keep working for
   direct callers that don't go through the protocol or `PathSyncer`.
   `supported_checksums() -> frozenset[str]` (default `frozenset()`) is a

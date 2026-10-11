@@ -271,3 +271,57 @@ def test_az_a_refused_key_of_a_batch_is_offered_once_with_its_own_path(
     )
     assert offered == [(PermissionError, f"{path}/bulk/f3")]
     assert [name for name in state.objects if name.startswith("bulk/")] == ["bulk/f3"]
+
+
+# --- checksum() and syncing -------------------------------------------------
+
+
+def _content_reads(state):
+    """The requests that download a blob's bytes."""
+    return [
+        target
+        for method, target in state.requests
+        if method == "GET" and "comp=list" not in target
+    ]
+
+
+def test_az_checksum_is_the_content_md5_and_downloads_nothing(
+    az_server, az_api_server, fixture_tree
+):
+    import hashlib
+
+    path, _ = az_server
+    state = az_api_server.state
+    content = (fixture_tree / "a.txt").read_bytes()
+    del state.requests[:]
+    assert (path / "a.txt").checksum() == hashlib.md5(content).hexdigest()
+    assert _content_reads(state) == []
+
+
+def test_az_checksum_of_a_blob_without_a_content_md5_is_refused(
+    az_server, az_api_server
+):
+    path, _ = az_server
+    az_api_server.state.metadata["a.txt"] = {"Content-MD5": None}
+    with pytest.raises(NotImplementedError):
+        (path / "a.txt").checksum("md5")
+    with pytest.raises(FileNotFoundError):
+        (path / "nothing").checksum()
+    with pytest.raises(IsADirectoryError):
+        (path / "sub").checksum()
+
+
+def test_az_syncing_an_unchanged_tree_downloads_no_blob(az_server, az_api_server):
+    from pathlib_next.utils.sync import PathSyncer
+
+    path, _ = az_server
+    state = az_api_server.state
+    for index in range(6):
+        state.objects[f"mirror/src/d{index % 2}/f{index}"] = bytes([index]) * 100
+    syncer = PathSyncer(quick_check=False)
+    syncer.sync(path / "mirror" / "src", path / "mirror" / "dst")
+    assert state.objects["mirror/dst/d1/f5"] == bytes([5]) * 100
+    del state.requests[:]
+    syncer.sync(path / "mirror" / "src", path / "mirror" / "dst")
+    assert _content_reads(state) == []
+    assert [m for m, _ in state.requests if m not in ("GET", "HEAD")] == []

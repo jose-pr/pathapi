@@ -744,8 +744,8 @@ class NativeChecksum(Protocol):
 Opt-in (not on `Path`):
 `checksum()` MUST raise `NotImplementedError` whenever
 it cannot return a genuine content digest under exactly that algorithm
-(never a different algorithm, never an ETag-like value); callers catch only
-`NotImplementedError`. `supported_checksums()` (default
+(never a different algorithm, never a hash-shaped value such as a
+multipart ETag); callers catch only `NotImplementedError`. `supported_checksums()` (default
 empty) is advisory and never raises.
 
 ## Utilities (`pathlib_next.utils`)
@@ -1981,6 +1981,8 @@ only, and `ignore_error` is offered each error once.
 class S3Path(UriPath):
     bucket: str
     key: str
+    def checksum(self, algorithm="md5") -> str: ...
+    def supported_checksums(self) -> FrozenSet[str]: ...
 
 class S3Backend(BaseS3Backend):
     client_kwargs
@@ -2041,6 +2043,17 @@ True` is pickled with its path, secrets and all).
 - `rename()`: server-side copy + delete in the same bucket; a prefix
   directory → `NotImplementedError` (`move()` copies). `rm(recursive=True)`
   batch-deletes; at the bucket root → `PermissionError`. No `chmod()`.
+- `checksum(algorithm="md5")` (`NativeChecksum`) is the digest the store
+  keeps, read with one request and no byte of the content. On `s3:` it is
+  the plain MD5 that the ETag is for an object one request wrote and that
+  KMS or a customer key does not encrypt, or the stored full-object
+  `crc32`, `crc32c`, `crc64nvme`, `sha1` or `sha256`; a multipart ETag
+  (`...-N`), a composite checksum or an algorithm the object has none of
+  raises `NotImplementedError`, never a guess. `FileNotFoundError` for a
+  missing path, `IsADirectoryError` for a prefix directory.
+  `supported_checksums()` is `{"md5"}`, asks nothing, and is advisory.
+  `PathSyncer` compares two object-store paths by these digests, so a
+  second sync of an unchanged tree reads no object.
 - A prefix that holds keys a directory walk does not reach (a key with an
   empty, `.` or `..` segment; the subtree under a key that is also an
   object; a `name/` key that holds data) is refused by
@@ -2057,6 +2070,8 @@ True` is pickled with its path, secrets and all).
 class GsPath(UriPath):
     bucket_name: str
     key: str
+    def checksum(self, algorithm="md5") -> str: ...
+    def supported_checksums(self) -> FrozenSet[str]: ...
 
 class GsBackend(BaseGsBackend):
     def __init__(self, *, timeout=..., retry=..., **client_kwargs): ...
@@ -2080,6 +2095,10 @@ recursive-copy/remove rules as `S3Path` (same bucket); `rmdir()` of the
 bucket root → `PermissionError`; reads load the whole object into memory
 (the stream is seekable) and writes buffer in memory until close; `"x"` uses
 `if_generation_match=0`; `"a"` unsupported; `st_mtime` from `updated`.
+`checksum()` is the object's `md5Hash` or `crc32c` (`supported_checksums()`
+is `{"md5", "crc32c"}`); a composite object has no `md5Hash`, and an
+object stored with a content encoding is read back decoded, so for either
+the digests the store keeps are refused with `NotImplementedError`.
 
 ### `AzPath` — `az://account/container/key` (`pathlib_next.uri.schemes.az`, `az` extra)
 
@@ -2088,6 +2107,8 @@ class AzPath(UriPath):
     account: str
     container: str
     key: str
+    def checksum(self, algorithm="md5") -> str: ...
+    def supported_checksums(self) -> FrozenSet[str]: ...
 
 class AzBackend(BaseAzBackend):
     def __init__(self, account=None, **client_kwargs): ...
@@ -2117,6 +2138,10 @@ does not exist; `rmdir()` of the container root → `PermissionError`;
 `TimeoutError` with the source untouched; reads load the whole object into
 memory (the stream is seekable) and writes buffer in memory until close;
 `"x"` sends `If-None-Match: *`; `"a"` unsupported; `st_mtime` from `last_modified`.
+`checksum("md5")` is the blob's `Content-MD5` property (`supported_checksums()`
+is `{"md5"}`), a property that a client can set and the service does not
+verify against the content in every case; a blob without one raises
+`NotImplementedError`.
 
 ### `GitHubPath` — `github://[TOKEN@]host/owner/repo/path?ref=REF` (`pathlib_next.uri.schemes.github`, `pathlib_next.uri.schemes._gitrepo`, `http` extra)
 

@@ -1,7 +1,9 @@
 import datetime
+import hashlib
 
 import pytest
 
+import objstore_fakes
 from pathlib_next.uri.schemes.gs import BaseGsBackend, GsPath
 
 
@@ -43,6 +45,24 @@ class _FakeBlob:
     def updated(self):
         return datetime.datetime(2026, 1, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
 
+    def _stored(self, field, default):
+        return self._bucket.stored.get(self.name, {}).get(field, default)
+
+    @property
+    def md5_hash(self):
+        return self._stored("md5_hash", objstore_fakes.md5_base64(self._content()))
+
+    @property
+    def crc32c(self):
+        return self._stored("crc32c", objstore_fakes.crc32c_base64(self._content()))
+
+    @property
+    def content_encoding(self):
+        return self._stored("content_encoding", None)
+
+    def _content(self):
+        return self._bucket.objects[self.name]
+
     def reload(self):
         if self.name in self._bucket.reload_errors:
             raise self._bucket.reload_errors[self.name]
@@ -65,6 +85,7 @@ class _FakeBlob:
     def download_as_bytes(self):
         if self.name not in self._bucket.objects:
             raise _Missing(self.name)
+        self._bucket.downloads.append(self.name)
         return self._bucket.objects[self.name]
 
     def upload_from_string(self, data, if_generation_match=None):
@@ -149,6 +170,8 @@ class _FakeBatch:
 class _FakeBucket:
     def __init__(self):
         self.objects = {}
+        self.downloads = []
+        self.stored = {}
         self.batch = None
         self.batch_calls = []
         self.batch_statuses = {}
@@ -1127,3 +1150,56 @@ def test_renaming_a_prefix_directory_reloads_the_key_once(monkeypatch):
         _gs("gs://bucket/dir", backend).rename("other")
     assert reloads == ["dir"]
     assert bucket.list_calls == ["dir/"]
+
+
+# --- checksum(): the digests the store keeps --------------------------------
+
+
+def test_the_crc32c_the_fakes_report_is_the_castagnoli_check_value():
+    assert objstore_fakes.crc32c(b"123456789") == 0xE3069283
+
+
+def test_checksum_is_the_md5_or_crc32c_the_store_keeps_and_reads_no_byte():
+    backend, bucket = _bucket_with(**{"a.bin": b"content"})
+    path = _gs("gs://bucket/a.bin", backend)
+    assert path.checksum() == hashlib.md5(b"content").hexdigest()
+    assert path.checksum("MD5") == hashlib.md5(b"content").hexdigest()
+    assert path.checksum("crc32c") == "%08x" % objstore_fakes.crc32c(b"content")
+    assert path.supported_checksums() == frozenset({"md5", "crc32c"})
+    assert bucket.downloads == []
+
+
+def test_checksum_of_a_composite_object_has_no_md5_but_has_its_crc32c():
+    backend, bucket = _bucket_with(**{"composed": b"abcdef"})
+    bucket.stored["composed"] = {"md5_hash": None}
+    path = _gs("gs://bucket/composed", backend)
+    with pytest.raises(NotImplementedError):
+        path.checksum("md5")
+    assert path.checksum("crc32c") == "%08x" % objstore_fakes.crc32c(b"abcdef")
+
+
+def test_checksum_of_an_object_with_a_content_encoding_is_refused():
+    # The service reads such an object back decoded: the stored bytes' digests
+    # are not those of the content.
+    backend, bucket = _bucket_with(**{"z.gz": b"\x1f\x8b-compressed"})
+    bucket.stored["z.gz"] = {"content_encoding": "gzip"}
+    path = _gs("gs://bucket/z.gz", backend)
+    for algorithm in ("md5", "crc32c"):
+        with pytest.raises(NotImplementedError):
+            path.checksum(algorithm)
+
+
+def test_checksum_refuses_an_algorithm_the_store_does_not_keep():
+    backend, _bucket = _bucket_with(**{"a.bin": b"content"})
+    with pytest.raises(NotImplementedError):
+        _gs("gs://bucket/a.bin", backend).checksum("sha256")
+
+
+def test_checksum_of_a_missing_path_a_directory_and_the_bucket():
+    backend, _bucket = _bucket_with(**{"d/a.txt": b"x"})
+    with pytest.raises(FileNotFoundError):
+        _gs("gs://bucket/nothing", backend).checksum()
+    with pytest.raises(IsADirectoryError):
+        _gs("gs://bucket/d", backend).checksum()
+    with pytest.raises(IsADirectoryError):
+        _gs("gs://bucket", backend).checksum()
