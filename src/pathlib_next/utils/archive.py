@@ -16,7 +16,7 @@ if _ty.TYPE_CHECKING:
     from ..path import Path
 
 
-def _detect_format(name: str, peek: "_ty.Callable[[], bytes] | None" = None) -> str:
+def detect_format(name: str, peek: "_ty.Callable[[], bytes] | None" = None) -> str:
     """Detect "zip" vs "tar" from `name`'s extension, falling back to
     magic-byte sniffing (`PK` header -> zip) via `peek()` -- called lazily,
     only when the extension is inconclusive, so callers backed by a remote
@@ -30,6 +30,9 @@ def _detect_format(name: str, peek: "_ty.Callable[[], bytes] | None" = None) -> 
         return "tar"
     magic = peek() if peek is not None else b""
     return "zip" if magic.startswith(b"PK") else "tar"
+
+
+_detect_format = detect_format
 
 
 def _safe_member_parts(
@@ -301,7 +304,7 @@ def unpack_archive(archive: Path, dest: Path) -> None:
         except Exception:
             return b"PK"  # can't sniff -- preserve the historical "assume zip" default
 
-    is_zip = _detect_format(archive.name, _peek) == "zip"
+    is_zip = detect_format(archive.name, _peek) == "zip"
     windows = is_windows_flavoured(dest)
 
     def member_parts(filename: str) -> "list[str] | None":

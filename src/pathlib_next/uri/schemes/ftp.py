@@ -17,7 +17,7 @@ import weakref as _weakref
 import netimps as _netimps
 
 from ... import utils as _utils
-from ...utils._commit import _CommitOnClose
+from ...utils._commit import CommitOnClose
 from ...utils.stat import FileStat
 from .. import Source, Uri, UriPath
 
@@ -683,7 +683,7 @@ class FtpPath(UriPath):
             buffer.seek(0)
             self._store(cmd, buffer)
 
-        return _CommitOnClose(upload, initial)
+        return CommitOnClose(upload, initial)
 
     def _store(self, cmd: str, fileobj) -> None:
         """Upload `fileobj` with STOR/APPE on a live connection."""

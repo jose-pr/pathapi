@@ -10,7 +10,7 @@ import warnings as _warnings
 
 from ... import utils as _utils
 from .. import Source, UriPath
-from ..source import _compose_host
+from ..source import compose_host
 from ._extras import import_or_stub as _import_or_stub
 
 _req = _import_or_stub("requests", "http")
@@ -286,7 +286,7 @@ class _RepoApiPath(UriPath):
     def _api_authority(self) -> str:
         """`host[:port]` of this URI for a self-hosted API root, with an
         IPv6 literal bracketed."""
-        authority = _compose_host(self.source.host)
+        authority = compose_host(self.source.host)
         if self.source.port:
             authority += f":{self.source.port}"
         return authority

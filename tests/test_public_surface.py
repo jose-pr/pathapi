@@ -41,7 +41,15 @@ EXPORTS = {
         "glob",
         "sync",
     },
-    "pathlib_next.path": {"FsPathLike", "Path", "PathLike", "Pathname", "PurePathLike"},
+    "pathlib_next.path": {
+        "FsPathLike",
+        "Path",
+        "PathLike",
+        "Pathname",
+        "PurePathLike",
+        "check_follow",
+        "contains",
+    },
     "pathlib_next.fspath": {"LocalPath", "PosixPathname", "WindowsPathname"},
     "pathlib_next.protocols": {
         "BinaryOpen",

@@ -64,11 +64,14 @@ def _authority_key(source: Source) -> tuple:
     )
 
 
-def _same_authority(a: Source, b: Source) -> bool:
+def same_authority(a: Source, b: Source) -> bool:
     """Whether two sources name the same endpoint (scheme, userinfo, host,
     port), treating `""` and `None` alike. The test for whether a backend,
     connection or rename may cross from one path to another."""
     return _authority_key(a) == _authority_key(b)
+
+
+_same_authority = same_authority
 
 
 #: Backends a path built for itself through `_initbackend()`, keyed by `id()`
@@ -81,12 +84,15 @@ _DERIVED_BACKENDS: "_weakref.WeakValueDictionary[int, object]" = (
 )
 
 
-class _DerivedBackend:
+class DerivedBackend:
     """Marks a backend class whose instances only ever come from
     `_initbackend()`, for a backend that cannot be weakly referenced and so
     cannot be recorded in `_DERIVED_BACKENDS` (a tuple, say)."""
 
     __slots__ = ()
+
+
+_DerivedBackend = DerivedBackend
 
 
 class _BackendCell:

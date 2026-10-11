@@ -12,7 +12,7 @@ import urllib.parse as _urlparse
 
 from ... import utils as _utils
 from ...utils.stat import FileStat
-from .. import UriPath, _DerivedBackend
+from .. import DerivedBackend, UriPath
 from ._extras import import_or_stub as _import_or_stub
 
 # The `http` extra. Without it a path still constructs and joins; the first
@@ -888,7 +888,7 @@ class HttpBackend(_ty.NamedTuple):
         return _send_without_redirects(self.session, method, url, args)
 
 
-class _DerivedHttpBackend(HttpBackend, _DerivedBackend):
+class _DerivedHttpBackend(HttpBackend, DerivedBackend):
     """What `HttpPath._initbackend()` returns. A tuple cannot be weakly
     referenced, so the class itself says the path derived this backend for
     itself (see `UriPath._supplied_backend()`)."""

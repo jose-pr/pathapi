@@ -7,7 +7,7 @@ import uritools as _uritools
 
 from ...utils.stat import FileStat
 from .. import UriPath
-from ..source import _ERRORS
+from ..source import ERRORS
 
 _DEFAULT_MEDIATYPE = "text/plain;charset=US-ASCII"
 
@@ -52,7 +52,7 @@ class DataUri(UriPath):
         text = self.path
         if self.query:
             # Decoded like the path: `.query` is kept as received.
-            text += "?" + _uritools.uridecode(self.query, errors=_ERRORS)
+            text += "?" + _uritools.uridecode(self.query, errors=ERRORS)
         header, sep, data = text.partition(",")
         if not sep:
             raise FileNotFoundError(self)
@@ -60,7 +60,7 @@ class DataUri(UriPath):
         # not dot-normalized), with any non-UTF-8 byte carried as a
         # surrogate -- so this re-encodes rather than unquoting a second
         # time, which turned "100%2525" into b"100%" instead of b"100%25".
-        payload = data.encode("utf-8", _ERRORS)
+        payload = data.encode("utf-8", ERRORS)
         if self._is_base64:
             return _b64decode(payload)
         return payload

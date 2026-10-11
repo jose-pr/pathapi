@@ -24,7 +24,15 @@ from .protocols.io import _ASK_STAT
 from .utils import glob as _glob
 from .utils.stat import FileStat
 
-__all__ = ["FsPathLike", "Path", "PathLike", "Pathname", "PurePathLike"]
+__all__ = [
+    "FsPathLike",
+    "Path",
+    "PathLike",
+    "Pathname",
+    "PurePathLike",
+    "check_follow",
+    "contains",
+]
 
 P = _ty.TypeVar("P", bound="Path")
 PN = _ty.TypeVar("PN", bound="Pathname")
@@ -1162,8 +1170,8 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         # shared helper. A supplied callable keeps rm()'s own `(error, path)`
         # arity -- arities differ per call site by design, see the helper.
         _onerror = _utils.as_error_handler(ignore_error)
-        _check_follow("follow_symlinks", follow_symlinks)
-        _check_follow("follow_binds", follow_binds)
+        check_follow("follow_symlinks", follow_symlinks)
+        check_follow("follow_binds", follow_binds)
 
         # An error the handler declined, on its way out: each enclosing
         # directory's `except` catches it again, and consulting the handler
@@ -1515,7 +1523,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         src_stat = _stat_or_none(src, follow_symlinks)
 
         if recursive and src_stat is not None and _stat.S_ISDIR(src_stat.st_mode):
-            if _contains(src, target):
+            if contains(src, target):
                 # Checked before anything is created: the new directory would
                 # be listed and copied into itself without end.
                 raise OSError(
@@ -1919,9 +1927,15 @@ def _copy_mode(
         pass
 
 
-def _check_follow(name: str, policy) -> None:
+def check_follow(name: str, policy) -> None:
+    """Raise `ValueError` naming `name` unless `policy` is `True`, `False`,
+    `None` or a callable: what `rm()` accepts for `follow_symlinks=` and
+    `follow_binds=`. An `rm()` override calls it before removing anything."""
     if not (policy is None or callable(policy) or isinstance(policy, bool)):
         raise ValueError(f"{name} must be True, False, None or a callable")
+
+
+_check_follow = check_follow
 
 
 # How `move()` and `copy()` find a target standing to the source (`_relation`).
@@ -2054,7 +2068,7 @@ def _relation(
     return None
 
 
-def _contains(src: Path, target: Path) -> bool:
+def contains(src: Path, target: Path) -> bool:
     """Whether `target` is `src` or lies inside it (pathlib 3.14's copy()
     refuses both), looking through symlinks. Paths `_same_filesystem()`
     reports in different namespaces are never nested."""
@@ -2063,6 +2077,9 @@ def _contains(src: Path, target: Path) -> bool:
         _OTHER,
         _INNER,
     )
+
+
+_contains = contains
 
 
 def _same_file(src: Path, target: Path, *, identity: bool = True) -> bool:

@@ -7,10 +7,10 @@ import urllib.parse as _urlparse
 import xml.etree.ElementTree as _ET
 
 from ... import utils as _utils
-from ...path import _check_follow
+from ...path import check_follow
 from ...utils.stat import FileStat
 from .. import Uri
-from ..source import _compose_uri
+from ..source import compose_uri
 from .http import (
     _EXCLUSIVE_CREATE,
     _IDENTITY_ENCODING,
@@ -180,7 +180,7 @@ class DavPath(HttpPath):
         # component here already came from this instance's own parsed
         # source/path/query/fragment state. See source.py's _compose_uri.
         scheme = "https" if self.source.scheme == "davs" else "http"
-        return _compose_uri(
+        return compose_uri(
             scheme,
             self.source.userinfo,
             self.source.host,
@@ -404,8 +404,8 @@ class DavPath(HttpPath):
     ):
         # A collection holds no symlinks or bindings: the policies are
         # checked and have nothing to decide.
-        _check_follow("follow_symlinks", follow_symlinks)
-        _check_follow("follow_binds", follow_binds)
+        check_follow("follow_symlinks", follow_symlinks)
+        check_follow("follow_binds", follow_binds)
         if not recursive:
             return super().rm(
                 recursive=recursive,

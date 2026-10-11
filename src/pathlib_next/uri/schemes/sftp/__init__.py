@@ -11,9 +11,11 @@ import typing as _ty
 import weakref as _weakref
 
 from .... import utils as _utils
-from ....path import _check_follow, _contains
+from ....path import check_follow, contains
 from ....utils.stat import FileStat
-from ... import _NOSOURCE, Source, Uri, UriPath, _same_authority
+from ... import Source, Uri, UriPath, same_authority
+
+_NO_SOURCE = Source(None, None, None, None)
 
 #: SFTP clients on which `posix-rename@openssh.com` proved unavailable (the
 #: extension request failed and a plain rename then succeeded), so later
@@ -364,7 +366,7 @@ class SftpPath(UriPath):
         takes neither this path's backend nor its configuration)."""
         config = self._ssh_config
         mine = self._source
-        if source is mine or _same_authority(source, mine):
+        if source is mine or same_authority(source, mine):
             return config
         return _DEFAULT_SSH_CONFIG
 
@@ -373,9 +375,7 @@ class SftpPath(UriPath):
         shared slot from (`UriPath._inherit_backend()`), or the unset marker."""
         winner = None
         for segment, backend, _derived in reversed(self._backend_candidates or ()):
-            if isinstance(segment, SftpPath) and _same_authority(
-                segment.source, source
-            ):
+            if isinstance(segment, SftpPath) and same_authority(segment.source, source):
                 if backend is not None:
                     return segment._ssh_config
                 if winner is None:
@@ -793,7 +793,7 @@ class SftpPath(UriPath):
         # carries no host: with this path's authority it had no printable
         # URI at all, so str()/repr()/== raised ValueError.
         target = self._sftpclient.readlink(self.path)
-        source = self.source if target.startswith("/") else _NOSOURCE
+        source = self.source if target.startswith("/") else _NO_SOURCE
         return self._from_parsed_parts(source, target, None, None)
 
     def hardlink_to(self, target: "SftpPath | Uri | str"):
@@ -816,8 +816,8 @@ class SftpPath(UriPath):
         follow_symlinks=False,
         follow_binds=False,
     ):
-        _check_follow("follow_symlinks", follow_symlinks)
-        _check_follow("follow_binds", follow_binds)
+        check_follow("follow_symlinks", follow_symlinks)
+        check_follow("follow_binds", follow_binds)
         # The native walker unlinks a symlink and never follows one, which is
         # the default policy; any other `follow_symlinks` takes the generic
         # walk. A server has no bindings, so `follow_binds` decides nothing.
@@ -890,7 +890,7 @@ class SftpPath(UriPath):
                 progress=progress,
             )
 
-        if _contains(self, target):
+        if contains(self, target):
             # As the generic copy(): checked before anything is created, or
             # the new directory is listed and copied into itself.
             raise OSError(

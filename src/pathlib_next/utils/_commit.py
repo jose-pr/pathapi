@@ -3,10 +3,10 @@ from __future__ import annotations
 import io as _io
 import typing as _ty
 
-__all__: "list[str]" = []
+__all__ = ["CommitOnClose"]
 
 
-class _CommitOnClose(_io.BytesIO):
+class CommitOnClose(_io.BytesIO):
     """A write buffer held in memory whose content is handed to `commit` when
     it is closed, once, if it was written to. For a backend with no way to
     write a file piecewise (an FTP `STOR`, a rewrite of an archive): the cost
@@ -49,3 +49,6 @@ class _CommitOnClose(_io.BytesIO):
             # Closed even when the commit fails, so `IOBase.__del__` does not
             # retry it (over newer content) at garbage collection.
             super().close()
+
+
+_CommitOnClose = CommitOnClose

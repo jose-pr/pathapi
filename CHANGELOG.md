@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **The names the built-in schemes take from the core are documented, and the
+  helpers among them are public.** The shipped API header gains "For path
+  implementers" and "For scheme implementers" sections, each hook with its
+  signature and one line of contract (`_init`, `_from_parsed_parts`,
+  `_format_parsed_parts`, `_make_child_relpath`, `_rename_target`,
+  `_pop_stat_hint`, `_same_location`, the backend-state hooks, `_anchor_segments`
+  and the rest). Twelve helpers that were underscore names now have public ones:
+  `pathlib_next.path.check_follow` and `contains`,
+  `pathlib_next.utils.archive.detect_format`,
+  `pathlib_next.utils._commit.CommitOnClose`, `pathlib_next.uri.same_authority`
+  and `DerivedBackend`, and in `pathlib_next.uri.source` `compose_uri`,
+  `compose_host`, `percent_encode`, `is_drive`, `SAFE_PATH` and `ERRORS`. The
+  underscore spellings (`_check_follow`, `_contains`, `_encode`, ...) still
+  import and are the same objects, so nothing has to change; a scheme written
+  outside this package can use the documented names instead. `path.__all__`
+  now lists `check_follow` and `contains`.
+
 ## [0.9.13] - 2026-10-09
 
 ### Added

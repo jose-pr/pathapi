@@ -4,7 +4,8 @@ import os as _os
 
 from ...fspath import LocalPath as _Local
 from ...path import FsPathLike
-from .. import Source, UriPath, _is_drive
+from .. import Source, UriPath
+from ..source import is_drive
 
 
 class FileUri(UriPath):
@@ -40,7 +41,7 @@ class FileUri(UriPath):
 
     @property
     def parent(self):
-        if _os.name == "nt" and _is_drive(self.path.removeprefix("/")):
+        if _os.name == "nt" and is_drive(self.path.removeprefix("/")):
             # A bare drive is its own parent, as in `PureWindowsPath("C:")`.
             return self
         share = self._unc_share()
@@ -54,7 +55,7 @@ class FileUri(UriPath):
             return parent
         parent = super().parent
         path = parent.path
-        if _os.name == "nt" and _is_drive(path.removeprefix("/")):
+        if _os.name == "nt" and is_drive(path.removeprefix("/")):
             # "C:" alone is drive-RELATIVE (the current directory on C:); the
             # parent of a top-level "C:/Windows" is the drive root "C:/".
             return parent.with_path(path + "/")
@@ -66,9 +67,9 @@ class FileUri(UriPath):
         # share is the anchor of a UNC path.
         segments = self.segments
         if _os.name == "nt":
-            if segments[:1] and _is_drive(segments[0]):
+            if segments[:1] and is_drive(segments[0]):
                 return segments[:1]
-            if segments[:1] == ("",) and len(segments) > 1 and _is_drive(segments[1]):
+            if segments[:1] == ("",) and len(segments) > 1 and is_drive(segments[1]):
                 return segments[:2]
             if self._unc_share() is not None:
                 return segments[:2]
@@ -88,7 +89,7 @@ class FileUri(UriPath):
         has to agree with it."""
         if _os.name == "nt":
             drive, sep, _ = path.partition("/")
-            if _is_drive(drive):
+            if is_drive(drive):
                 return bool(sep)
         return super()._is_absolute_decoded(path)
 
@@ -99,7 +100,7 @@ class FileUri(UriPath):
         path = self.path
         if _os.name == "nt":
             drive, sep, _ = path.partition("/")
-            if _is_drive(drive):
+            if is_drive(drive):
                 return bool(sep)
         return super().is_absolute()
 
@@ -123,7 +124,7 @@ class FileUri(UriPath):
 
     @classmethod
     def _format_parsed_parts(cls, source, path, query, fragment, /, sanitize=True):
-        if _os.name == "nt" and _is_drive(path.partition("/")[0]):
+        if _os.name == "nt" and is_drive(path.partition("/")[0]):
             # Render "C:/x" as "file:/C:/x", the spelling `Uri` itself
             # parses it to, so `Uri(p) == UriPath(p)` for a local path.
             path = "/" + path

@@ -11,12 +11,12 @@ import threading as _threading
 import typing as _ty
 import weakref as _weakref
 
-from ....path import _check_follow
+from ....path import check_follow
 from ....utils import as_error_handler, is_safe_child_name
-from ....utils._commit import _CommitOnClose
+from ....utils._commit import CommitOnClose
 from ....utils.stat import FileStat
 from ... import Uri, UriPath
-from ...source import _SAFE_PATH, Source, _encode
+from ...source import SAFE_PATH, Source, percent_encode
 from ..file import FileUri
 
 _SEP = "!/"
@@ -547,12 +547,12 @@ class _ArchiveBackend:
 
 def _detect_backend_cls(outer: "UriPath") -> "tuple[type, bytes | None]":
     """Detect zip vs tar for `outer` (extension, then magic-byte sniff --
-    see `utils.archive._detect_format`): the matching backend class and, when
+    see `utils.archive.detect_format`): the matching backend class and, when
     the sniff had to read a non-local outer whole, those bytes. An error
     reading the outer propagates. Lazily imports `.zip`/`.tar` (rather than
     at module level) to avoid a circular import: both submodules import
     `ArchiveUri`/`_ArchiveBackend` from this module."""
-    from ....utils.archive import _detect_format
+    from ....utils.archive import detect_format
     from .tar import _TarBackend
     from .zip import _ZipBackend
 
@@ -566,7 +566,7 @@ def _detect_backend_cls(outer: "UriPath") -> "tuple[type, bytes | None]":
         whole.append(outer.read_bytes())
         return whole[0][:4]
 
-    fmt = _detect_format(outer.name, _peek)
+    fmt = detect_format(outer.name, _peek)
     return (_ZipBackend if fmt == "zip" else _TarBackend), (whole[0] if whole else None)
 
 
@@ -722,7 +722,7 @@ class ArchiveUri(UriPath):
             outer_uri = outer_uri.replace(_SEP, "%21/")
         # The composer's own encoding: a name that is not UTF-8 (a tar member
         # written in another charset) keeps its bytes as `%XX`.
-        inner = _encode(self.path, _SAFE_PATH)
+        inner = percent_encode(self.path, SAFE_PATH)
         # A "!/" inside a member name must never read as a separator once
         # this URI is itself the outer of a nested archive.
         inner = inner.replace(_SEP, "%21/")
@@ -756,7 +756,7 @@ class ArchiveUri(UriPath):
         """A write buffer whose content becomes the member `name` (a key of
         the backend) when it is closed."""
         backend = self.backend
-        return _CommitOnClose(
+        return CommitOnClose(
             lambda buffer: backend.write_member(name, buffer.getvalue()), initial
         )
 
@@ -973,8 +973,8 @@ class ArchiveUri(UriPath):
     ):
         # An archive holds no symlinks or bindings: the policies are checked
         # and have nothing to decide.
-        _check_follow("follow_symlinks", follow_symlinks)
-        _check_follow("follow_binds", follow_binds)
+        check_follow("follow_symlinks", follow_symlinks)
+        check_follow("follow_binds", follow_binds)
         if not (recursive and self._rm_tree(as_error_handler(ignore_error))):
             return super().rm(
                 recursive=recursive,

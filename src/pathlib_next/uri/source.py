@@ -20,7 +20,8 @@ _DIGITS = "0123456789"
 #: `surrogateescape` carries each such byte through the decoded `str` and
 #: back out to the same escape, where the default `strict` raised
 #: UnicodeDecodeError while the path object was being constructed.
-_ERRORS = "surrogateescape"
+ERRORS = "surrogateescape"
+_ERRORS = ERRORS
 
 
 class _Userinfo(str):
@@ -148,9 +149,12 @@ def _parse_source(scheme: "str | None", authority: "str | None") -> "Source":
     return Source(scheme, userinfo, host, port)
 
 
-def _is_drive(segment: str) -> bool:
+def is_drive(segment: str) -> bool:
     """Whether a path segment is a Windows drive ("C:")."""
     return len(segment) == 2 and segment[1] == ":" and segment[0].isalpha()
+
+
+_is_drive = is_drive
 
 
 def _remove_dot_segments(path: str, *, drive: bool = False) -> str:
@@ -213,7 +217,9 @@ _SUB_DELIMS = "!$&'()*+,;="
 _SAFE_USER = _SUB_DELIMS
 _SAFE_USERINFO = _SUB_DELIMS + ":"
 _SAFE_HOST = _SUB_DELIMS
-_SAFE_PATH = _SUB_DELIMS + ":@/"
+#: The characters `percent_encode()` leaves as they are in a path.
+SAFE_PATH = _SUB_DELIMS + ":@/"
+_SAFE_PATH = SAFE_PATH
 _SAFE_QUERY = _SUB_DELIMS + ":@/?"
 _SAFE_FRAGMENT = _SAFE_QUERY
 
@@ -237,14 +243,17 @@ def _lenient_utf8(text: str) -> bytes:
     return bytes(out)
 
 
-def _encode(text: str, safe: str) -> str:
+def percent_encode(text: str, safe: str) -> str:
     """`text` percent-encoded as UTF-8, keeping the characters of `safe`.
-    A decoded path may hold escaped bytes (`_ERRORS`) and, from a Windows
+    A decoded path may hold escaped bytes (`ERRORS`) and, from a Windows
     listing, a lone surrogate; neither may make the composer raise."""
     try:
-        return _uritools.uriencode(text, safe, errors=_ERRORS).decode()
+        return _uritools.uriencode(text, safe, errors=ERRORS).decode()
     except UnicodeEncodeError:
         return _uritools.uriencode(_lenient_utf8(text), safe).decode()
+
+
+_encode = percent_encode
 
 
 def _encode_userinfo(userinfo: str) -> str:
@@ -283,7 +292,7 @@ def _compose_ipv6(address: _ip.IPv6Address) -> str:
     return f"[{text}]"
 
 
-def _compose_host(host: "str | _IPAddress") -> str:
+def compose_host(host: "str | _IPAddress") -> str:
     """Encode a host for composition -- mirrors `uritools`' private
     `_authority()`/`_host()` composer helpers, including the fact that a
     bare (non-bracketed) string that happens to parse as IPv6 gets
@@ -319,6 +328,9 @@ def _compose_host(host: "str | _IPAddress") -> str:
     return _encode(host, _SAFE_HOST)
 
 
+_compose_host = compose_host
+
+
 def _idna_encode(host: str) -> str:
     """`host` in IDNA (ASCII) form: IDNA 2008 with UTS #46 mapping through
     the `idna` package when installed (what `requests` itself uses), else
@@ -346,7 +358,7 @@ def _port_text(port: "int | str") -> str:
     return str(port)
 
 
-def _compose_uri(
+def compose_uri(
     scheme: "str | None",
     userinfo: "str | None",
     host: "str | _IPAddress | None",
@@ -355,6 +367,10 @@ def _compose_uri(
     query: "str | None",
     fragment: "str | None",
 ) -> str:
+    """The URI text of already-decoded components, percent-encoding each as
+    its part of RFC 3986 asks. `None` leaves a component out; a path that
+    cannot sit beside the authority given (or beside none) is a `ValueError`,
+    as is an invalid scheme or port."""
     parts = []
     if scheme is not None:
         if not _SCHEME_RE.fullmatch(scheme):
@@ -388,6 +404,9 @@ def _compose_uri(
         parts.append("#")
         parts.append(_encode(fragment, _SAFE_FRAGMENT))
     return "".join(parts)
+
+
+_compose_uri = compose_uri
 
 
 #: Schemes whose userinfo is an access token, not a user name: `str()` and

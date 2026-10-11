@@ -15,7 +15,7 @@ Names are imported from the module named in the heading of the section that
 documents them; the root `pathlib_next` re-exports the core ones ("Package
 root"). A module or name that starts with an underscore is private: where this
 file names one (`pathlib_next.uri.schemes._gitrepo`,
-`pathlib_next.uri.schemes.archive._base`) it names the public names to use from
+`pathlib_next.uri.schemes.archive._base`, `pathlib_next.utils._commit`) it names the public names to use from
 it, and nothing else there is contract. The file has two parts: the core
 (`Package root` through `Testing helpers`) and the URI layer (`pathlib_next.uri`
 and every scheme, from `URIs`), each readable without the other; the closing
@@ -438,6 +438,53 @@ class FsPathLike(Protocol):
 
 `Protocol` with `__fspath__()`.
 **`PathLike`** = `str | Path`; **`PurePathLike`** = `str | Pathname`.
+
+### For path implementers (`pathlib_next.path`, `pathlib_next.utils.archive`, `pathlib_next.utils._commit`)
+
+The names a class built on `Path` overrides or calls beyond the stubs above,
+in one place: the built-in schemes use all of them, so they are contract. The
+four helpers were underscore names (`_check_follow`, `_contains`,
+`_detect_format`, `_CommitOnClose`); those spellings stay importable and are
+the same objects.
+
+```python
+class Pathname(FsPathLike):
+    def _anchor_segments(self) -> tuple[str, ...]: ...
+
+class Path(Pathname, Chmod, Stat, BinaryOpen):
+    def _scandir(self) -> Iterator[Tuple[str, Optional[FileStat]]]: ...
+    def _same_filesystem(self, other) -> bool: ...
+    def _coerce_target(self, target) -> Path: ...
+    def _open(self, mode="r", buffering=-1) -> IOBase: ...
+    def _chown(self, uid, gid, *, follow_symlinks=True) -> None: ...
+
+def check_follow(name, policy) -> None: ...
+def contains(src, target) -> bool: ...
+def detect_format(name, peek=None) -> str: ...
+
+class CommitOnClose(BytesIO):
+    def __init__(self, commit, initial=None): ...
+```
+
+- `_anchor_segments()` — the leading `segments` that anchor the path instead
+  of naming a directory (`("",)` for a rooted path, else `()`); `parents`
+  stops there. Override it when the root is spelled differently (`FileUri`
+  anchors at a Windows drive or share).
+- `_scandir()`, `_same_filesystem()`, `_coerce_target()` — see `Path`.
+  `_open()` and `_chown()` — see `BinaryOpen` and `Chmod`.
+- `check_follow(name, policy)` — `ValueError` naming `name` unless `policy` is
+  `True`, `False`, `None` or a callable. An `rm()` override calls it for
+  `follow_symlinks` and `follow_binds` before it removes anything.
+- `contains(src, target)` — whether `target` is `src` or lies inside it,
+  looking through symlinks and deciding as `copy()` does (`_node_key()`,
+  else `_same_filesystem()` and `==`). A `copy()` override that copies a
+  tree natively refuses a target inside the source with it.
+- `detect_format(name, peek=None)` — `"zip"` or `"tar"` from the extension of
+  `name`, else from the first bytes `peek()` returns (called only then).
+- `CommitOnClose(commit, initial=None)` — an in-memory `BytesIO` that calls
+  `commit(buffer)` once at `close()`, before the buffer is closed: always for
+  a new file, only after a write for one opened with `initial` content. Return
+  it from `_open()` for a backend that cannot write a file piecewise.
 
 ## Local filesystem (`pathlib_next.fspath`)
 
@@ -1271,6 +1318,142 @@ form-urlencoding: only `%XX` escapes are decoded and a `+` stays a plus
 (`urllib.parse.parse_qsl` reads form text). Iteration yields the decoded
 pairs, `to_dict(*, single=False)`. `Query.ENCODING` (`"utf-8"`) and
 `Query.SEPARATOR` (`"&"`) are the defaults of `encoding=` and `separator=`.
+
+### For scheme implementers (`pathlib_next.uri`, `pathlib_next.uri.source`)
+
+The names a `UriPath` subclass overrides or calls beyond `Uri` and `UriPath`
+above, in one place: the built-in schemes use all of them, so they are
+contract (the core hooks they also use are under "For path implementers").
+The helpers were underscore names (`_same_authority`, `_DerivedBackend`,
+`_compose_uri`, `_compose_host`, `_encode`, `_is_drive`, `_SAFE_PATH`,
+`_ERRORS`); those spellings stay importable and are the same objects.
+
+```python
+class Uri(Pathname):
+    def _init(self, source, path, query, fragment, **kwargs): ...
+    def _from_parsed_parts(self, source, path, query, fragment, /, **kwargs): ...
+    @classmethod
+    def _format_parsed_parts(
+        cls, source, path, query, fragment, /, sanitize=True,
+    ) -> str: ...
+    @classmethod
+    def _parse_uri(cls, uri) -> tuple[Source, str, Query, str]: ...
+    def _load_parts(self): ...
+    def _make_child_relpath(self, name, **kwargs) -> Self: ...
+    def _join_decoded(self, key) -> Uri: ...
+    def _is_absolute_decoded(self, path) -> bool: ...
+    def _rename_target(self, target) -> Uri: ...
+    def _same_location(self, other) -> bool: ...
+    _initiated
+    _raw_uris
+    _source
+    _query
+
+class UriPath(Uri, Path):
+    def _init(self, source, path, query, fragment, /, backend=None, **kwargs): ...
+    def _make_child_relpath(self, name, stat_hint=None, **kwargs) -> Self: ...
+    def _pop_stat_hint(self) -> FileStat | None: ...
+    def _listdir(self) -> Iterator[str]: ...
+    def _backend_for(self, source): ...
+    def _inherit_backend(self, source) -> None: ...
+    def _supplied_backend(self): ...
+    @classmethod
+    def _schemes(cls) -> Sequence[str]: ...
+    _backend
+    _backend_derived
+    _backend_candidates
+    _derived_cell
+    _schemes_in_use
+    _stat_hint
+
+def same_authority(a, b) -> bool: ...
+class DerivedBackend: ...
+```
+
+```python
+# pathlib_next.uri.source
+def compose_uri(scheme, userinfo, host, port, path, query, fragment) -> str: ...
+def compose_host(host) -> str: ...
+def percent_encode(text, safe) -> str: ...
+def is_drive(segment) -> bool: ...
+SAFE_PATH = "!$&'()*+,;=:@/"
+ERRORS = "surrogateescape"
+```
+
+Building and deriving a path:
+
+- `_init(source, path, query, fragment, **kwargs)` — stores the decoded
+  components; every constructor, join and `with_*()` ends here, and it may run
+  again on a live instance. An override sets its own state, then calls
+  `super()._init()`. `UriPath._init` also takes `backend=`, a backend the
+  caller supplied.
+- `_from_parsed_parts(source, path, query, fragment, /, **kwargs)` — a
+  same-type instance from decoded components with no parsing (a `rename()`
+  result, a probe); the keywords reach `_init()`.
+- `_format_parsed_parts(source, path, query, fragment, /, sanitize=True)`
+  — the URI text of decoded components (`sanitize` drops the password);
+  `as_uri()` and `str()` call it, so a scheme with a different spelling
+  overrides it. `_parse_uri(uri)` is its reverse for URI text: `(Source,
+  decoded path, Query, fragment)`.
+- `_load_parts()` — parses a path that was built from arguments and is not
+  parsed yet; `source`, `path`, `query` and `fragment` call it. Call it
+  before reading `_source`, `_query` or the backend state of a path that may
+  still be waiting (`_initiated` is False; `_raw_uris` holds its arguments).
+- `_make_child_relpath(name, stat_hint=None, **kwargs)` — the child called
+  exactly `name` (one segment, never re-parsed); `iterdir()`, `_scandir()` and
+  the `str` join build children with it, so a scheme that gives a name a
+  meaning (`gitlab:`'s `-`) overrides it. `stat_hint` is the listing's stat
+  for that child.
+- `_join_decoded(key)` — joins an already-decoded path string name by name
+  through `_make_child_relpath()`, dot segments resolved as RFC 3986 5.2.4
+  says; an absolute key restarts at the root of the same source.
+  `_is_absolute_decoded(path)` says whether a string restarts a join (a leading
+  `/`; `FileUri` also a drive path).
+- `_rename_target(target)` — a `rename()` destination as a `Uri`: a `str` is a
+  decoded path, resolved against `self.parent`. Raises `NotImplementedError`
+  when `_same_location()` says a native rename cannot reach it, which makes
+  `move()` copy. `_same_location(other)` is True for the same endpoint
+  (`same_authority()`) or a sourceless path; override it where the namespace
+  is narrower than the authority (an archive, an Azure container).
+- `_pop_stat_hint()` — the stat `_scandir()` attached to this child, once: a
+  `stat()` that returns it saves the request, and the next call asks again.
+- `_listdir()` — the names `_scandir()` lists by default; a stub.
+- `_schemes()` — the scheme names this class registers.
+
+Backend state (read it only in an override that changes how a path carries a
+backend, as `sftp:`, the archives and `git:` do):
+
+- `_backend` is the backend object or `None`; `_backend_derived` says the path
+  built it or inherited one that was built, not supplied;
+  `_supplied_backend()` returns only a supplied one and builds nothing.
+- `_backend_for(source)` — `(backend, derived)` this path hands a path at
+  `source`: its own when `source` is its endpoint, else `(None, None)`.
+  `_inherit_backend(source)` settles, once the endpoint is known, which
+  joined segment's backend the path takes; call it first in an `_init()`
+  override that reads `_backend`.
+- `_backend_candidates` holds the join segments (with their backends) until
+  then; `_derived_cell` is the slot shared by paths derived from one another
+  on one endpoint (`None` for one that holds a backend or was not derived);
+  `_schemes_in_use` is the `schemesmap=` the path was built with; `_stat_hint`
+  is the pending hint.
+- `same_authority(a, b)` — whether two `Source`s name one endpoint (scheme,
+  userinfo, host, port; `""` and `None` alike): the test for letting a
+  backend, a connection or a rename pass from one path to another.
+- `DerivedBackend` — a base class for a backend that only `_initbackend()`
+  creates and that cannot be weakly referenced (a tuple): without it, or
+  `"__weakref__"` in `__slots__`, `_same_filesystem()` reads it as supplied.
+
+Composing text:
+
+- `compose_uri(scheme, userinfo, host, port, path, query, fragment)` — URI text
+  from decoded components, each percent-encoded for its part; `None` omits one
+  and an invalid scheme, port or path/authority pairing is a `ValueError`.
+  `compose_host(host)` encodes a host (an IPv6 address is bracketed, an
+  internationalized name is IDNA). `percent_encode(text, safe)` encodes UTF-8
+  and keeps the characters of `safe`; `SAFE_PATH` is the set a path keeps.
+  `ERRORS` is the error handler for percent-decoding and re-encoding
+  (`"surrogateescape"`: a byte that is not UTF-8 survives the round trip).
+- `is_drive(segment)` — whether a segment is a Windows drive (`"C:"`).
 
 ## Built-in schemes (`pathlib_next.uri.schemes`)
 
