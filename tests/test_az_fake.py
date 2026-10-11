@@ -1,9 +1,11 @@
 import hashlib
 import time
+import types
 import datetime
 
 import pytest
 
+import objstore_fakes
 from pathlib_next.uri.schemes import _objstore as store
 from pathlib_next.uri.schemes import az
 from pathlib_next.uri.schemes.az import AzPath, BaseAzBackend
@@ -38,6 +40,10 @@ class _NotImplemented(_HttpResponseError):
     status_code = 501
 
 
+class _ConditionNotMet(_HttpResponseError):  # ResourceModifiedError
+    status_code = 412
+
+
 class _RangeNotSatisfiable(_HttpResponseError):
     status_code = 416
 
@@ -56,8 +62,11 @@ class _FakeBlobItem:
 
 
 class _FakeDownloader:
-    def __init__(self, data):
+    def __init__(self, data, etag='"0"', total=None):
         self._data = data
+        self.properties = types.SimpleNamespace(
+            etag=etag, content_range=f"bytes 0-{len(data) - 1}/{total}"
+        )
 
     def readall(self):
         return self._data
@@ -69,11 +78,26 @@ class _FakeBlobClient:
         self.name = name
         self.url = f"https://example.invalid/{name}"
 
-    def get_blob_properties(self):
+    def _etag(self, etag, match_condition):
+        """The blob's current ETag, after the condition: `etag=` with
+        `match_condition=` is the If-Match the SDK sends, and a blob that is
+        not that one is 412."""
+        container = self._container
+        if self.name not in container.objects:
+            if etag is not None and container.missing_is_412:
+                raise _ConditionNotMet(self.name)
+            raise _Missing(self.name)
+        current = '"%d"' % container.objects.version(self.name)
+        if etag is not None:
+            assert match_condition is not None
+            if etag != current:
+                raise _ConditionNotMet(self.name)
+        return current
+
+    def get_blob_properties(self, etag=None, match_condition=None):
         if self.name in self._container.properties_errors:
             raise self._container.properties_errors[self.name]
-        if self.name not in self._container.objects:
-            raise _Missing(self.name)
+        self._etag(etag, match_condition)
         content = self._container.objects[self.name]
         md5 = self._container.content_md5.get(
             self.name, bytearray(hashlib.md5(content).digest())
@@ -96,10 +120,13 @@ class _FakeBlobClient:
         del self._container.objects[self.name]
         self._container.deleted.append(self.name)
 
-    def download_blob(self, offset=None, length=None):
-        if self.name not in self._container.objects:
-            raise _Missing(self.name)
+    def download_blob(self, offset=None, length=None, etag=None, match_condition=None):
+        if self._container.before_read is not None:
+            self._container.before_read(self.name)
+        current = self._etag(etag, match_condition)
+        self._container.reads.append((self.name, offset, etag))
         content = self._container.objects[self.name]
+        total = len(content)
         if offset is not None:
             # A range at or past the end is answered 416, an empty blob's
             # included.
@@ -108,7 +135,7 @@ class _FakeBlobClient:
             content = content[offset : None if length is None else offset + length]
             self._container.ranges.append((self.name, offset, length))
         self._container.downloads.append(self.name)
-        return _FakeDownloader(content)
+        return _FakeDownloader(content, current, total)
 
     def upload_blob(self, data, overwrite=False):
         if self._container.upload_errors:
@@ -133,7 +160,10 @@ class _FakeBlobClient:
 
 class _FakeContainer:
     def __init__(self, *, bulk=True):
-        self.objects = {}
+        self.objects = objstore_fakes.VersionedObjects()
+        self.before_read = None
+        self.missing_is_412 = False
+        self.reads = []
         self.ranges = []
         self.stream_uploads = []
         self.copy_errors = {}
@@ -1363,10 +1393,10 @@ def test_a_range_that_fails_midway_is_an_oserror(monkeypatch):
     backend, _container = _container_with(**{"big.bin": bytes(range(10))})
     original = _FakeBlobClient.download_blob
 
-    def failing(self, offset=None, length=None):
+    def failing(self, offset=None, length=None, **kwargs):
         if offset:
             raise _ServiceUnavailable("503")
-        return original(self, offset, length)
+        return original(self, offset, length, **kwargs)
 
     monkeypatch.setattr(_FakeBlobClient, "download_blob", failing)
     with _az("az://account/container/big.bin", backend).open("rb") as stream:
@@ -1407,3 +1437,158 @@ def test_a_large_exclusive_upload_does_not_replace_a_blob(monkeypatch):
             io.BytesIO(b"123456789"), 9, exclusive=True
         )
     assert container.objects == {"there": b"keep"}
+
+
+# --- a read is one version of the blob --------------------------------------
+
+OLD = b"0123456789ab"
+NEW = b"ZZZZZZZZZZZZ"
+
+
+def _change_before_read(container, name, change, *, nth=2):
+    """Run `change()` just before the `nth` request for the content of `name`."""
+    seen = []
+
+    def hook(read):
+        if read == name:
+            seen.append(read)
+            if len(seen) == nth:
+                change()
+
+    container.before_read = hook
+
+
+def _stale_errno():
+    import errno
+
+    return getattr(errno, "ESTALE", errno.EIO)
+
+
+def test_a_read_across_an_overwrite_raises_and_returns_no_mixed_bytes(monkeypatch):
+    monkeypatch.setattr(az, "READ_CHUNK", 4)
+    backend, container = _container_with(**{"big.bin": OLD})
+    _change_before_read(
+        container, "big.bin", lambda: container.objects.update(**{"big.bin": NEW})
+    )
+    path = _az("az://account/container/big.bin", backend)
+    got = []
+    with path.open("rb") as stream:
+        got.append(stream.read(4))
+        with pytest.raises(OSError) as info:
+            stream.read(4)
+    assert got == [OLD[:4]]
+    error = info.value
+    assert not isinstance(error, FileNotFoundError)
+    assert error.errno == _stale_errno()
+    assert "changed while it was being read" in error.strerror
+    assert error.filename == "az://account/container/big.bin"
+    assert error.__cause__ is None
+
+
+def test_a_read_of_a_blob_deleted_midway_is_file_not_found(monkeypatch):
+    for answers_412 in (False, True):
+        monkeypatch.setattr(az, "READ_CHUNK", 4)
+        backend, container = _container_with(**{"big.bin": OLD})
+        container.missing_is_412 = answers_412
+        _change_before_read(
+            container, "big.bin", lambda: container.objects.pop("big.bin")
+        )
+        with _az("az://account/container/big.bin", backend).open("rb") as stream:
+            assert stream.read(4) == OLD[:4]
+            with pytest.raises(FileNotFoundError):
+                stream.read(4)
+
+
+def test_a_read_pins_the_etag_of_its_first_request(monkeypatch):
+    monkeypatch.setattr(az, "READ_CHUNK", 4)
+    backend, container = _container_with(**{"big.bin": OLD})
+    etag = '"%d"' % container.objects.version("big.bin")
+    with _az("az://account/container/big.bin", backend).open("rb") as stream:
+        assert stream.read() == OLD
+        stream.seek(5)
+        assert stream.read(2) == OLD[5:7]
+        stream.seek(-2, 2)
+        assert stream.read() == OLD[-2:]
+    assert container.reads[0] == ("big.bin", 0, None)
+    assert {read[2] for read in container.reads[1:]} == {etag}
+    assert ("big.bin", 4, etag) in container.reads
+
+
+def test_two_opens_are_two_snapshots(monkeypatch):
+    monkeypatch.setattr(az, "READ_CHUNK", 4)
+    backend, container = _container_with(**{"big.bin": OLD})
+    path = _az("az://account/container/big.bin", backend)
+    with path.open("rb") as first:
+        assert first.read(4) == OLD[:4]
+        container.objects["big.bin"] = NEW
+        with path.open("rb") as second:
+            assert second.read() == NEW
+        with pytest.raises(OSError) as info:
+            first.read()
+    assert info.value.errno == _stale_errno()
+
+
+def test_seeking_to_the_end_uses_the_size_the_first_response_reported(monkeypatch):
+    monkeypatch.setattr(az, "READ_CHUNK", 4)
+    backend, container = _container_with(**{"big.bin": OLD})
+    asked = []
+    original = _FakeBlobClient.get_blob_properties
+
+    def recorded(self, etag=None, match_condition=None):
+        asked.append(etag)
+        return original(self, etag, match_condition)
+
+    monkeypatch.setattr(_FakeBlobClient, "get_blob_properties", recorded)
+    with _az("az://account/container/big.bin", backend).open("rb") as stream:
+        # A longer blob that replaces it does not change the size being read.
+        container.objects["big.bin"] = NEW + NEW
+        assert stream.seek(-3, 2) == len(OLD) - 3
+        with pytest.raises(OSError) as info:
+            stream.read()
+    assert info.value.errno == _stale_errno()
+    # Only the check for a blob that is gone asked, and it names no ETag.
+    assert asked == [None]
+
+
+def test_seeking_to_the_end_measures_the_pinned_blob_when_no_total_was_reported(
+    monkeypatch,
+):
+    monkeypatch.setattr(az, "READ_CHUNK", 4)
+    original = _FakeDownloader.__init__
+
+    def without_a_total(self, data, etag='"0"', total=None):
+        original(self, data, etag, total)
+        self.properties.content_range = None
+
+    monkeypatch.setattr(_FakeDownloader, "__init__", without_a_total)
+    backend, container = _container_with(**{"big.bin": OLD})
+    asked = []
+    measure = _FakeBlobClient.get_blob_properties
+
+    def recorded(self, etag=None, match_condition=None):
+        asked.append(etag)
+        return measure(self, etag, match_condition)
+
+    monkeypatch.setattr(_FakeBlobClient, "get_blob_properties", recorded)
+    etag = '"%d"' % container.objects.version("big.bin")
+    with _az("az://account/container/big.bin", backend).open("rb") as stream:
+        assert stream.seek(-3, 2) == len(OLD) - 3
+        assert stream.read() == OLD[-3:]
+    assert asked == [etag]
+    with _az("az://account/container/big.bin", backend).open("rb") as stream:
+        container.objects["big.bin"] = NEW + NEW
+        with pytest.raises(OSError) as info:
+            stream.seek(-3, 2)
+    assert info.value.errno == _stale_errno()
+
+
+def test_r_plus_reads_its_initial_content_as_one_version(monkeypatch):
+    monkeypatch.setattr(az, "READ_CHUNK", 4)
+    backend, container = _container_with(**{"big.bin": OLD})
+    _change_before_read(
+        container, "big.bin", lambda: container.objects.update(**{"big.bin": NEW})
+    )
+    with pytest.raises(OSError) as info:
+        _az("az://account/container/big.bin", backend).open("r+b")
+    assert info.value.errno == _stale_errno()
+    assert container.objects["big.bin"] == NEW and container.uploads == []

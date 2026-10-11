@@ -18,6 +18,30 @@ class ServerInfo(tuple):
         return info
 
 
+class VersionedObjects(dict):
+    """`name -> bytes` that numbers every write: `version(name)` changes
+    whenever the name is assigned, as a store's generation or ETag does when
+    the object is replaced, even by the same bytes."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        self._versions = {}
+        self._written = 0
+        self.update(*args, **kwargs)
+
+    def __setitem__(self, name, content):
+        self._written += 1
+        self._versions[name] = self._written
+        super().__setitem__(name, content)
+
+    def update(self, *args, **kwargs):
+        for name, content in dict(*args, **kwargs).items():
+            self[name] = content
+
+    def version(self, name):
+        return self._versions.get(name, 0)
+
+
 class FakeState:
     """What a test may read or set on a loopback fake: the stored `objects`
     (name -> bytes), the `requests` it served as `(method, path-and-query)`,
@@ -28,7 +52,11 @@ class FakeState:
     status it answers every copy request with. With `discard_uploads`, an
     object uploaded in several requests is not kept: `discarded` maps its name
     to `(size, md5 hex)` and the object is empty, so a test can upload more
-    than it wants this process to hold."""
+    than it wants this process to hold. `before_content_read(name)`, when
+    set, is called before the server reads an object's content for a request,
+    so a test can replace or delete it between two requests of a stream;
+    `reads` lists `(name, start, condition)` for every such request, the
+    condition being the generation or ETag the request required."""
 
     def __init__(self, objects):
         self.objects = objects
@@ -42,6 +70,8 @@ class FakeState:
         self.copy_status = None
         self.discard_uploads = False
         self.discarded = {}
+        self.before_content_read = None
+        self.reads = []
 
 
 def page_of(entries, offset, limit, page_size):

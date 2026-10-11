@@ -228,6 +228,76 @@ _UPLOAD_CHUNK = 2 * 1024**2
 """Bytes of one request of a resumable upload (a multiple of 256 KiB)."""
 
 
+class _GsSnapshot:
+    """The ranged reads of one open stream, as one version of the object. The
+    first response reports the object's generation and every later request
+    requires it (`ifGenerationMatch`), so an object replaced between two of
+    them answers 412 and the stream raises instead of returning the bytes of
+    two objects. Each open has its own, so two opens are two snapshots."""
+
+    def __init__(self, path: "GsPath"):
+        self.object_path = path
+        self.generation = None
+
+    def _failure(self, error: BaseException) -> "OSError | None":
+        path = self.object_path
+        if _http_status(error) == 412 and self.generation is not None:
+            # Replaced -- or deleted, which a store may also answer 412.
+            if path._has_object(path.key):
+                return _store.changed_error(path)
+            return FileNotFoundError(
+                _errno.ENOENT, "No such file or directory", str(path)
+            )
+        return _oserror(error, path)
+
+    def fetch(self, start: int, length: int) -> bytes:
+        """The bytes from `start`, at most `length`; none at or past the end (a
+        range there is answered 416, which is also an empty object's answer)."""
+        path = self.object_path
+        # The client is resolved outside the translation, so a missing SDK
+        # raises ImportError instead of FileNotFoundError.
+        blob = path._bucket.blob(path.key)
+        pinned = (
+            {} if self.generation is None else {"if_generation_match": self.generation}
+        )
+        try:
+            # No checksum: the SDK checks a download against the CRC32C or MD5
+            # of the whole object, which a part of it cannot match. The
+            # generation is what ties each range to the object the first read.
+            data = blob.download_as_bytes(
+                start=start,
+                end=start + length - 1,
+                checksum=None,
+                **pinned,
+                **path._options,
+            )
+        except Exception as error:
+            if _http_status(error) == 416:
+                return b""
+            failure = self._failure(error)
+            if failure is None:
+                raise
+            raise failure from None
+        if self.generation is None:
+            self.generation = blob.generation
+        return data
+
+    def size(self) -> int:
+        """The size of the version being read."""
+        path = self.object_path
+        if self.generation is None:
+            return path.stat().st_size
+        blob = path._bucket.blob(path.key)
+        try:
+            blob.reload(if_generation_match=self.generation, **path._options)
+        except Exception as error:
+            failure = self._failure(error)
+            if failure is None:
+                raise
+            raise failure from None
+        return blob.size
+
+
 class GsPath(_store.ObjectStorePath):
     """`gs:` scheme (`gs://bucket/key/path`): read/write/list via
     `google.cloud.storage`. Requires the `gs` extra. GCS has no real
@@ -336,22 +406,16 @@ class GsPath(_store.ObjectStorePath):
         if mode in ("r", "r+"):
             if not self.key:
                 raise IsADirectoryError(_errno.EISDIR, "Is a directory", str(self))
-            # The client is resolved outside the translation, so a missing
-            # SDK raises ImportError instead of FileNotFoundError.
-            blob = self._bucket.blob(self.key)
-
-            def fetch(start, length):
-                return self._read_range(blob, start, length)
-
+            snapshot = _GsSnapshot(self)
             try:
-                first = fetch(0, _store.READ_CHUNK)
+                first = snapshot.fetch(0, _store.READ_CHUNK)
             except FileNotFoundError:
                 if self.is_dir():
                     raise IsADirectoryError(
                         _errno.EISDIR, "Is a directory", str(self)
                     ) from None
                 raise
-            raw = _store.RangeReader(fetch, lambda: self.stat().st_size, first)
+            raw = _store.RangeReader(snapshot.fetch, snapshot.size, first)
             if mode == "r+":
                 # Read-modify-write: what is written is uploaded on close.
                 with raw:
@@ -369,22 +433,6 @@ class GsPath(_store.ObjectStorePath):
         if mode == "w" and self._holds_keys(self.key):
             raise IsADirectoryError(_errno.EISDIR, "Is a directory", str(self))
         return _GsWriteStream(self, exclusive=(mode == "x"))
-
-    def _read_range(self, blob, start: int, length: int) -> bytes:
-        """The bytes of `blob` from `start`, at most `length`; none at or past
-        its end (a range there is answered 416, which is also an empty
-        object's answer)."""
-        try:
-            return blob.download_as_bytes(
-                start=start, end=start + length - 1, checksum=None, **self._options
-            )
-        except Exception as error:
-            if _http_status(error) == 416:
-                return b""
-            translated = _oserror(error, self)
-            if translated is None:
-                raise
-            raise translated from None
 
     def _upload_file(self, file, size: int, *, exclusive=False) -> None:
         """Upload the `size` bytes of `file` as the object: one request while it

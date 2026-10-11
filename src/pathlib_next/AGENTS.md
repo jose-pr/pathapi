@@ -2019,7 +2019,13 @@ of their own. A supplied backend is unaffected.
   only `FileNotFoundError` from `stat()` as absent; any other probe error is
   raised and no marker is written.
 - Reads stream, and the stream is not seekable: `seekable()` is False and
-  `seek()`/`tell()` raise `io.UnsupportedOperation`, binary or text.
+  `seek()`/`tell()` raise `io.UnsupportedOperation`, binary or text. A read
+  is one version of the object on all three stores: `s3:` makes one request
+  per open, and `gs:`/`az:` require the version their first request read in
+  every later one, so an object replaced while it is being read raises
+  `OSError` (`errno.ESTALE`, `EIO` where the platform has none) saying the
+  object changed while it was being read, never a mix of the two; one deleted
+  meanwhile is `FileNotFoundError`.
   `"w"`/`"x"`/`"r+"` spool and upload on close; `"x"` is a
   conditional put (check-then-put above 5 GiB); `"a"` unsupported.
   `st_mtime` from `LastModified`.
@@ -2114,7 +2120,10 @@ recursive-copy/remove rules as `S3Path` (same bucket); `rmdir()` of the
 bucket root → `PermissionError`; reads fetch the object in ranged requests of
 4 MiB as they are read, so a read holds one chunk and the stream stays
 seekable (`seek()` asks nothing until the next read; `seek(n, 2)` asks the
-size); `"w"`/`"x"`/`"r+"` spool in memory up to 4 MiB, then in a temp file,
+size of the version being read). The first request reports the object's
+generation and every later request of that stream sends it as
+`ifGenerationMatch`, so each open is a snapshot of one generation;
+`"w"`/`"x"`/`"r+"` spool in memory up to 4 MiB, then in a temp file,
 and upload on close (one request up to 4 MiB, a resumable upload in 2 MiB
 requests above); `"x"` uses `if_generation_match=0`; `"a"` unsupported; `st_mtime` from `updated`.
 A file `copy()` is one `copy_blob` request, within or between the buckets
@@ -2165,7 +2174,10 @@ does not exist; `rmdir()` of the container root → `PermissionError`;
 requests of `schemes.az.READ_CHUNK` (512 KiB; the SDK holds about nine times
 a response while it handles it, so assign a larger number to trade memory for
 requests) as they are read, so the stream stays seekable and holds one
-chunk; `"w"`/`"x"`/`"r+"` spool in memory up to 4 MiB, then in a temp file,
+chunk. The first request reports the blob's ETag and every later request of
+that stream requires it (`If-Match`), so each open is a snapshot of one
+version; `seek(n, 2)` uses the size that response reported;
+`"w"`/`"x"`/`"r+"` spool in memory up to 4 MiB, then in a temp file,
 and upload on close (one request up to 4 MiB, blocks above);
 `"x"` sends `If-None-Match: *`; `"a"` unsupported; `st_mtime` from `last_modified`.
 A file `copy()` within one container is one service copy (the call `rename()`

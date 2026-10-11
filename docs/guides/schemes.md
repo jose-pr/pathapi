@@ -227,7 +227,11 @@ loop bridges it to the synchronous API).
   A read holds one chunk of the object: `s3:` streams the response and its
   stream is not seekable, `gs:` and `az:` ask for ranges as the stream is read
   and it stays seekable (`schemes.az.READ_CHUNK` is the size of an `az:`
-  range).
+  range). A read is one version of the object: `gs:` and `az:` require the
+  generation or ETag their first request reported in every later one, so an
+  object replaced while it is being read raises `OSError` (`ESTALE`: the
+  object changed while it was being read) and never returns a mix of two;
+  one deleted meanwhile is `FileNotFoundError`.
 - `copy()` of a file onto a key of the same store is one request of the store,
   within a bucket (between buckets, when one client reaches both) on `s3:` and
   `gs:` and within a container on `az:`; the file's content type and metadata

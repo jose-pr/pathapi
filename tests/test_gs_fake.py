@@ -45,6 +45,26 @@ class _FakeBlob:
     def __init__(self, bucket, name):
         self._bucket = bucket
         self.name = name
+        self._generation = None
+
+    @property
+    def generation(self):
+        # Known once a download or a reload has reported it, as the SDK's.
+        return self._generation
+
+    def _require(self, if_generation_match):
+        """The object's current generation, after the preconditions: an object
+        that is not the generation asked for is 412, and so is a missing one
+        when the bucket answers a precondition before it looks for the object."""
+        bucket = self._bucket
+        if self.name not in bucket.objects:
+            if if_generation_match is not None and bucket.missing_is_412:
+                raise _PreconditionFailed(self.name)
+            raise _Missing(self.name)
+        current = bucket.objects.version(self.name)
+        if if_generation_match is not None and if_generation_match != current:
+            raise _PreconditionFailed(self.name)
+        return current
 
     @property
     def size(self):
@@ -72,11 +92,10 @@ class _FakeBlob:
     def _content(self):
         return self._bucket.objects[self.name]
 
-    def reload(self):
+    def reload(self, if_generation_match=None, **_kwargs):
         if self.name in self._bucket.reload_errors:
             raise self._bucket.reload_errors[self.name]
-        if self.name not in self._bucket.objects:
-            raise _Missing(self.name)
+        self._generation = self._require(if_generation_match)
 
     def delete(self):
         if self._bucket.batch is not None:
@@ -91,9 +110,13 @@ class _FakeBlob:
         del self._bucket.objects[self.name]
         self._bucket.deleted.append(self.name)
 
-    def download_as_bytes(self, start=None, end=None, checksum=None, **_kwargs):
-        if self.name not in self._bucket.objects:
-            raise _Missing(self.name)
+    def download_as_bytes(
+        self, start=None, end=None, checksum=None, if_generation_match=None, **_kwargs
+    ):
+        if self._bucket.before_read is not None:
+            self._bucket.before_read(self.name)
+        self._generation = self._require(if_generation_match)
+        self._bucket.reads.append((self.name, start, if_generation_match))
         content = self._bucket.objects[self.name]
         if start is not None:
             # A range at or past the end is answered 416, an empty object's
@@ -192,7 +215,10 @@ class _FakeBatch:
 
 class _FakeBucket:
     def __init__(self):
-        self.objects = {}
+        self.objects = objstore_fakes.VersionedObjects()
+        self.before_read = None
+        self.missing_is_412 = False
+        self.reads = []
         self.downloads = []
         self.ranges = []
         self.file_uploads = []
@@ -1465,3 +1491,127 @@ def test_the_next_test_starts_without_the_default_backend_of_the_one_before():
     from pathlib_next.uri.schemes import gs
 
     assert gs._DEFAULT_BACKEND is None
+
+
+# --- a read is one version of the object ------------------------------------
+
+OLD = b"0123456789ab"
+NEW = b"ZZZZZZZZZZZZ"
+
+
+def _change_before_read(bucket, name, change, *, nth=2):
+    """Run `change()` just before the `nth` request for the content of `name`."""
+    seen = []
+
+    def hook(read):
+        if read == name:
+            seen.append(read)
+            if len(seen) == nth:
+                change()
+
+    bucket.before_read = hook
+
+
+def _stale_errno():
+    import errno
+
+    return getattr(errno, "ESTALE", errno.EIO)
+
+
+def test_a_read_across_an_overwrite_raises_and_returns_no_mixed_bytes(monkeypatch):
+    monkeypatch.setattr(store, "READ_CHUNK", 4)
+    backend, bucket = _bucket_with(**{"big.bin": OLD})
+    _change_before_read(
+        bucket, "big.bin", lambda: bucket.objects.update(**{"big.bin": NEW})
+    )
+    path = _gs("gs://bucket/big.bin", backend)
+    got = []
+    with path.open("rb") as stream:
+        got.append(stream.read(4))
+        with pytest.raises(OSError) as info:
+            stream.read(4)
+    assert got == [OLD[:4]]
+    error = info.value
+    assert not isinstance(error, FileNotFoundError)
+    assert error.errno == _stale_errno()
+    assert "changed while it was being read" in error.strerror
+    assert error.filename == "gs://bucket/big.bin"
+    assert error.__cause__ is None
+
+
+def test_a_read_of_an_object_deleted_midway_is_file_not_found(monkeypatch):
+    for answers_412 in (False, True):
+        monkeypatch.setattr(store, "READ_CHUNK", 4)
+        backend, bucket = _bucket_with(**{"big.bin": OLD})
+        bucket.missing_is_412 = answers_412
+        _change_before_read(bucket, "big.bin", lambda: bucket.objects.pop("big.bin"))
+        with _gs("gs://bucket/big.bin", backend).open("rb") as stream:
+            assert stream.read(4) == OLD[:4]
+            with pytest.raises(FileNotFoundError):
+                stream.read(4)
+
+
+def test_a_read_pins_the_generation_of_its_first_request(monkeypatch):
+    monkeypatch.setattr(store, "READ_CHUNK", 4)
+    backend, bucket = _bucket_with(**{"big.bin": OLD})
+    generation = bucket.objects.version("big.bin")
+    path = _gs("gs://bucket/big.bin", backend)
+    with path.open("rb") as stream:
+        assert stream.read() == OLD
+        stream.seek(5)
+        assert stream.read(2) == OLD[5:7]
+        stream.seek(-2, 2)
+        assert stream.read() == OLD[-2:]
+    assert bucket.reads[0] == ("big.bin", 0, None)
+    assert {read[2] for read in bucket.reads[1:]} == {generation}
+    assert ("big.bin", 4, generation) in bucket.reads
+
+
+def test_two_opens_are_two_snapshots(monkeypatch):
+    monkeypatch.setattr(store, "READ_CHUNK", 4)
+    backend, bucket = _bucket_with(**{"big.bin": OLD})
+    path = _gs("gs://bucket/big.bin", backend)
+    with path.open("rb") as first:
+        assert first.read(4) == OLD[:4]
+        bucket.objects["big.bin"] = NEW
+        with path.open("rb") as second:
+            assert second.read() == NEW
+        with pytest.raises(OSError) as info:
+            first.read()
+    assert info.value.errno == _stale_errno()
+
+
+def test_seeking_to_the_end_asks_the_size_of_the_version_being_read(monkeypatch):
+    monkeypatch.setattr(store, "READ_CHUNK", 4)
+    backend, bucket = _bucket_with(**{"big.bin": OLD})
+    asked = []
+    original = _FakeBlob.reload
+
+    def recorded(self, if_generation_match=None, **kwargs):
+        asked.append(if_generation_match)
+        return original(self, if_generation_match, **kwargs)
+
+    monkeypatch.setattr(_FakeBlob, "reload", recorded)
+    generation = bucket.objects.version("big.bin")
+    with _gs("gs://bucket/big.bin", backend).open("rb") as stream:
+        stream.seek(-3, 2)
+        assert stream.read() == OLD[-3:]
+    assert asked == [generation]
+    # An object replaced by a longer one is not measured as the one being read.
+    with _gs("gs://bucket/big.bin", backend).open("rb") as stream:
+        bucket.objects["big.bin"] = NEW + NEW
+        with pytest.raises(OSError) as info:
+            stream.seek(-3, 2)
+    assert info.value.errno == _stale_errno()
+
+
+def test_r_plus_reads_its_initial_content_as_one_version(monkeypatch):
+    monkeypatch.setattr(store, "READ_CHUNK", 4)
+    backend, bucket = _bucket_with(**{"big.bin": OLD})
+    _change_before_read(
+        bucket, "big.bin", lambda: bucket.objects.update(**{"big.bin": NEW})
+    )
+    with pytest.raises(OSError) as info:
+        _gs("gs://bucket/big.bin", backend).open("r+b")
+    assert info.value.errno == _stale_errno()
+    assert bucket.objects["big.bin"] == NEW and bucket.uploads == []

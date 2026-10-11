@@ -140,6 +140,17 @@ def digest_hex(encoded: str) -> str:
     return _base64.b64decode(encoded).hex()
 
 
+def changed_error(path) -> OSError:
+    """The error for a stream whose object was replaced while it was being
+    read: a read is one version of the object, and what follows the change is
+    another's. `ESTALE` where the platform has it, else `EIO`."""
+    return OSError(
+        getattr(_errno, "ESTALE", _errno.EIO),
+        "the object changed while it was being read",
+        str(path),
+    )
+
+
 def unreachable_keys(
     prefix: str, entries: "_ty.Iterable[tuple[str, int]]"
 ) -> "list[str]":

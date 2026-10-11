@@ -1360,3 +1360,16 @@ def test_a_file_named_as_the_root_of_a_recursive_copy_is_copied(moto_s3):
         S3Path("s3://bkt/b.bin", backend=backend), recursive=True
     )
     assert _stored(moto_s3, "b.bin") == b"payload"
+
+
+def test_a_streamed_read_is_one_request_whatever_its_size(moto_s3):
+    # One GetObject per open: the stream is one version of the object, with no
+    # ranged requests that a replacement could fall between.
+    moto_s3.put_object(Bucket="bkt", Key="big.bin", Body=bytes(range(256)) * 2500)
+    backend, sent = _recording_backend()
+    with S3Path("s3://bkt/big.bin", backend=backend).open("rb") as stream:
+        total = 0
+        while piece := stream.read(32768):
+            total += len(piece)
+    assert total == 256 * 2500
+    assert sent == ["GetObject"]

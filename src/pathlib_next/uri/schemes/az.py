@@ -241,6 +241,85 @@ def _copy_status(props) -> "str | None":
     return getattr(getattr(props, "copy", None), "status", None)
 
 
+def _if_not_modified():
+    """`MatchConditions.IfNotModified`, which `etag=` is taken with. Without
+    the SDK there is nothing to take it, and the name stands for it."""
+    try:
+        from azure.core import MatchConditions
+    except ImportError:
+        return "IfNotModified"
+    return MatchConditions.IfNotModified
+
+
+class _AzSnapshot:
+    """The ranged reads of one open stream, as one version of the blob. The
+    first response reports the blob's ETag and every later request requires
+    it, so a blob replaced between two of them answers 412 and the stream
+    raises instead of returning the bytes of two blobs. Each open has its own,
+    so two opens are two snapshots."""
+
+    def __init__(self, path: "AzPath", blob_client):
+        self.object_path = path
+        self._client = blob_client
+        self.etag = None
+        self.total = None
+
+    def _conditions(self) -> dict:
+        if self.etag is None:
+            return {}
+        return {"etag": self.etag, "match_condition": _if_not_modified()}
+
+    def _failure(self, error: BaseException) -> "OSError | None":
+        path = self.object_path
+        if _http_status(error) == 412 and self.etag is not None:
+            # Replaced -- or deleted, which a service may also answer 412.
+            if path._has_object(path.key):
+                return _store.changed_error(path)
+            return FileNotFoundError(
+                _errno.ENOENT, "No such file or directory", str(path)
+            )
+        return _oserror(error, path)
+
+    def fetch(self, start: int, length: int) -> bytes:
+        """The bytes from `start`, at most `length`; none at or past the end (a
+        range there is answered 416, which is also an empty blob's answer)."""
+        try:
+            downloader = self._client.download_blob(
+                offset=start, length=length, **self._conditions()
+            )
+            data = downloader.readall()
+        except Exception as error:
+            if _http_status(error) == 416:
+                return b""
+            failure = self._failure(error)
+            if failure is None:
+                raise
+            raise failure from None
+        if self.etag is None:
+            properties = downloader.properties
+            self.etag = properties.etag
+            # "bytes 0-524287/33554432": the size of the blob, not of the range.
+            total = (getattr(properties, "content_range", None) or "").rpartition("/")[
+                2
+            ]
+            self.total = int(total) if total.isdigit() else None
+        return data
+
+    def size(self) -> int:
+        """The size of the version being read."""
+        if self.total is not None:
+            return self.total
+        if self.etag is None:
+            return self.object_path.stat().st_size
+        try:
+            return self._client.get_blob_properties(**self._conditions())["size"]
+        except Exception as error:
+            failure = self._failure(error)
+            if failure is None:
+                raise
+            raise failure from None
+
+
 class AzPath(_store.ObjectStorePath):
     """`az:` scheme (`az://account/container/key/path`): read/write/list via
     `azure.storage.blob`. Requires the `az` extra. Azure Blob has no real
@@ -378,22 +457,16 @@ class AzPath(_store.ObjectStorePath):
             # The client is resolved outside the translation, so a missing
             # SDK or an unusable default backend raises as itself instead of
             # FileNotFoundError.
-            blob_client = self._container.get_blob_client(self.key)
-
-            def fetch(start, length):
-                return self._read_range(blob_client, start, length)
-
+            snapshot = _AzSnapshot(self, self._container.get_blob_client(self.key))
             try:
-                first = fetch(0, READ_CHUNK)
+                first = snapshot.fetch(0, READ_CHUNK)
             except FileNotFoundError:
                 if self.is_dir():
                     raise IsADirectoryError(
                         _errno.EISDIR, "Is a directory", str(self)
                     ) from None
                 raise
-            raw = _store.RangeReader(
-                fetch, lambda: self.stat().st_size, first, READ_CHUNK
-            )
+            raw = _store.RangeReader(snapshot.fetch, snapshot.size, first, READ_CHUNK)
             if mode == "r+":
                 # Read-modify-write: what is written is uploaded on close.
                 with raw:
@@ -411,20 +484,6 @@ class AzPath(_store.ObjectStorePath):
         if mode == "w" and self._holds_keys(self.key):
             raise IsADirectoryError(_errno.EISDIR, "Is a directory", str(self))
         return _AzWriteStream(self, exclusive=(mode == "x"))
-
-    def _read_range(self, blob_client, start: int, length: int) -> bytes:
-        """The bytes of the blob from `start`, at most `length`; none at or
-        past its end (a range there is answered 416, which is also an empty
-        blob's answer)."""
-        try:
-            return blob_client.download_blob(offset=start, length=length).readall()
-        except Exception as error:
-            if _http_status(error) == 416:
-                return b""
-            translated = _oserror(error, self)
-            if translated is None:
-                raise
-            raise translated from None
 
     def _upload_file(self, file, size: int, *, exclusive=False) -> None:
         """Upload the `size` bytes of `file` as the blob: one request while it

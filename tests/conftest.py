@@ -1110,7 +1110,7 @@ def gcs_api_server(fixture_tree):
     from pathlib_next.uri.schemes.gs import GsBackend
 
     # Build an in-memory object store from fixture_tree
-    objects = {}
+    objects = objstore_fakes.VersionedObjects()
     for item in fixture_tree.rglob("*"):
         if item.is_file():
             rel = item.relative_to(fixture_tree)
@@ -1143,6 +1143,7 @@ def gcs_api_server(fixture_tree):
                 "updated": updated,
                 "md5Hash": objstore_fakes.md5_base64(content),
                 "crc32c": objstore_fakes.crc32c_base64(content),
+                "generation": str(objects.version(name)),
             }
             for field, value in state.metadata.get(name, {}).items():
                 if value is None:
@@ -1193,7 +1194,7 @@ def gcs_api_server(fixture_tree):
                 obj_name = urllib.parse.unquote(
                     split.path[len(f"/download/storage/v1/b/{bucket_name}/o/") :]
                 )
-                self._send_media(obj_name)
+                self._send_media(obj_name, qs)
                 return
 
             # LIST: /storage/v1/b/{bucket}/o?prefix=&delimiter=/
@@ -1240,7 +1241,7 @@ def gcs_api_server(fixture_tree):
                 obj_name = urllib.parse.unquote(
                     split.path[len(f"/storage/v1/b/{bucket_name}/o/") :]
                 )
-                self._send_media(obj_name)
+                self._send_media(obj_name, qs)
                 return
 
             # COPY: /storage/v1/b/{src}/o/{source}/copyTo/b/{dst}/o/{dest}
@@ -1274,6 +1275,9 @@ def gcs_api_server(fixture_tree):
                     split.path[len(f"/storage/v1/b/{bucket_name}/o/") :]
                 )
                 if obj_name in objects:
+                    if self._generation_refused(obj_name, qs):
+                        self._send_json(412, {})
+                        return
                     self._send_json(200, self._object_json(obj_name))
                     return
                 self._send_json(404, {})
@@ -1281,13 +1285,26 @@ def gcs_api_server(fixture_tree):
 
             self._send_json(404, {})
 
-        def _send_media(self, obj_name):
+        def _generation_refused(self, obj_name, qs):
+            # ifGenerationMatch: the object must still be the generation asked for.
+            required = qs.get("ifGenerationMatch", [None])[0]
+            return required is not None and required != str(objects.version(obj_name))
+
+        def _send_media(self, obj_name, qs):
             # The object's bytes, or the range of them that `Range` asks for.
+            if state.before_content_read is not None:
+                state.before_content_read(obj_name)
             if obj_name not in objects:
                 self._send_json(404, {})
                 return
-            content = objects[obj_name]
+            required = qs.get("ifGenerationMatch", [None])[0]
             wanted = self.headers.get("Range", "")
+            first = wanted[6:].partition("-")[0] if wanted.startswith("bytes=") else ""
+            state.reads.append((obj_name, int(first or 0), required))
+            if self._generation_refused(obj_name, qs):
+                self._send_json(412, {})
+                return
+            content = objects[obj_name]
             if wanted.startswith("bytes="):
                 first, _, last = wanted[6:].partition("-")
                 start = int(first or 0)
@@ -1303,6 +1320,7 @@ def gcs_api_server(fixture_tree):
                 self.send_response(200)
             self.send_header("Content-Type", "application/octet-stream")
             self.send_header("Content-Length", str(len(body)))
+            self.send_header("X-Goog-Generation", str(objects.version(obj_name)))
             self.end_headers()
             self.wfile.write(body)
 
@@ -1471,7 +1489,7 @@ def az_api_server(fixture_tree):
     import urllib.parse
     from xml.etree import ElementTree as ET
 
-    objects = {}
+    objects = objstore_fakes.VersionedObjects()
     for item in fixture_tree.rglob("*"):
         if item.is_file():
             rel = item.relative_to(fixture_tree)
@@ -1514,7 +1532,7 @@ def az_api_server(fixture_tree):
             self.send_header("Content-Type", "application/octet-stream")
             self.send_header("Content-Length", str(length))
             self.send_header("Last-Modified", last_modified)
-            self.send_header("ETag", '"etag"')
+            self.send_header("ETag", f'"{objects.version(name)}"')
             self.send_header("x-ms-blob-type", "BlockBlob")
             if name is not None and self._md5(name):
                 self.send_header("Content-MD5", self._md5(name))
@@ -1599,7 +1617,23 @@ def az_api_server(fixture_tree):
                 blob_name = urllib.parse.unquote(
                     split.path[len(f"/{account}/{container}/") :]
                 )
+                if self.command != "HEAD" and state.before_content_read:
+                    state.before_content_read(blob_name)
                 if blob_name in objects:
+                    required = self.headers.get("If-Match")
+                    if self.command != "HEAD":
+                        wanted = self.headers.get("x-ms-range", "")
+                        first = wanted[6:].partition("-")[0]
+                        state.reads.append((blob_name, int(first or 0), required))
+                    if (
+                        required is not None
+                        and required != f'"{objects.version(blob_name)}"'
+                    ):
+                        self.send_response(412)
+                        self.send_header("x-ms-error-code", "ConditionNotMet")
+                        self.send_header("Content-Length", "0")
+                        self.end_headers()
+                        return
                     content = objects[blob_name]
                     range_header = self.headers.get("x-ms-range") or self.headers.get(
                         "Range"
@@ -1732,7 +1766,7 @@ def az_api_server(fixture_tree):
                 objects[blob_name] = data
                 self.send_response(201)
                 self.send_header("Last-Modified", last_modified)
-                self.send_header("ETag", '"etag"')
+                self.send_header("ETag", f'"{objects.version(blob_name)}"')
                 self.end_headers()
                 return
 

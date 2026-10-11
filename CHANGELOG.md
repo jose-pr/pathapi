@@ -135,10 +135,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   object first; the stream stays seekable and `seek()` asks nothing until the
   next read. Writing spools in memory up to 4 MiB and then in a temp file, as
   `s3:` does, and uploads on close: a resumable upload in 2 MiB requests on
-  `gs:`, blocks on `az:`. A 32 MiB object is read and written with a peak of
-  under 9 MiB of Python memory against the SDK test servers. Nothing to
-  change; a program that held a `gs:` or `az:` file object open for a long time
-  now issues a request per chunk read.
+  `gs:`, blocks on `az:`. A read is one version of the object: the first
+  request reports its generation (`gs:`) or ETag (`az:`) and every later
+  request of that stream requires it, so an object replaced while it is
+  being read raises `OSError` (`errno.ESTALE`, `EIO` where there is none:
+  the object changed while it was being read) instead of returning the
+  bytes of two objects, and one deleted meanwhile is `FileNotFoundError`;
+  each open is its own snapshot, and `seek(n, 2)` measures that version.
+  A 32 MiB object is read and written with a peak of under 9 MiB of Python
+  memory against the SDK test servers. Nothing to change; a program that
+  held a `gs:` or `az:` file object open for a long time now issues a
+  request per chunk read, and catches `OSError` if the object may be
+  replaced under it.
 
 ### Changed
 - **A sync leaves each copy with its source's modification time

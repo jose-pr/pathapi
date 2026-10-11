@@ -492,3 +492,113 @@ def test_az_an_exclusive_upload_does_not_replace_an_existing_blob(
     assert state.objects["a.txt"] == before
     (path / "fresh.txt")._upload_file(io.BytesIO(b"123456789"), 9, exclusive=True)
     assert state.objects["fresh.txt"] == b"123456789"
+
+
+# --- a read is one version of the blob --------------------------------------
+
+OLD = bytes(range(64))
+NEW = b"Z" * 64
+
+
+def _stale_errno():
+    import errno
+
+    return getattr(errno, "ESTALE", errno.EIO)
+
+
+def _change_on_second_read(state, name, change):
+    """Run `change()` just before the server reads `name` for its second request."""
+    seen = []
+
+    def hook(read):
+        if read == name:
+            seen.append(read)
+            if len(seen) == 2:
+                change()
+
+    state.before_content_read = hook
+
+
+@pytest.fixture
+def small_chunks(monkeypatch):
+    from pathlib_next.uri.schemes import az
+
+    monkeypatch.setattr(az, "READ_CHUNK", 16)
+
+
+def test_az_a_read_across_an_overwrite_raises_and_returns_no_mixed_bytes(
+    az_server, az_api_server, small_chunks
+):
+    path, _ = az_server
+    state = az_api_server.state
+    state.objects["pinned.bin"] = OLD
+    _change_on_second_read(
+        state, "pinned.bin", lambda: state.objects.update({"pinned.bin": NEW})
+    )
+    got = []
+    with (path / "pinned.bin").open("rb") as stream:
+        got.append(stream.read(16))
+        with pytest.raises(OSError) as info:
+            stream.read(16)
+    assert got == [OLD[:16]]
+    error = info.value
+    assert not isinstance(error, FileNotFoundError)
+    assert error.errno == _stale_errno()
+    assert "changed while it was being read" in error.strerror
+    assert error.filename == f"{path}/pinned.bin"
+    assert error.__cause__ is None
+    assert state.objects["pinned.bin"] == NEW
+
+
+def test_az_a_read_of_a_blob_deleted_midway_is_file_not_found(
+    az_server, az_api_server, small_chunks
+):
+    path, _ = az_server
+    state = az_api_server.state
+    state.objects["pinned.bin"] = OLD
+    _change_on_second_read(state, "pinned.bin", lambda: state.objects.pop("pinned.bin"))
+    with (path / "pinned.bin").open("rb") as stream:
+        assert stream.read(16) == OLD[:16]
+        with pytest.raises(FileNotFoundError):
+            stream.read(16)
+
+
+def test_az_an_unchanged_blob_reads_whole_across_chunks_and_after_a_seek(
+    az_server, az_api_server, small_chunks
+):
+    path, _ = az_server
+    state = az_api_server.state
+    state.objects["pinned.bin"] = OLD
+    with (path / "pinned.bin").open("rb") as stream:
+        assert stream.read() == OLD
+        stream.seek(20)
+        assert stream.read(30) == OLD[20:50]
+        stream.seek(-5, 2)
+        assert stream.read() == OLD[-5:]
+        stream.seek(0)
+        assert stream.read(16) == OLD[:16]
+
+
+def test_az_every_request_after_the_first_names_the_etag(
+    az_server, az_api_server, small_chunks
+):
+    path, _ = az_server
+    state = az_api_server.state
+    state.objects["pinned.bin"] = OLD
+    etag = f'"{state.objects.version("pinned.bin")}"'
+    del state.reads[:]
+    with (path / "pinned.bin").open("rb") as stream:
+        stream.read()
+        stream.seek(0)
+        stream.read(1)
+    reads = [read for read in state.reads if read[0] == "pinned.bin"]
+    assert reads[0] == ("pinned.bin", 0, None)
+    assert {read[2] for read in reads[1:]} == {etag}
+    assert [read[1] for read in reads[:5]] == [0, 16, 32, 48, 64]
+    assert reads[-1] == ("pinned.bin", 0, etag)
+    # Two opens are two snapshots: the second one pins the newer ETag.
+    state.objects["pinned.bin"] = NEW
+    del state.reads[:]
+    with (path / "pinned.bin").open("rb") as stream:
+        assert stream.read() == NEW
+    assert state.reads[-1][2] == f'"{state.objects.version("pinned.bin")}"' != etag
