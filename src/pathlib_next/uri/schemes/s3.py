@@ -191,6 +191,16 @@ def _plain_md5(head) -> "str | None":
     return etag.lower()
 
 
+def _copy_call(client, source: dict, bucket: str, key: str, size: int, extra: dict):
+    """One server-side copy of `source` onto `bucket`/`key`: CopyObject, or
+    boto3's managed copy (UploadPartCopy) for a source CopyObject refuses."""
+    managed_copy = getattr(client, "copy", None)
+    if size > _PUT_OBJECT_LIMIT and callable(managed_copy):
+        managed_copy(source, bucket, key, ExtraArgs=extra or None)
+    else:
+        client.copy_object(Bucket=bucket, Key=key, CopySource=source, **extra)
+
+
 def _object_key(path: str) -> str:
     """The object key a s3 URI path names: leading `/`s dropped, and
     exactly one trailing `/`. `s3://b/dir/` is the directory `dir`, the
@@ -633,18 +643,27 @@ class S3Path(_store.ObjectStorePath):
             # CopyObject writes STANDARD unless told otherwise.
             extra["StorageClass"] = storage_class
         source = {"Bucket": self.bucket, "Key": self.key}
-        managed_copy = getattr(client, "copy", None)
         try:
-            if head.get("ContentLength", 0) > _PUT_OBJECT_LIMIT and callable(
-                managed_copy
-            ):
-                # CopyObject refuses sources over 5 GB; the managed copy
-                # uses UploadPartCopy.
-                managed_copy(source, self.bucket, dest_key, ExtraArgs=extra or None)
-            else:
-                client.copy_object(
-                    Bucket=self.bucket, Key=dest_key, CopySource=source, **extra
-                )
+            _copy_call(
+                client,
+                source,
+                self.bucket,
+                dest_key,
+                head.get("ContentLength", 0),
+                extra,
+            )
             client.delete_object(Bucket=self.bucket, Key=self.key)
         except _S3_ERRORS as error:
             raise _oserror(error, self) from None
+
+    def _copy_object(self, target: "S3Path", size: int) -> bool:
+        # A target with no bucket is "a path needs a bucket", as for a write.
+        client = target._client
+        source = {"Bucket": self.bucket, "Key": self.key}
+        try:
+            _copy_call(client, source, target.bucket, target.key, size, {})
+        except _S3_ERRORS as error:
+            if isinstance(error, _botoexc.ClientError) and _is_not_implemented(error):
+                return False
+            raise _oserror(error, self) from None
+        return True

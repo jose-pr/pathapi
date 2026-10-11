@@ -13,11 +13,20 @@ import base64 as _base64
 import contextlib as _contextlib
 import errno as _errno
 import io as _io
+import stat as _stat
 import threading as _threading
 import typing as _ty
 
 from ... import utils as _utils
-from ...path import check_follow, copy_error_predicate
+from ...path import (
+    _copy_mode,
+    _handing,
+    _same_file,
+    _stat_or_none,
+    _take_handed,
+    check_follow,
+    copy_error_predicate,
+)
 from ...utils.stat import FileStat
 from .. import UriPath as _UriPath
 
@@ -265,6 +274,8 @@ class ObjectStorePath(_UriPath):
       no object; `_rename_copy(source, dest, dest_key)`.
     - `_stored_digests(key, algorithm)` -> `{name: hex}`, or None when there is
       no object: the digests of the whole content the store keeps.
+    - `_copy_object(target, size)` -> bool: the store's own copy call, this
+      object onto `target`'s key; False when the store does not implement it.
     """
 
     __slots__ = ()
@@ -315,6 +326,9 @@ class ObjectStorePath(_UriPath):
         keeps (at least `algorithm`'s, when it keeps it), by lower-case
         `hashlib` name and as hex; empty when it keeps none a reader can rely
         on. None when no object has that key."""
+        raise NotImplementedError
+
+    def _copy_object(self, target: "ObjectStorePath", size: int) -> bool:
         raise NotImplementedError
 
     def _rename_dest(self, target) -> "ObjectStorePath":
@@ -530,17 +544,89 @@ class ObjectStorePath(_UriPath):
         # cannot reach is refused up front rather than copied incompletely.
         # That refusal is not a per-child error: `on_error` is never asked.
         copy_error_predicate(ignore_error, on_error)
+        if isinstance(target, str):
+            target = self._coerce_target(target)
         with checked_copy(self, recursive):
-            return super().copy(
-                target,
-                overwrite=overwrite,
-                follow_symlinks=follow_symlinks,
-                preserve_metadata=preserve_metadata,
-                recursive=recursive,
-                ignore_error=ignore_error,
-                progress=progress,
-                **({} if on_error is None else {"on_error": on_error}),
+            handing = _contextlib.nullcontext()
+            if self._store_copy_possible(target):
+                left = self._copy_in_store(
+                    target,
+                    overwrite=overwrite,
+                    follow_symlinks=follow_symlinks,
+                    preserve_metadata=preserve_metadata,
+                    progress=progress,
+                )
+                if left is None:
+                    return
+                # What the checks found out is not asked of the store again.
+                handing = _handing(self, target, *left)
+            with handing:
+                return super().copy(
+                    target,
+                    overwrite=overwrite,
+                    follow_symlinks=follow_symlinks,
+                    preserve_metadata=preserve_metadata,
+                    recursive=recursive,
+                    ignore_error=ignore_error,
+                    progress=progress,
+                    **({} if on_error is None else {"on_error": on_error}),
+                )
+
+    def _store_copy_possible(self, target) -> bool:
+        """Whether one request of the store can copy this object onto
+        `target`, from what the two paths say without asking: the same class,
+        on one store, reached by one client (one supplied backend, or each
+        path's own default)."""
+        return (
+            type(target) is type(self)
+            and bool(target.key)
+            and self._same_filesystem(target)
+            and self._supplied_backend() is target._supplied_backend()
+        )
+
+    def _copy_in_store(
+        self, target, *, overwrite, follow_symlinks, preserve_metadata, progress
+    ):
+        """Copy this object onto `target` with the store's own copy call, after
+        the checks `Path.copy()` makes before it writes, in the same order: the
+        same file, a target that is a directory or holds keys, an existing
+        target without `overwrite`. Nothing is written when one fails, and a
+        copy call that fails leaves an existing target as it was.
+
+        None when the object is copied. Otherwise `(source stat, target
+        absent)`, what the checks learned, for `Path.copy()` to take over: the
+        source is not an object (a prefix directory, a missing path), or the
+        store does not implement the call."""
+        handed = _take_handed(self, target)
+        known = None if handed is None else handed.source_stat
+        src_stat = known if known is not None else _stat_or_none(self, follow_symlinks)
+        absent = handed is not None and handed.target_absent
+        if src_stat is None or not _stat.S_ISREG(src_stat.st_mode):
+            return src_stat, absent
+        if _same_file(self, target, identity=False):
+            raise OSError(
+                _errno.EINVAL, "Source and target are the same file", str(target)
             )
+        # stat(), not exists(): only FileNotFoundError means the target is
+        # absent, never a failed probe.
+        try:
+            target_stat = None if absent else target.stat()
+        except FileNotFoundError:
+            target_stat = None
+        absent = absent or target_stat is None
+        if target_stat is not None:
+            if _stat.S_ISDIR(target_stat.st_mode):
+                raise IsADirectoryError(target)
+            if not overwrite:
+                raise FileExistsError(target)
+        size = src_stat.st_size
+        if not self._copy_object(target, size):
+            return src_stat, absent
+        if progress is not None:
+            progress(self, size, size)
+        if preserve_metadata:
+            _copy_mode(self, target, follow_symlinks, src_stat)
+        return None
 
     def rename(self, target):
         target = self._rename_target(target)

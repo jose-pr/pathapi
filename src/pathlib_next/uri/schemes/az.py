@@ -541,27 +541,48 @@ class AzPath(_store.ObjectStorePath):
     def _rename_source(self, key: str):
         return self._properties(key)
 
-    def _rename_copy(self, props, dest: "AzPath", dest_key: str) -> None:
-        source_blob_client = self._container.get_blob_client(self.key)
-        source_url = source_blob_client.url
+    def _copy_blob(self, dest: "AzPath", dest_key: str) -> None:
+        """Copy this blob onto `dest_key` of its container with the service's
+        copy, waiting for it to finish; the destination holds the content when
+        it returns."""
+        source_url = self._container.get_blob_client(self.key).url
         dest_blob_client = self._container.get_blob_client(dest_key)
+        # start_copy_from_url is async, poll for completion
+        copy_props = dest_blob_client.start_copy_from_url(source_url)
+        copy_id = _copy_id(copy_props)
+        # Poll until copy is complete
+        deadline = _time.monotonic() + COPY_POLL_TIMEOUT
+        while _copy_status(copy_props) == "pending":
+            if _time.monotonic() >= deadline:
+                self._abort_copy(dest_blob_client, copy_id)
+                raise TimeoutError(
+                    _errno.ETIMEDOUT,
+                    f"the copy did not finish within {COPY_POLL_TIMEOUT:g} s",
+                    str(self),
+                )
+            _time.sleep(_COPY_POLL_INTERVAL)
+            dest_blob_client = self._container.get_blob_client(dest_key)
+            copy_props = dest_blob_client.get_blob_properties()
+        if _copy_status(copy_props) != "success":
+            raise OSError(f"Copy failed: {self} -> {dest}")
+
+    def _rename_copy(self, props, dest: "AzPath", dest_key: str) -> None:
         with _translate_errors(self):
-            # start_copy_from_url is async, poll for completion
-            copy_props = dest_blob_client.start_copy_from_url(source_url)
-            copy_id = _copy_id(copy_props)
-            # Poll until copy is complete
-            deadline = _time.monotonic() + COPY_POLL_TIMEOUT
-            while _copy_status(copy_props) == "pending":
-                if _time.monotonic() >= deadline:
-                    self._abort_copy(dest_blob_client, copy_id)
-                    raise TimeoutError(
-                        _errno.ETIMEDOUT,
-                        f"the copy did not finish within {COPY_POLL_TIMEOUT:g} s",
-                        str(self),
-                    )
-                _time.sleep(_COPY_POLL_INTERVAL)
-                dest_blob_client = self._container.get_blob_client(dest_key)
-                copy_props = dest_blob_client.get_blob_properties()
-            if _copy_status(copy_props) != "success":
-                raise OSError(f"Copy failed: {self} -> {dest}")
-            source_blob_client.delete_blob()
+            self._copy_blob(dest, dest_key)
+            self._container.get_blob_client(self.key).delete_blob()
+
+    def _store_copy_possible(self, target) -> bool:
+        # The service copies within one container, as rename() does.
+        return super()._store_copy_possible(target) and self._same_location(target)
+
+    def _copy_object(self, target: "AzPath", size: int) -> bool:
+        try:
+            self._copy_blob(target, target.key)
+        except Exception as error:
+            if _http_status(error) == 501:
+                return False
+            translated = _oserror(error, self)
+            if translated is None:
+                raise
+            raise translated from None
+        return True

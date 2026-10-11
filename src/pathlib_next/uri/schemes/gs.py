@@ -477,6 +477,22 @@ class GsPath(_store.ObjectStorePath):
                 if not on_error(failed, where):
                     raise failed
 
+    def _copy_object(self, target: "GsPath", size: int) -> bool:
+        # A target with no bucket is "a path needs a bucket", as for a write.
+        destination = target._bucket
+        try:
+            self._bucket.copy_blob(
+                self._bucket.blob(self.key), destination, target.key, **self._options
+            )
+        except Exception as error:
+            if _http_status(error) == 501:
+                return False
+            translated = _oserror(error, self)
+            if translated is None:
+                raise
+            raise translated from None
+        return True
+
     def _rename_source(self, key: str):
         return self._reload(key)
 

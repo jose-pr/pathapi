@@ -5,6 +5,7 @@ paging shape, and copy_object+delete_object rename.
 
 import collections
 import datetime
+import errno
 import hashlib
 import io
 
@@ -1074,3 +1075,205 @@ def test_syncing_an_unchanged_tree_to_another_prefix_reads_no_object(moto_s3):
     syncer.sync(source, target)
     changed = S3Path("s3://bkt/dst/d0/f000.bin", backend=backend)
     assert changed.read_bytes() == b"changed"
+
+
+# --- copy(): one copy request in the store ----------------------------------------
+
+
+def _refusing_copy_backend(code, only_key=None):
+    """A recording backend whose CopyObject is answered with the error `code`
+    (for `only_key` alone, when given); the refused calls are in `attempts`."""
+    backend, sent = _recording_backend()
+    client = backend.client()
+    original = client._make_api_call
+    attempts = []
+
+    def refusing(name, params):
+        if name == "CopyObject" and only_key in (None, params["Key"]):
+            attempts.append(params["Key"])
+            raise _client_error(code)
+        return original(name, params)
+
+    client._make_api_call = refusing
+    return backend, sent, attempts
+
+
+def _stored(client, key, bucket="bkt"):
+    return client.get_object(Bucket=bucket, Key=key)["Body"].read()
+
+
+def test_copy_of_a_file_within_a_bucket_is_one_copy_request_and_reads_nothing(moto_s3):
+    moto_s3.put_object(
+        Bucket="bkt",
+        Key="d/a.bin",
+        Body=b"payload",
+        ContentType="text/x-demo",
+        Metadata={"owner": "me"},
+    )
+    backend, sent = _recording_backend()
+    S3Path("s3://bkt/d/a.bin", backend=backend).copy(
+        S3Path("s3://bkt/d/b.bin", backend=backend)
+    )
+    assert _stored(moto_s3, "d/b.bin") == b"payload"
+    assert sent.count("CopyObject") == 1
+    assert not {"GetObject", "PutObject", "DeleteObject"} & set(sent)
+    # The store copies the object's type and metadata along with its bytes.
+    head = moto_s3.head_object(Bucket="bkt", Key="d/b.bin")
+    assert head["ContentType"] == "text/x-demo" and head["Metadata"] == {"owner": "me"}
+
+
+def test_copy_of_a_file_between_two_buckets_of_one_client_is_one_copy_request(moto_s3):
+    moto_s3.create_bucket(Bucket="other")
+    moto_s3.put_object(Bucket="bkt", Key="a.bin", Body=b"payload")
+    backend, sent = _recording_backend()
+    S3Path("s3://bkt/a.bin", backend=backend).copy(
+        S3Path("s3://other/dir/a.bin", backend=backend)
+    )
+    assert _stored(moto_s3, "dir/a.bin", "other") == b"payload"
+    assert sent.count("CopyObject") == 1
+    assert not {"GetObject", "PutObject"} & set(sent)
+
+
+def test_copy_of_a_file_named_by_a_string_is_still_one_copy_request(moto_s3):
+    moto_s3.put_object(Bucket="bkt", Key="a.bin", Body=b"payload")
+    backend, sent = _recording_backend()
+    S3Path("s3://bkt/a.bin", backend=backend).copy("b.bin")
+    assert _stored(moto_s3, "b.bin") == b"payload"
+    assert sent.count("CopyObject") == 1 and "GetObject" not in sent
+
+
+def test_copy_reports_progress_once_with_the_total(moto_s3):
+    moto_s3.put_object(Bucket="bkt", Key="a.bin", Body=b"x" * 1234)
+    moto_s3.put_object(Bucket="bkt", Key="empty", Body=b"")
+    backend, _sent = _recording_backend()
+    calls = []
+    for name, size in (("a.bin", 1234), ("empty", 0)):
+        source = S3Path(f"s3://bkt/{name}", backend=backend)
+        source.copy(
+            S3Path(f"s3://bkt/copy-of-{name}", backend=backend),
+            progress=lambda path, copied, total: calls.append(
+                (str(path), copied, total)
+            ),
+        )
+        assert calls == [(f"s3://bkt/{name}", size, size)]
+        del calls[:]
+
+
+def test_copy_onto_an_existing_object_needs_overwrite_and_deletes_nothing_first(
+    moto_s3,
+):
+    moto_s3.put_object(Bucket="bkt", Key="a.bin", Body=b"new")
+    moto_s3.put_object(Bucket="bkt", Key="b.bin", Body=b"old")
+    backend, sent = _recording_backend()
+    source = S3Path("s3://bkt/a.bin", backend=backend)
+    target = S3Path("s3://bkt/b.bin", backend=backend)
+    with pytest.raises(FileExistsError):
+        source.copy(target)
+    assert "CopyObject" not in sent and _stored(moto_s3, "b.bin") == b"old"
+    source.copy(target, overwrite=True)
+    assert _stored(moto_s3, "b.bin") == b"new"
+    assert sent.count("CopyObject") == 1 and "DeleteObject" not in sent
+
+
+def test_copy_onto_itself_is_refused_before_the_store_is_asked(moto_s3):
+    moto_s3.put_object(Bucket="bkt", Key="a.bin", Body=b"keep")
+    backend, sent = _recording_backend()
+    source = S3Path("s3://bkt/a.bin", backend=backend)
+    for overwrite in (False, True):
+        with pytest.raises(OSError, match="same file") as info:
+            source.copy(S3Path("s3://bkt/a.bin", backend=backend), overwrite=overwrite)
+        assert info.value.errno == errno.EINVAL
+    assert "CopyObject" not in sent and _stored(moto_s3, "a.bin") == b"keep"
+
+
+def test_copy_onto_a_prefix_directory_is_refused_before_the_store_is_asked(moto_s3):
+    moto_s3.put_object(Bucket="bkt", Key="a.bin", Body=b"new")
+    moto_s3.put_object(Bucket="bkt", Key="d/inner.txt", Body=b"inner")
+    backend, sent = _recording_backend()
+    source = S3Path("s3://bkt/a.bin", backend=backend)
+    for overwrite in (False, True):
+        with pytest.raises(IsADirectoryError):
+            source.copy(S3Path("s3://bkt/d", backend=backend), overwrite=overwrite)
+    assert "CopyObject" not in sent
+    assert _moto_keys(moto_s3) == ["a.bin", "d/inner.txt"]
+
+
+def test_copy_of_a_missing_file_or_a_prefix_without_recursive_changes_nothing(moto_s3):
+    moto_s3.put_object(Bucket="bkt", Key="d/inner.txt", Body=b"inner")
+    backend, sent = _recording_backend()
+    with pytest.raises(FileNotFoundError):
+        S3Path("s3://bkt/nothing", backend=backend).copy(
+            S3Path("s3://bkt/copy", backend=backend)
+        )
+    with pytest.raises(IsADirectoryError):
+        S3Path("s3://bkt/d", backend=backend).copy(
+            S3Path("s3://bkt/copy", backend=backend)
+        )
+    assert "CopyObject" not in sent and _moto_keys(moto_s3) == ["d/inner.txt"]
+
+
+def test_a_refused_copy_leaves_an_existing_target_as_it_was(moto_s3):
+    moto_s3.put_object(Bucket="bkt", Key="a.bin", Body=b"new")
+    moto_s3.put_object(Bucket="bkt", Key="b.bin", Body=b"old")
+    backend, sent, attempts = _refusing_copy_backend("AccessDenied")
+    with pytest.raises(PermissionError):
+        S3Path("s3://bkt/a.bin", backend=backend).copy(
+            S3Path("s3://bkt/b.bin", backend=backend), overwrite=True
+        )
+    assert attempts == ["b.bin"]
+    assert "DeleteObject" not in sent
+    assert _stored(moto_s3, "b.bin") == b"old"
+
+
+def test_a_store_that_does_not_implement_the_copy_is_read_and_written_instead(moto_s3):
+    moto_s3.put_object(Bucket="bkt", Key="a.bin", Body=b"payload")
+    backend, sent, attempts = _refusing_copy_backend("NotImplemented")
+    S3Path("s3://bkt/a.bin", backend=backend).copy(
+        S3Path("s3://bkt/b.bin", backend=backend)
+    )
+    assert attempts == ["b.bin"]
+    assert _stored(moto_s3, "b.bin") == b"payload"
+    assert "GetObject" in sent and "PutObject" in sent
+
+
+def test_copy_between_two_supplied_backends_streams(moto_s3):
+    moto_s3.put_object(Bucket="bkt", Key="a.bin", Body=b"payload")
+    first, sent = _recording_backend()
+    second, _ = _recording_backend()
+    S3Path("s3://bkt/a.bin", backend=first).copy(
+        S3Path("s3://bkt/b.bin", backend=second)
+    )
+    assert _stored(moto_s3, "b.bin") == b"payload"
+    assert "CopyObject" not in sent and "GetObject" in sent
+
+
+def test_recursive_copy_copies_each_file_in_the_store_and_offers_a_refused_one(moto_s3):
+    for key in ("d/a.txt", "d/b.txt", "d/sub/c.txt"):
+        moto_s3.put_object(Bucket="bkt", Key=key, Body=key.encode())
+    backend, sent, attempts = _refusing_copy_backend("AccessDenied", "e/b.txt")
+    offered = []
+    S3Path("s3://bkt/d", backend=backend).copy(
+        S3Path("s3://bkt/e", backend=backend),
+        recursive=True,
+        on_error=lambda error, path: offered.append((type(error), path.key)) or True,
+    )
+    assert offered == [(PermissionError, "d/b.txt")]
+    assert attempts == ["e/b.txt"]
+    assert "GetObject" not in sent
+    assert _stored(moto_s3, "e/sub/c.txt") == b"d/sub/c.txt"
+    assert "e/b.txt" not in _moto_keys(moto_s3)
+
+
+def test_moving_a_prefix_copies_each_file_in_the_store(moto_s3):
+    for key in ("d/a.txt", "d/sub/b.txt", "d/sub/c.txt"):
+        moto_s3.put_object(Bucket="bkt", Key=key, Body=key.encode())
+    backend, sent = _recording_backend()
+    S3Path("s3://bkt/d", backend=backend).move(S3Path("s3://bkt/f", backend=backend))
+    assert [key for key in _moto_keys(moto_s3) if not key.endswith("/")] == [
+        "f/a.txt",
+        "f/sub/b.txt",
+        "f/sub/c.txt",
+    ]
+    assert sent.count("CopyObject") == 3
+    assert "GetObject" not in sent
+    assert not any(key.startswith("d/") for key in _moto_keys(moto_s3))

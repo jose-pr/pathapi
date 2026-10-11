@@ -23,7 +23,9 @@ class FakeState:
     (name -> bytes), the `requests` it served as `(method, path-and-query)`,
     `page_size` (entries per listing page, None for one page), the names it
     answers with a given status (`refuse`) and `batches`, the object names of
-    each batch request it served."""
+    each batch request it served. `copies` lists the `(source, target)` object
+    names of the copy requests it served; `copy_status`, when set, is the
+    status it answers every copy request with."""
 
     def __init__(self, objects):
         self.objects = objects
@@ -33,6 +35,8 @@ class FakeState:
         self.batches = []
         self.batch_status = 200
         self.metadata = {}
+        self.copies = []
+        self.copy_status = None
 
 
 def page_of(entries, offset, limit, page_size):

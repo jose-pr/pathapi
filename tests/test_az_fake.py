@@ -32,6 +32,10 @@ class _ServiceUnavailable(_HttpResponseError):
     status_code = 503
 
 
+class _NotImplemented(_HttpResponseError):
+    status_code = 501
+
+
 class _Forbidden(_HttpResponseError):
     status_code = 403
 
@@ -102,14 +106,19 @@ class _FakeBlobClient:
         self._container.uploads.append(self.name)
 
     def start_copy_from_url(self, url):
-        source = url.rsplit("/", 1)[-1]
+        source = url.split("example.invalid/", 1)[1]
+        if source in self._container.copy_errors:
+            raise self._container.copy_errors[source]
         self._container.objects[self.name] = self._container.objects[source]
+        self._container.copies.append((source, self.name))
         return {"copy_status": "success"}
 
 
 class _FakeContainer:
     def __init__(self, *, bulk=True):
         self.objects = {}
+        self.copy_errors = {}
+        self.copies = []
         self.downloads = []
         self.content_md5 = {}
         self.deleted = []
@@ -1215,3 +1224,88 @@ def test_checksum_of_a_missing_path_a_directory_and_the_container():
         _az("az://account/container/d", backend).checksum()
     with pytest.raises(IsADirectoryError):
         _az("az://account/container", backend).checksum()
+
+
+# --- copy(): one copy call in the service -----------------------------------
+
+
+def test_copy_of_a_blob_is_one_service_copy_and_reads_nothing():
+    backend, container = _container_with(**{"a.txt": b"content"})
+    _az("az://account/container/a.txt", backend).copy(
+        _az("az://account/container/b.txt", backend)
+    )
+    assert container.objects["b.txt"] == b"content"
+    assert container.copies == [("a.txt", "b.txt")]
+    assert container.downloads == [] and container.uploads == []
+
+
+def test_copy_reports_progress_once_with_the_total():
+    backend, _container = _container_with(**{"a.txt": b"content", "empty": b""})
+    calls = []
+    for name, size in (("a.txt", 7), ("empty", 0)):
+        _az(f"az://account/container/{name}", backend).copy(
+            _az(f"az://account/container/copy-{name}", backend),
+            progress=lambda path, copied, total: calls.append(
+                (path.key, copied, total)
+            ),
+        )
+        assert calls == [(name, size, size)]
+        del calls[:]
+
+
+def test_copy_onto_an_existing_blob_needs_overwrite_and_deletes_nothing_first():
+    backend, container = _container_with(**{"a.txt": b"new", "b.txt": b"old"})
+    source = _az("az://account/container/a.txt", backend)
+    target = _az("az://account/container/b.txt", backend)
+    with pytest.raises(FileExistsError):
+        source.copy(target)
+    assert container.copies == [] and container.objects["b.txt"] == b"old"
+    source.copy(target, overwrite=True)
+    assert container.objects["b.txt"] == b"new"
+    assert container.copies == [("a.txt", "b.txt")] and container.deleted == []
+
+
+def test_copy_onto_itself_or_a_prefix_directory_is_refused_before_the_service_is_asked():
+    import errno
+
+    backend, container = _container_with(**{"a.txt": b"keep", "d/inner": b"inner"})
+    source = _az("az://account/container/a.txt", backend)
+    for overwrite in (False, True):
+        with pytest.raises(OSError, match="same file") as info:
+            source.copy(
+                _az("az://account/container/a.txt", backend), overwrite=overwrite
+            )
+        assert info.value.errno == errno.EINVAL
+        with pytest.raises(IsADirectoryError):
+            source.copy(_az("az://account/container/d", backend), overwrite=overwrite)
+    assert container.copies == []
+    assert set(container.objects) == {"a.txt", "d/inner"}
+
+
+def test_a_refused_copy_leaves_an_existing_target_as_it_was():
+    backend, container = _container_with(**{"a.txt": b"new", "b.txt": b"old"})
+    container.copy_errors["a.txt"] = _Forbidden("403")
+    with pytest.raises(PermissionError) as info:
+        _az("az://account/container/a.txt", backend).copy(
+            _az("az://account/container/b.txt", backend), overwrite=True
+        )
+    assert info.value.filename == "az://account/container/a.txt"
+    assert container.objects["b.txt"] == b"old" and container.deleted == []
+
+
+def test_a_service_that_does_not_implement_the_copy_is_read_and_written_instead():
+    backend, container = _container_with(**{"a.txt": b"content"})
+    container.copy_errors["a.txt"] = _NotImplemented("501")
+    _az("az://account/container/a.txt", backend).copy(
+        _az("az://account/container/b.txt", backend)
+    )
+    assert container.objects["b.txt"] == b"content"
+    assert container.downloads == ["a.txt"] and container.uploads == ["b.txt"]
+
+
+def test_copy_into_another_container_is_streamed():
+    backend, container = _container_with(**{"a.txt": b"content"})
+    _az("az://account/container/a.txt", backend).copy(
+        _az("az://account/elsewhere/b.txt", backend)
+    )
+    assert container.copies == [] and container.downloads == ["a.txt"]

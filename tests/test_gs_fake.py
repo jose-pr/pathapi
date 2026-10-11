@@ -32,6 +32,10 @@ class _ServiceUnavailable(_ApiError):
     code = 503
 
 
+class _NotImplemented(_ApiError):
+    code = 501
+
+
 class _FakeBlob:
     def __init__(self, bucket, name):
         self._bucket = bucket
@@ -171,6 +175,8 @@ class _FakeBucket:
     def __init__(self):
         self.objects = {}
         self.downloads = []
+        self.copies = []
+        self.copy_errors = {}
         self.stored = {}
         self.batch = None
         self.batch_calls = []
@@ -193,9 +199,12 @@ class _FakeBucket:
         return _FakeIterator(self, prefix, delimiter)
 
     def copy_blob(self, blob, destination_bucket, new_name):
+        if blob.name in self.copy_errors:
+            raise self.copy_errors[blob.name]
         if blob.name not in self.objects:
             raise _Missing(blob.name)
         destination_bucket.objects[new_name] = self.objects[blob.name]
+        self.copies.append((blob.name, new_name))
 
 
 class _FakeClient:
@@ -1203,3 +1212,94 @@ def test_checksum_of_a_missing_path_a_directory_and_the_bucket():
         _gs("gs://bucket/d", backend).checksum()
     with pytest.raises(IsADirectoryError):
         _gs("gs://bucket", backend).checksum()
+
+
+# --- copy(): one copy call in the store -------------------------------------
+
+
+def test_copy_of_a_file_is_one_copy_call_and_reads_nothing():
+    backend, bucket = _bucket_with(**{"a.txt": b"content"})
+    _gs("gs://bucket/a.txt", backend).copy(_gs("gs://bucket/b.txt", backend))
+    assert bucket.objects["b.txt"] == b"content"
+    assert bucket.copies == [("a.txt", "b.txt")]
+    assert bucket.downloads == [] and bucket.uploads == []
+
+
+def test_copy_reports_progress_once_with_the_total():
+    backend, _bucket = _bucket_with(**{"a.txt": b"content", "empty": b""})
+    calls = []
+    for name, size in (("a.txt", 7), ("empty", 0)):
+        _gs(f"gs://bucket/{name}", backend).copy(
+            _gs(f"gs://bucket/copy-{name}", backend),
+            progress=lambda path, copied, total: calls.append(
+                (path.key, copied, total)
+            ),
+        )
+        assert calls == [(name, size, size)]
+        del calls[:]
+
+
+def test_copy_onto_an_existing_object_needs_overwrite_and_deletes_nothing_first():
+    backend, bucket = _bucket_with(**{"a.txt": b"new", "b.txt": b"old"})
+    source, target = _gs("gs://bucket/a.txt", backend), _gs(
+        "gs://bucket/b.txt", backend
+    )
+    with pytest.raises(FileExistsError):
+        source.copy(target)
+    assert bucket.copies == [] and bucket.objects["b.txt"] == b"old"
+    source.copy(target, overwrite=True)
+    assert bucket.objects["b.txt"] == b"new"
+    assert bucket.copies == [("a.txt", "b.txt")] and bucket.deleted == []
+
+
+def test_copy_onto_itself_or_a_prefix_directory_is_refused_before_the_store_is_asked():
+    import errno
+
+    backend, bucket = _bucket_with(**{"a.txt": b"keep", "d/inner": b"inner"})
+    source = _gs("gs://bucket/a.txt", backend)
+    for overwrite in (False, True):
+        with pytest.raises(OSError, match="same file") as info:
+            source.copy(_gs("gs://bucket/a.txt", backend), overwrite=overwrite)
+        assert info.value.errno == errno.EINVAL
+        with pytest.raises(IsADirectoryError):
+            source.copy(_gs("gs://bucket/d", backend), overwrite=overwrite)
+    assert bucket.copies == []
+    assert set(bucket.objects) == {"a.txt", "d/inner"}
+
+
+def test_a_refused_copy_leaves_an_existing_target_as_it_was():
+    backend, bucket = _bucket_with(**{"a.txt": b"new", "b.txt": b"old"})
+    bucket.copy_errors["a.txt"] = _Forbidden("403")
+    with pytest.raises(PermissionError) as info:
+        _gs("gs://bucket/a.txt", backend).copy(
+            _gs("gs://bucket/b.txt", backend), overwrite=True
+        )
+    assert info.value.filename == "gs://bucket/a.txt"
+    assert bucket.objects["b.txt"] == b"old" and bucket.deleted == []
+
+
+def test_a_store_that_does_not_implement_the_copy_is_read_and_written_instead():
+    backend, bucket = _bucket_with(**{"a.txt": b"content"})
+    bucket.copy_errors["a.txt"] = _NotImplemented("501")
+    _gs("gs://bucket/a.txt", backend).copy(_gs("gs://bucket/b.txt", backend))
+    assert bucket.objects["b.txt"] == b"content"
+    assert bucket.downloads == ["a.txt"] and bucket.uploads == ["b.txt"]
+
+
+def test_copy_between_two_supplied_backends_streams():
+    first, bucket = _bucket_with(**{"a.txt": b"content"})
+    second = _FakeBackend()
+    _gs("gs://bucket/a.txt", first).copy(_gs("gs://bucket/b.txt", second))
+    assert second.client_obj.bucket_obj.objects == {"b.txt": b"content"}
+    assert bucket.copies == [] and bucket.downloads == ["a.txt"]
+
+
+def test_moving_a_prefix_copies_each_object_in_the_store():
+    backend, bucket = _bucket_with(**{"d/a": b"a", "d/sub/b": b"b"})
+    _gs("gs://bucket/d", backend).move(_gs("gs://bucket/e", backend))
+    assert sorted(name for name in bucket.objects if not name.endswith("/")) == [
+        "e/a",
+        "e/sub/b",
+    ]
+    assert sorted(bucket.copies) == [("d/a", "e/a"), ("d/sub/b", "e/sub/b")]
+    assert bucket.downloads == []

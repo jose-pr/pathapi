@@ -325,3 +325,72 @@ def test_az_syncing_an_unchanged_tree_downloads_no_blob(az_server, az_api_server
     syncer.sync(path / "mirror" / "src", path / "mirror" / "dst")
     assert _content_reads(state) == []
     assert [m for m, _ in state.requests if m not in ("GET", "HEAD")] == []
+
+
+# --- copy(): one copy request in the service --------------------------------
+
+
+def test_az_copy_of_a_blob_is_one_service_copy_and_reads_nothing(
+    az_server, az_api_server, fixture_tree
+):
+    path, _ = az_server
+    state = az_api_server.state
+    del state.requests[:]
+    (path / "a.txt").copy(path / "dup" / "a.txt")
+    assert state.objects["dup/a.txt"] == (fixture_tree / "a.txt").read_bytes()
+    assert state.copies == [("a.txt", "dup/a.txt")]
+    assert _content_reads(state) == []
+
+
+def test_az_copy_onto_an_existing_blob_needs_overwrite(az_server, az_api_server):
+    path, _ = az_server
+    state = az_api_server.state
+    with pytest.raises(FileExistsError):
+        (path / "a.txt").copy(path / "b.py")
+    with pytest.raises(IsADirectoryError):
+        (path / "a.txt").copy(path / "sub", overwrite=True)
+    with pytest.raises(OSError, match="same file"):
+        (path / "a.txt").copy(path / "a.txt", overwrite=True)
+    assert state.copies == []
+    (path / "a.txt").copy(path / "b.py", overwrite=True)
+    assert state.copies == [("a.txt", "b.py")]
+
+
+def test_az_a_refused_copy_leaves_an_existing_target_as_it_was(
+    az_server, az_api_server
+):
+    path, _ = az_server
+    state = az_api_server.state
+    before = state.objects["b.py"]
+    state.copy_status = 403
+    with pytest.raises(PermissionError):
+        (path / "a.txt").copy(path / "b.py", overwrite=True)
+    assert state.objects["b.py"] == before
+    assert [method for method, _ in state.requests].count("DELETE") == 0
+
+
+def test_az_a_service_that_does_not_implement_the_copy_is_read_and_written_instead(
+    az_server, az_api_server, fixture_tree
+):
+    path, _ = az_server
+    state = az_api_server.state
+    state.copy_status = 501
+    (path / "a.txt").copy(path / "dup.txt")
+    assert state.objects["dup.txt"] == (fixture_tree / "a.txt").read_bytes()
+
+
+def test_az_moving_a_prefix_copies_each_blob_in_the_service(az_server, az_api_server):
+    path, _ = az_server
+    state = az_api_server.state
+    for name in ("one", "sub/two"):
+        state.objects[f"tree/{name}"] = name.encode()
+    del state.requests[:]
+    (path / "tree").move(path / "moved")
+    assert state.objects["moved/one"] == b"one"
+    assert state.objects["moved/sub/two"] == b"sub/two"
+    assert not [name for name in state.objects if name.startswith("tree/")]
+    assert sorted(state.copies) == [
+        ("tree/one", "moved/one"),
+        ("tree/sub/two", "moved/sub/two"),
+    ]
+    assert _content_reads(state) == []

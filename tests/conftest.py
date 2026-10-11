@@ -1247,7 +1247,11 @@ def gcs_api_server(fixture_tree):
                 )
                 source_name = urllib.parse.unquote(source_name)
                 dest_name = urllib.parse.unquote(dest_name)
+                if state.copy_status:
+                    self._send_json(state.copy_status, {})
+                    return
                 if source_name in objects:
+                    state.copies.append((source_name, dest_name))
                     objects[dest_name] = objects[source_name]
                     self._send_json(200, self._object_json(dest_name))
                     return
@@ -1573,6 +1577,11 @@ def az_api_server(fixture_tree):
                     split.path[len(f"/{account}/{container}/") :]
                 )
                 if qs.get("comp") == ["copy"] or self.headers.get("x-ms-copy-source"):
+                    if state.copy_status:
+                        self.send_response(state.copy_status)
+                        self.send_header("Content-Length", "0")
+                        self.end_headers()
+                        return
                     source = self.headers.get("x-ms-copy-source", "")
                     source_path = urllib.parse.urlsplit(source).path
                     source_prefix = f"/{account}/{container}/"
@@ -1581,6 +1590,7 @@ def az_api_server(fixture_tree):
                             source_path[len(source_prefix) :]
                         )
                         if source_name in objects:
+                            state.copies.append((source_name, blob_name))
                             objects[blob_name] = objects[source_name]
                             self.send_response(202)
                             for header, value in _copy_status_headers().items():

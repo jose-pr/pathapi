@@ -2043,6 +2043,19 @@ True` is pickled with its path, secrets and all).
 - `rename()`: server-side copy + delete in the same bucket; a prefix
   directory → `NotImplementedError` (`move()` copies). `rm(recursive=True)`
   batch-deletes; at the bucket root → `PermissionError`. No `chmod()`.
+- `copy()` of a file onto a key of the same store is one request of the
+  store (`CopyObject`) and no byte passes through this process: within a
+  bucket or between buckets that one client reaches (both paths use the
+  same supplied backend, or both the default). It makes the checks of
+  `Path.copy()` first and in its order (the same file, a target that is a
+  directory or holds keys, an existing target without `overwrite=True`);
+  an existing target is replaced by the copy itself, never deleted first,
+  and stays as it was when the copy fails. `progress` is called once with
+  the total. The copy keeps the object's content type and metadata, as
+  the store does. A store that answers "not implemented" gets the
+  streamed copy instead, and a copy between different supplied backends or
+  schemes always streams. `copy(recursive=True)` and `move()` of a prefix
+  copy each file this way.
 - `checksum(algorithm="md5")` (`NativeChecksum`) is the digest the store
   keeps, read with one request and no byte of the content. On `s3:` it is
   the plain MD5 that the ETag is for an object one request wrote and that
@@ -2095,7 +2108,8 @@ recursive-copy/remove rules as `S3Path` (same bucket); `rmdir()` of the
 bucket root → `PermissionError`; reads load the whole object into memory
 (the stream is seekable) and writes buffer in memory until close; `"x"` uses
 `if_generation_match=0`; `"a"` unsupported; `st_mtime` from `updated`.
-`checksum()` is the object's `md5Hash` or `crc32c` (`supported_checksums()`
+A file `copy()` is one `copy_blob` request, within or between the buckets
+that one client reaches, as for `S3Path`. `checksum()` is the object's `md5Hash` or `crc32c` (`supported_checksums()`
 is `{"md5", "crc32c"}`); a composite object has no `md5Hash`, and an
 object stored with a content encoding is read back decoded, so for either
 the digests the store keeps are refused with `NotImplementedError`.
@@ -2138,7 +2152,8 @@ does not exist; `rmdir()` of the container root → `PermissionError`;
 `TimeoutError` with the source untouched; reads load the whole object into
 memory (the stream is seekable) and writes buffer in memory until close;
 `"x"` sends `If-None-Match: *`; `"a"` unsupported; `st_mtime` from `last_modified`.
-`checksum("md5")` is the blob's `Content-MD5` property (`supported_checksums()`
+A file `copy()` within one container is one service copy (the call `rename()`
+waits for), as for `S3Path`. `checksum("md5")` is the blob's `Content-MD5` property (`supported_checksums()`
 is `{"md5"}`), a property that a client can set and the service does not
 verify against the content in every case; a blob without one raises
 `NotImplementedError`.
