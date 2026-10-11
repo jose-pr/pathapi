@@ -216,6 +216,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   comparison of sizes avoids it.
 
 ### Fixed
+- **`github:` no longer reads a proxy's HTML page as the file.** A raw
+  read answered `200` with `Content-Type: text/html` and no
+  `X-GitHub-Media-Type` header (a captive portal, a gateway's login page)
+  returned the page as the file's content; it is now `OSError(EIO)` naming
+  the path. A reply that carries the header, and so an HTML file of the
+  repository, still reads. The rule has not been checked against the live
+  service. Nothing to change in a caller.
 - **A predicate that raises ends `rm()` and `PathSyncer` with its own
   exception.** Each directory above the failing entry offered that exception
   back to the predicate as one more failure, so a predicate that raised for
