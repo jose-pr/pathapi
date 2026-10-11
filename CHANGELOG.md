@@ -98,6 +98,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `utils.glob.glob()` and `utils.glob.select()` take the keyword too. The
   default stays `False`; a caller that caught the `NotImplementedError` to
   fall back to its own walk can drop the fallback.
+- **`checksum()` and `supported_checksums()` on `s3:`, `gs:` and `az:`.** An
+  object-store path now answers `NativeChecksum` from the digest the store
+  keeps, with one request and no byte of the content. `S3Path` gives the plain
+  MD5 that the ETag is for an object one request wrote and that KMS or a
+  customer key does not encrypt (`checksum("md5")`), and the stored full-object
+  `crc32`, `crc32c`, `crc64nvme`, `sha1` or `sha256`; `GsPath` gives `md5Hash`
+  and `crc32c`; `AzPath` gives the `Content-MD5` property. A multipart ETag
+  (`...-N`), a composite checksum, a GCS object with a content encoding or no
+  `md5Hash`, a blob without `Content-MD5` and any other algorithm raise
+  `NotImplementedError`, never a guess; a missing path is `FileNotFoundError`
+  and a prefix directory `IsADirectoryError`. `PathSyncer` uses them without
+  being told: the second `sync()` of an unchanged tree of 100 `s3:` objects
+  to another prefix sent 200 `GetObject` before and sends none. Azure's
+  `Content-MD5` is a property a client can set and the service does not verify
+  against the content in every case.
+- **`copy()` of a file within one object store is one request of the store.**
+  `s3:`/`gs:` (inside a bucket, or between buckets that one client reaches: the
+  same supplied backend, or both paths' default) and `az:` (inside a
+  container) issue `CopyObject`, `copy_blob` or the blob copy instead of
+  reading the file and writing it back; `copy(recursive=True)` and `move()` of
+  a prefix do so for each file. A file copy on `s3:` took 6 requests (a
+  `GetObject` and a `PutObject` among them) and takes 4, of which one is the
+  copy. The checks `copy()` always made run first and in the same order (the
+  same file, a target that is a directory or holds keys, an existing target
+  without `overwrite=True`); an existing target is replaced by the copy and no
+  longer deleted first, so it is intact when the copy fails; `progress` is
+  called once with the total; a store that answers "not implemented" gets the
+  streamed copy. The copy keeps the object's content type and metadata, which
+  the streamed copy did not.
+- **`gs:` and `az:` read and write an object in pieces.** Reading asks for
+  ranges of 4 MiB (`gs:`) or 512 KiB (`az:`, `schemes.az.READ_CHUNK`: the SDK
+  holds about nine times a response, assign a larger number to trade memory
+  for requests) as the stream is read, instead of downloading the whole
+  object first; the stream stays seekable and `seek()` asks nothing until the
+  next read. Writing spools in memory up to 4 MiB and then in a temp file, as
+  `s3:` does, and uploads on close: a resumable upload in 2 MiB requests on
+  `gs:`, blocks on `az:`. A 32 MiB object is read and written with a peak of
+  under 9 MiB of Python memory against the SDK test servers. Nothing to
+  change; a program that held a `gs:` or `az:` file object open for a long time
+  now issues a request per chunk read.
 
 ### Changed
 - **A sync leaves each copy with its source's modification time
@@ -117,6 +157,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   directory move makes fewer requests. Every refusal `move()` made is made as
   before, in the same order. Nothing to change in a caller or a subclass; a
   class that overrides `samefile()` is still asked.
+- **`S3Path` and `GsPath` built without `backend=` share one default backend
+  per process.** Each used to build a backend of its own, and with it a client
+  and a connection pool, as soon as it needed one; a loop that builds a path
+  per key paid for one each. They now use one lazily built, locked backend, as
+  `AzPath` does per account, so two separately built paths use one client and
+  the credentials, region and endpoint that the environment gave the first
+  request are theirs. A supplied backend is unaffected, and so are
+  `same_filesystem()`, pickling and `copy.copy`. To keep a client of its own,
+  pass `backend=S3Backend(...)`/`GsBackend(...)`. A supplied `AzBackend` is
+  used for whatever account the URI names; the header now says so.
 
 ### Fixed
 - **A predicate that raises ends `rm()` and `PathSyncer` with its own
@@ -135,6 +185,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   directory symlink**, as pathlib does. `LocalPath` selected nothing for it;
   a trailing separator on a literal is now tested the way pathlib tests it.
   Other platforms and versions are unchanged.
+- **`GsPath.rm(recursive=True)` deletes in batches.** It sent one `DELETE` per
+  blob; it now queues them in batch requests of 100 (a prefix of 250 blobs is
+  3 requests), offers each key the batch refused to `ignore_error` once with its
+  own path, and falls back to one request per key for a chunk the client cannot
+  batch. A blob that is already gone no longer raises, as on `s3:` and `az:`.
+  Nothing to change for a caller.
 
 ## [0.9.13] - 2026-10-09
 

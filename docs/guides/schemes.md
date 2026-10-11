@@ -221,7 +221,24 @@ loop bridges it to the synchronous API).
   `rename()` onto a prefix directory raises `IsADirectoryError`.
 - Writes are uploaded on close; `open("x")` is a conditional create (an S3
   upload above 5 GiB checks first, then writes); append mode is not
-  supported; writes below a missing "directory" succeed.
+  supported; writes below a missing "directory" succeed. A write is spooled
+  (in memory up to a few megabytes, then in a temp file) and uploaded from the
+  spool, so an object of any size is written with a bounded amount of memory.
+  A read holds one chunk of the object: `s3:` streams the response and its
+  stream is not seekable, `gs:` and `az:` ask for ranges as the stream is read
+  and it stays seekable (`schemes.az.READ_CHUNK` is the size of an `az:`
+  range).
+- `copy()` of a file onto a key of the same store is one request of the store,
+  within a bucket (between buckets, when one client reaches both) on `s3:` and
+  `gs:` and within a container on `az:`; the file's content type and metadata
+  come along. `copy(recursive=True)` and `move()` of a prefix do so for each
+  file. Between different clients, schemes or containers the file is read and
+  written.
+- `checksum()` returns the digest the store keeps (`md5` on all three, `crc32c`
+  on `gs:`, the stored full-object checksums on `s3:`) and raises
+  `NotImplementedError` when the store keeps none of the whole content, as for
+  a multipart `s3:` object; `PathSyncer` uses it, so syncing an unchanged tree
+  between two object stores reads no object.
 - `rename()` is a server-side copy + delete within one bucket (container);
   renaming a prefix directory raises `NotImplementedError`, so `move()` copies
   it. `S3Path.rm(recursive=True)` at the bucket root raises
@@ -244,6 +261,10 @@ loop bridges it to the synchronous API).
   (`connection_string=`, or `account_url=`/`credential=`). An `AzPath`
   without `backend=` targets `https://<account>.blob.core.windows.net` with
   `azure-identity`'s `DefaultAzureCredential` (installed by the `az` extra).
+  `S3Path` and `GsPath` built without `backend=` share one default backend
+  (one client) per process, `AzPath` one per account; pass `backend=` for a
+  client of their own. A supplied `AzBackend` is used for whatever account
+  the URI names.
 
 ## Archives
 
