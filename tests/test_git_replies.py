@@ -26,6 +26,7 @@ class _Api:
 
     def __init__(self):
         self.log = []
+        self.accept = None
         self.route = lambda path: (404, {}, b"{}")
 
 
@@ -41,6 +42,7 @@ def _handler(api):
 
         def _serve(self):
             api.log.append((self.command, self.path))
+            api.accept = self.headers.get("Accept")
             status, headers, body = api.route(self.path)
             self.send_response(status)
             for key, value in {"Content-Length": str(len(body)), **headers}.items():
@@ -245,6 +247,66 @@ def test_github_truncated_tree_is_still_eio(api):
     with pytest.raises(OSError) as raised:
         list(_github(api, "dir").iterdir())
     assert raised.value.errno == errno.EIO
+
+
+def _by_accept(api, raw):
+    """Answers the raw media type's request with `raw` and every other
+    request (the `stat()` of the file) with a contents object."""
+    stat = _json({"type": "file", "size": 18})
+    return lambda path: raw if "raw" in (api.accept or "") else stat
+
+
+_PORTAL = (200, {"Content-Type": "text/html; charset=utf-8"}, b"<html>login</html>")
+
+
+@pytest.mark.parametrize(
+    "content_type",
+    ["text/html", "text/html; charset=utf-8", "TEXT/HTML;charset=UTF-8"],
+)
+def test_github_read_of_an_html_page_the_api_did_not_send_is_eio(api, content_type):
+    api.route = _by_accept(
+        api, (200, {"Content-Type": content_type}, b"<html>login</html>")
+    )
+    path = _github(api)
+    with pytest.raises(OSError) as raised:
+        path.read_bytes()
+    _assert_eio(raised.value, path)
+    with pytest.raises(OSError):
+        path.read_text()
+    assert path.exists() is True  # the metadata request was the API's own
+
+
+def test_github_exists_is_false_when_every_reply_is_a_portals_page(api):
+    api.route = lambda path: _PORTAL
+    path = _github(api)
+    with pytest.raises(OSError) as raised:
+        path.read_bytes()
+    _assert_eio(raised.value, path)
+    assert path.exists() is False
+
+
+def test_github_read_of_an_html_file_the_api_sent_still_reads(api):
+    sent = (
+        200,
+        {
+            "Content-Type": "text/html; charset=utf-8",
+            "X-GitHub-Media-Type": "github.v3; param=raw",
+        },
+        b"<html>a file of the repository</html>",
+    )
+    api.route = _by_accept(api, sent)
+    path = _github(api, "page.html")
+    assert path.read_bytes() == b"<html>a file of the repository</html>"
+    assert "raw" in api.accept
+
+
+@pytest.mark.parametrize(
+    "content_type", ["text/plain", "application/octet-stream", "text/htmlish", ""]
+)
+def test_github_read_of_other_content_types_is_returned_as_sent(api, content_type):
+    headers = {"Content-Type": content_type} if content_type else {}
+    api.route = _by_accept(api, (200, headers, b"<html>not refused</html>"))
+    assert _github(api).read_bytes() == b"<html>not refused</html>"
 
 
 # --- GitLab ---

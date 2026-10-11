@@ -190,4 +190,9 @@ class GitHubPath(_RepoApiPath):
                 except ValueError:
                     raise self._bad_reply("content that is not base64") from None
             raise OSError(_errno.EIO, f"Unsupported content response for {self}")
+        media_type = content_type.partition(";")[0].strip().lower()
+        if media_type == "text/html" and "X-GitHub-Media-Type" not in resp.headers:
+            # Every reply of the API names its media type in that header, so
+            # an HTML page without it is a proxy's or a portal's, not a file.
+            raise self._bad_reply("an HTML page that is not the API's answer")
         return self._reader(resp.content)

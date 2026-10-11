@@ -2263,7 +2263,13 @@ write method raise `NotImplementedError`.
   a truncated body, an array where an object is expected, an entry without
   a name and a type, a size that is not a non-negative integer) is
   `OSError(EIO)` naming the path, so `exists()` is `False` and `stat()`
-  raises. A raw file body has no shape to check and is returned as sent.
+  raises. A raw file body has no shape to check and is returned as sent,
+  except a `200` whose `Content-Type` is `text/html` and that carries no
+  `X-GitHub-Media-Type` header: the API names its media type in every
+  reply, so that is a proxy's or a captive portal's page, and `open()` of
+  it is `OSError(EIO)` naming the path (a file of the repository that is
+  HTML still reads, with the header). That rule has not been checked
+  against the live service.
 
 ### `GitLabPath` — `gitlab://[TOKEN@]host[:port]/owner/repo/path` (`pathlib_next.uri.schemes.gitlab`, `http` extra)
 
