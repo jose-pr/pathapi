@@ -75,11 +75,9 @@ def same_authority(a: Source, b: Source) -> bool:
 _same_authority = same_authority
 
 
-#: Backends a path built for itself through `_initbackend()`, keyed by `id()`
-#: (a backend may be unhashable or compare by value; the `is` test on lookup
-#: makes a reused id harmless). A path also records this on itself
-#: (`UriPath._backend_derived`); the registry covers a derived backend that a
-#: scheme hands on through `backend=`, which reads as supplied otherwise.
+#: Backends a path built for itself through `_initbackend()`, by `id()` (the `is`
+#: test on lookup makes a reused id harmless). It covers a derived backend that
+#: a scheme hands on through `backend=`, which would read as supplied.
 _DERIVED_BACKENDS: "_weakref.WeakValueDictionary[int, object]" = (
     _weakref.WeakValueDictionary()
 )
@@ -256,10 +254,9 @@ class Uri(Pathname):
         "_stem_cache",
     )
 
-    #: Set `True` on a subclass whose `.path` is a filesystem path on the
-    #: URI's own host (e.g. `sftp:`) -- lets `__fspath__`/`host_fspath()`
-    #: return it for building a command line that runs *on that host*.
-    #: Unset (`False`) means `.path` has no such meaning (`http:`, `s3:`, ...).
+    #: `True` on a subclass whose `.path` is a filesystem path on the URI's own host
+    #: (`sftp:`): `__fspath__`/`host_fspath()` return it for a command line that
+    #: runs on that host. `False`: `.path` has no such meaning (`http:`, `s3:`).
     _host_filesystem_path = False
 
     #: Every slot of the class, set by `__init_subclass__`; `__new__` starts
@@ -324,25 +321,17 @@ class Uri(Pathname):
 
     @classmethod
     def _parse_uri(cls, uri: str) -> tuple[Source, str, Query, str]:
-        # One-pass component extraction: urisplit()'s
-        # raw SplitResult fields used directly, authority split once via
-        # _split_authority() instead of three independent get*() calls
-        # each re-parsing it from scratch. Semantics are provably
-        # identical to the getters this replaces (ported logic, fuzzed
-        # against uritools as oracle) -- see source.py's helpers for the
-        # equivalence notes, including one uritools quirk reproduced
-        # on purpose.
-        #
-        # Deliberate differences from uritools' getters:
-        # * the query is NOT decoded: `.query` is the received,
-        #   percent-encoded string, sent back out unchanged and decoded only
-        #   per key/value by `Query.decode()`/`to_dict()`. Decoding it here
-        #   made an escaped `&`, `=` or `+` in a value indistinguishable from
-        #   a delimiter.
-        # * escapes that are not UTF-8 decode with `surrogateescape` (see
-        #   `source._ERRORS`) instead of raising UnicodeDecodeError.
-        # * a `data:` payload (RFC 2397) is an opaque octet string, so it
-        #   gets no dot-segment removal: "data:,a/./b" is the bytes "a/./b".
+        """`(source, path, query, fragment)` of `uri`, in one pass over
+        `urisplit()`'s raw fields with the authority split once. It differs
+        from uritools' getters in three ways: the query is not decoded (`.query`
+        stays percent-encoded and is decoded per key and value by
+        `Query.decode()`, because decoding it makes an escaped `&`, `=` or `+`
+        look like a delimiter); escapes that are not UTF-8 decode with
+        `surrogateescape` (`source._ERRORS`) instead of raising; and a `data:`
+        payload (RFC 2397) is an opaque octet string that gets no dot-segment
+        removal (`data:,a/./b` is the bytes `a/./b`)."""
+        # One pass over `urisplit()`'s raw fields, authority split once; where this
+        # differs from uritools' getters is in the docstring.
         scheme, authority, path, query, fragment = uritools.urisplit(uri)
         scheme = scheme.lower() if scheme is not None else None
         source = _parse_source(scheme, authority)
@@ -439,15 +428,9 @@ class Uri(Pathname):
         self._init(source, _path, query, fragment)
 
     def _init(self, source: Source, path: str, query: str, fragment: str, **kwargs):
-        # Re-init on an already-initiated instance is intentional and
-        # relied upon (e.g. UriPath.with_source() constructs via __new__,
-        # which already calls _init() once, then calls it again to
-        # overwrite with the new source) -- do not turn this into a raise
-        # without auditing every _init() call site first.
-        #
-        # `_initiated` is set LAST: the properties return the raw slots as
-        # soon as it is truthy, so a thread reading a lazily parsed Uri
-        # during another thread's first parse saw `path`/`source` as None.
+        # Re-init of an initiated instance is relied upon (`with_source()` runs
+        # `_init()` a second time over the first): audit every call site before making
+        # it raise. `_initiated` is set LAST: the properties read the raw slots once set.
         if query.__class__ is not Query:
             query = Query(query) if query else _NO_QUERY
         fragment = fragment or ""
@@ -660,22 +643,18 @@ class Uri(Pathname):
             result = target
         else:
             if isinstance(target, str):
-                # The same join `copy()`/`move()` use for a path destination,
-                # so one argument names one place for all three: dot
-                # segments resolve here too, instead of `rename("../b")`
-                # sending a literal "sub/../b" that an object store reads as
-                # a different key than the one `move()` writes.
+                # The join `copy()` and `move()` use for a path destination, so dot segments
+                # resolve here too: `rename("../b")` must not send a literal "sub/../b",
+                # which an object store reads as another key.
                 result = self.parent._join_decoded(target)
             else:
                 # target is a Uri by now, so this join re-uses `_load_parts`'
                 # existing right-to-left semantics without re-parsing it.
                 result = Uri(self.parent, target)
         if not self._same_location(result):
-            # Every scheme renames over its own connection or bucket using
-            # only `target.path`, so a target elsewhere (another host, bucket,
-            # archive or scheme -- including a local path) used to be renamed
-            # in the wrong place, silently. NotImplementedError is move()'s
-            # signal to fall back to copy + delete.
+            # Every scheme renames over its own connection or bucket using only
+            # `target.path`, so a target elsewhere would be renamed in the wrong place;
+            # NotImplementedError is move()'s signal to copy and delete instead.
             raise NotImplementedError(
                 f"rename() cannot cross locations: {self} -> {result}"
             )
@@ -698,11 +677,9 @@ class Uri(Pathname):
         /,
         sanitize=True,
     ) -> str:
-        # Direct string assembly instead of
-        # uricompose()'s full re-validation -- source/path/query/fragment
-        # here always came from a parse or our own normalized join state,
-        # never arbitrary untrusted input. See source.py's _compose_uri
-        # for the equivalence notes (fuzzed against uricompose as oracle).
+        # Direct string assembly, not uricompose()'s re-validation: the parts come from
+        # a parse or from our own normalized join state (see `_compose_uri` in
+        # source.py for the equivalence notes).
         scheme, userinfo, host, port = _source_parts(source, sanitize)
         return _compose_uri(
             scheme, userinfo, host, port, path, query or None, fragment or None
@@ -767,10 +744,9 @@ class Uri(Pathname):
         if self._uri is None or sanitize:
             path = self.path
             if path.startswith("//") and not self._has_authority():
-                # Without an authority a "//" path would render as one
-                # ("file:////srv/x" is host "" and path "//srv/x"), which
-                # raised ValueError from str()/repr()/hash(). "/." keeps it
-                # a path and parses back to the same one.
+                # Without an authority a "//" path would render as one ("file:////srv/x" is
+                # host "" and path "//srv/x") and str()/repr()/hash() would raise; "/." keeps
+                # it a path that parses back to the same one.
                 path = "/." + path
             uri = self._format_parsed_parts(
                 self.source, path, self.query, self.fragment, sanitize=sanitize
@@ -904,8 +880,8 @@ class Uri(Pathname):
 
     def _prefix_segments(self) -> list[str]:
         """Segments for `is_relative_to`/`relative_to` prefix comparison:
-        `[""]` for a root (including an authority with an empty path, which
-        `normpath` used to turn into "."), `[]` for the empty relative path."""
+        `[""]` for a root (including an authority with an empty path), `[]` for
+        the empty relative path."""
         if not self.path:
             return [""] if self._has_authority() else []
         path = self.normalized_path
@@ -925,15 +901,9 @@ class Uri(Pathname):
 
     def is_relative_to(self, other: UriLike):
         """Return True if the path is relative to another path or False."""
-        # Uri(other), NOT Uri(self, _ROOT, other): anchoring a str `other`
-        # at self's root turned `Uri("a/b").is_relative_to("a")` into a
-        # comparison against "/a" and answered False, disagreeing with the
-        # object form of the same call. `relative_to()` below already
-        # parsed a str standalone; this matches it and CPython.
-        # The same-authority case still works: a standalone parse leaves
-        # `other.source` empty, which the guard below treats as compatible
-        # with any `self.source`, and the segment prefix compare is
-        # unaffected -- `Uri("http://h/a/b").is_relative_to("/a")` is True.
+        # `other` is parsed standalone (`Uri(other)`), not anchored at self's root, as
+        # `relative_to()` and CPython do. A standalone parse leaves `other.source`
+        # empty, which the guard below treats as compatible with any `self.source`.
         other = other if isinstance(other, Uri) else Uri(other)
         if not (
             (other.source == self.source)
@@ -952,10 +922,8 @@ class Uri(Pathname):
 
     def relative_to(self, other: UriLike, *, walk_up=False):
         other = other if isinstance(other, Uri) else Uri(other)
-        # NOTE: no upfront `if not self.is_relative_to(other): raise` here --
-        # that used to short-circuit before the walk_up loop below ever ran,
-        # making walk_up=True dead code. The step==0 iteration of the loop
-        # (path=other) reproduces the exact same non-walk_up error.
+        # No upfront `is_relative_to()` check: the step==0 iteration (path=other)
+        # raises the same error, and an early one would skip the walk_up loop.
         for step, path in enumerate([other] + list(other.parents)):
             if self.is_relative_to(path):
                 break
@@ -967,10 +935,9 @@ class Uri(Pathname):
                 raise ValueError(f"'..' segment in {str(other)!r} cannot be walked")
         else:
             raise ValueError(f"{str(self)!r} and {str(other)!r} have different anchors")
-        # _segments_of, not raw .segments: the latter gives the URI root
-        # ("/") a spurious 2-tuple ("", "") instead of ("",), which used to
-        # make relative_to(<root>) drop the child's only real segment
-        # (found via property testing, polish_perf/06).
+        # `_prefix_segments()`, not raw `.segments`: the latter gives the URI root ("/")
+        # a spurious 2-tuple ("", ""), and `relative_to(<root>)` would drop the
+        # child's only real segment.
         self_segs = self._prefix_segments()
         path_segs = path._prefix_segments()
         parts = [".."] * step + self_segs[len(path_segs) :]
@@ -983,10 +950,9 @@ class Uri(Pathname):
         return self.source.is_local()
 
     def __eq__(self, other: Uri | str):
-        # Only a Uri or a URI string, both of which hash as their URI text
-        # like __hash__. Another Pathname (MemPath, LocalPath) hashes by its
-        # own rule, so equal-but-differently-hashed pairs broke sets and
-        # dicts, and a relative LocalPath's as_uri() raised out of `==`.
+        # Only a Uri or a URI string, which hash as their URI text like __hash__;
+        # another Pathname (MemPath, LocalPath) hashes by its own rule, and a
+        # relative LocalPath's as_uri() raises.
         if isinstance(other, Uri):
             uri = other.as_uri()
         elif isinstance(other, str):
@@ -1110,14 +1076,9 @@ class UriPath(Uri, Path):
     `listdir_attr`, an S3 list page, ...) -- `walk()`/`glob()` then answer
     `is_dir()` on the results for free, without a stat request per entry."""
 
-    #: `_backend` is the backend object, or None until one is built or
-    #: inherited; `_backend_derived` says the path built it (or inherited one
-    #: that was); `_backend_candidates` holds the join segments (with their
-    #: backends) until the path knows its own endpoint; `_derived_cell` is the
-    #: `_BackendCell` shared by the paths derived from one another on one
-    #: endpoint, None for a path that was not derived or holds a backend;
-    #: `_schemes_in_use` is the `schemesmap=` the path was constructed with,
-    #: which every path and destination it makes is dispatched with.
+    #: Slots: `_backend` (None until built or inherited), `_backend_derived` (the path
+    #: built it), `_backend_candidates` (join segments' backends until the endpoint is
+    #: known), `_derived_cell` (shared on one endpoint), `_schemes_in_use` (`schemesmap=`).
     __slots__ = (
         "_backend",
         "_backend_derived",
@@ -1176,11 +1137,9 @@ class UriPath(Uri, Path):
         global _ENTRY_POINTS
         import importlib.metadata as _metadata
 
-        # The group is read once: scanning every installed distribution cost
-        # 13-29 ms on each construction with an unregistered scheme
-        # (including "C:/x" on Windows, read as scheme "c"). Keyed on the
-        # lookup function, so a replaced `entry_points` is asked afresh; a new
-        # subclass drops it (`_forget_entry_points`).
+        # The group is read once (scanning every distribution cost 13-29 ms per
+        # construction with an unregistered scheme, "C:/x" on Windows included), keyed
+        # on the lookup function; a new subclass drops it (`_forget_entry_points`).
         cached = _ENTRY_POINTS
         if cached is None or cached[0] is not _metadata.entry_points:
             try:
@@ -1433,11 +1392,9 @@ class UriPath(Uri, Path):
         return backend
 
     def _same_filesystem(self, other: "UriPath") -> bool:
-        # A URI's equality already includes its authority, and a backend a
-        # path derived for itself says nothing more than the URI does: two
-        # paths built separately for one URL are the same file. Only two
-        # distinct SUPPLIED backends (separate connections, or fakes standing
-        # in for two hosts) are not provably the same tree.
+        # A URI's equality includes its authority, so two paths built separately for one
+        # URL are the same file; only two distinct SUPPLIED backends (separate
+        # connections, or fakes for two hosts) are not provably the same tree.
         mine, theirs = self._supplied_backend(), other._supplied_backend()
         return mine is None or theirs is None or mine is theirs
 
@@ -1485,9 +1442,8 @@ class UriPath(Uri, Path):
         return {}
 
     def __reduce__(self):
-        # A path pickles as its URI text (userinfo included: that is the
-        # URI), never its connection or session. A backend the caller
-        # supplied goes along only if it declares `picklable = True`; a
+        # A path pickles as its URI text (userinfo included), never its connection. A
+        # supplied backend goes along only if it declares `picklable = True`; a
         # derived one is rebuilt on demand.
         backend = self._supplied_backend()
         if backend is not None and getattr(backend, "picklable", False) is not True:
@@ -1606,10 +1562,9 @@ class UriPath(Uri, Path):
         return hint
 
     def _st_mode(self, *, follow_symlinks=True):
-        # The type questions (`is_dir()`, `is_file()`, `exists()`, ...) are
-        # answered by a type-only hint without a request. The hint is the
-        # answer to a non-following stat, so it speaks for a followed one only
-        # when the entry is not a link.
+        # The type questions are answered by a type-only hint, without a request. The
+        # hint answers a non-following stat, so it speaks for a followed one only when
+        # the entry is not a link.
         hint = self._stat_hint
         if hint is not None and not hint.size_known:
             self._stat_hint = None
