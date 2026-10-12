@@ -682,7 +682,7 @@ mutant(
 )
 mutant(
     "unpack-writes-outside-the-destination",
-    "utils/archive.py",
+    "archive/_pack.py",
     "    if not parts or not all(_is_safe_name(p, windows, rewrites) for p in parts):\n",
     "    if not parts:\n",
     "tests/test_archive_safety.py::test_unpack_archive_never_writes_outside_dest",

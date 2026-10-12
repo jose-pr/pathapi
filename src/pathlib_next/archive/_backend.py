@@ -334,12 +334,12 @@ class _ArchiveBackend:
 
 def _detect_backend_cls(outer: "Path") -> "tuple[type, bytes | None]":
     """Detect zip vs tar for `outer` (extension, then magic-byte sniff --
-    see `utils.archive.detect_format`): the matching backend class and, when
+    see `detect_format`): the matching backend class and, when
     the sniff had to read a non-local outer whole, those bytes. An error
     reading the outer propagates. Lazily imports `._zip`/`._tar` (rather than
     at module level) to avoid a circular import: both submodules import
     `_ArchiveBackend` from this module."""
-    from ..utils.archive import detect_format
+    from ._pack import detect_format
     from ._tar import _TarBackend
     from ._zip import _ZipBackend
 

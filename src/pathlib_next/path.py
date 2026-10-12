@@ -1528,7 +1528,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         outside it; a trailing dot, which Windows stores under another name)
         is refused with `ValueError` and reported through `ignore_error` or
         `on_error` like any child failure. `PathSyncer` and
-        `utils.unpack_archive()` apply the same rule; an archive listing keeps
+        `unpack_archive()` apply the same rule; an archive listing keeps
         such names, as they are ordinary filenames on POSIX.
 
         `progress`, when given, is called as `progress(path, bytes_copied,

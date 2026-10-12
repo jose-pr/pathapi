@@ -23,8 +23,8 @@ from pathlib_next import path as path_module
 from pathlib_next.mempath import MemPath
 from pathlib_next.uri import UriPath
 from pathlib_next.archive._zipentries import _strip_zip64_extra
-from pathlib_next.utils import archive as archive_module
-from pathlib_next.utils import unpack_archive
+from pathlib_next.archive import _pack as archive_module
+from pathlib_next.archive import unpack_archive
 
 
 def _zip_uri(path, inner=""):

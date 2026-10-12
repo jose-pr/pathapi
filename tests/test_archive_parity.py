@@ -20,7 +20,7 @@ import pytest
 from pathlib_next import LocalPath
 from pathlib_next.mempath import MemPath
 from pathlib_next.uri import UriPath
-from pathlib_next.utils import make_archive, unpack_archive
+from pathlib_next.archive import make_archive, unpack_archive
 
 
 def _zip_uri(path, inner=""):

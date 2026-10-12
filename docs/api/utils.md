@@ -10,4 +10,3 @@
 
 ::: pathlib_next.checksum
 
-::: pathlib_next.utils.archive

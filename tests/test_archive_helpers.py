@@ -1,5 +1,5 @@
-"""`make_archive` and `unpack_archive`: what a member holds, how it is sized
-and dated, which directories it has, and links that lead nowhere."""
+"""`make_archive`, `unpack_archive` and `detect_format`: what a member holds, how it
+is sized and dated, which directories it has, and links that lead nowhere."""
 
 import http.server
 import io
@@ -17,7 +17,7 @@ import pytest
 
 from pathlib_next import LocalPath
 from pathlib_next.mempath import MemPath
-from pathlib_next.utils import make_archive, unpack_archive
+from pathlib_next.archive import detect_format, make_archive, unpack_archive
 from pathlib_next import FileStat
 
 PAYLOAD = bytes(range(256)) * 40  # 10240 bytes
@@ -363,3 +363,56 @@ def test_a_link_to_nothing_a_file_can_be_is_skipped_with_a_warning(members):
     assert names["ok.txt"] == b"fine"
     assert "l" in skipped
     assert "l" not in names
+
+
+def test_a_tree_round_trips_through_make_and_unpack_archive(tmp_path):
+    # 1. LocalPath to LocalPath
+    src = LocalPath(tmp_path / "src")
+    src.mkdir()
+    (src / "file1.txt").write_text("hello")
+    (src / "sub").mkdir()
+    (src / "sub" / "file2.txt").write_text("world")
+
+    for fmt in ("zip", "tar"):
+        archive_path = LocalPath(tmp_path / f"archive.{fmt}")
+        make_archive(src, fmt, archive_path)
+        assert archive_path.exists()
+
+        dest = LocalPath(tmp_path / f"dest_{fmt}")
+        unpack_archive(archive_path, dest)
+        assert (dest / "file1.txt").read_text() == "hello"
+        assert (dest / "sub" / "file2.txt").read_text() == "world"
+
+    # 2. Scheme-agnostic check: MemPath as destination
+    mem_dest = MemPath("/extracted")
+    zip_archive = LocalPath(tmp_path / "archive.zip")
+    unpack_archive(zip_archive, mem_dest)
+    assert (mem_dest / "file1.txt").read_text() == "hello"
+    assert (mem_dest / "sub" / "file2.txt").read_text() == "world"
+
+
+@pytest.mark.parametrize(
+    "name, peek, expected",
+    [
+        ("a.zip", b"", "zip"),
+        ("a.jar", b"", "zip"),
+        ("A.ZIP", b"", "zip"),
+        ("a.tar", b"", "tar"),
+        ("a.tar.gz", b"", "tar"),
+        ("a.tgz", b"", "tar"),
+        ("a.tar.bz2", b"", "tar"),
+        ("a.tar.xz", b"", "tar"),
+        ("noext", b"PK\x03\x04", "zip"),
+        ("noext", b"\x1f\x8b", "tar"),
+    ],
+)
+def test_detect_format(name, peek, expected):
+    assert detect_format(name, lambda: peek) == expected
+
+
+def test_detect_format_does_not_peek_when_extension_is_conclusive():
+    def _boom():
+        raise AssertionError("peek() should not be called for a conclusive extension")
+
+    assert detect_format("a.zip", _boom) == "zip"
+    assert detect_format("a.tar", _boom) == "tar"

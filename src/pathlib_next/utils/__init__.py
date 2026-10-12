@@ -20,10 +20,8 @@ __all__ = [
     "as_owner",
     "is_safe_child_name",
     "is_windows_flavoured",
-    "make_archive",
     "notimplemented",
     "parsedate",
-    "unpack_archive",
 ]
 
 try:
@@ -439,6 +437,3 @@ def is_safe_child_name(name: object, *, windows: bool = False) -> bool:
     and with or without an extension (`"nul.txt"`).
     """
     return _is_safe_name(name, windows, True)
-
-
-from .archive import make_archive as make_archive, unpack_archive as unpack_archive

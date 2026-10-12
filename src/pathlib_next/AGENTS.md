@@ -475,7 +475,7 @@ class FsPathLike(Protocol):
 `Protocol` with `__fspath__()`.
 **`PathLike`** = `str | Path`; **`PurePathLike`** = `str | Pathname`.
 
-### For path implementers (`pathlib_next.path`, `pathlib_next.utils.archive`, `pathlib_next.utils._commit`)
+### For path implementers (`pathlib_next.path`, `pathlib_next.archive`, `pathlib_next.utils._commit`)
 
 The names a class built on `Path` overrides or calls beyond the stubs above,
 in one place: the built-in schemes use all of them, so they are contract. The
@@ -1354,7 +1354,7 @@ def native(path, algorithm="md5") -> str | None: ...
 `native()` (`None` when the protocol is
 missing or raises `NotImplementedError`).
 
-### `archive` (`pathlib_next.utils.archive`)
+### `make_archive`, `unpack_archive` (`pathlib_next.archive`)
 
 ```python
 def make_archive(src, format, target) -> None: ...
@@ -1375,7 +1375,7 @@ would leave `dest` are skipped, and for a Windows-flavoured `dest` so are
 members with a part Windows would rewrite or send to a device
 (`UserWarning`); tar hard links and links to regular files are extracted as
 copies, other links — to nothing, to a directory, or in a loop — skipped
-with `UserWarning`). Also importable from `pathlib_next.utils`.
+with `UserWarning`).
 
 ### Helpers (`pathlib_next.utils`)
 

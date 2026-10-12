@@ -9,7 +9,7 @@ import typing as _ty
 import warnings
 import zipfile
 
-from . import _is_safe_name, is_windows_flavoured
+from ..utils import _is_safe_name, is_windows_flavoured
 from .._filestat import FileStat
 
 if _ty.TYPE_CHECKING:
@@ -30,9 +30,6 @@ def detect_format(name: str, peek: "_ty.Callable[[], bytes] | None" = None) -> s
         return "tar"
     magic = peek() if peek is not None else b""
     return "zip" if magic.startswith(b"PK") else "tar"
-
-
-_detect_format = detect_format
 
 
 def _safe_member_parts(

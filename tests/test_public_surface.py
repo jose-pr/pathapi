@@ -63,6 +63,9 @@ EXPORTS = {
         "MEMBER_SPOOL_BYTES",
         "TarPath",
         "ZipPath",
+        "detect_format",
+        "make_archive",
+        "unpack_archive",
     },
     "pathlib_next.ftp": {
         "BaseFTPBackend",
@@ -93,10 +96,8 @@ EXPORTS = {
         "as_owner",
         "is_safe_child_name",
         "is_windows_flavoured",
-        "make_archive",
         "notimplemented",
         "parsedate",
-        "unpack_archive",
     },
     "pathlib_next.checksum": {"md5", "native", "sha256", "stream"},
     "pathlib_next.glob": {
@@ -113,7 +114,6 @@ EXPORTS = {
 ALSO_IMPORTABLE = {
     "pathlib_next.mempath": {"MemPath", "MemPathBackend", "MemFile"},
     "pathlib_next.sync": {"PathSyncer", "SyncEvent", "PathAndStat"},
-    "pathlib_next.utils.archive": {"make_archive", "unpack_archive"},
     "pathlib_next.testing": {
         "DIRECTORY_ERRORS",
         "FIXTURE_TREE",

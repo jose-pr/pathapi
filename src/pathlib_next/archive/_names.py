@@ -13,7 +13,7 @@ def _is_safe_member_name(name: str) -> bool:
     legitimately contain `C:drive.txt` or `a\\b`. Refusing to *join* such a
     name onto a destination that reads it differently is the destination's
     rule, and is applied per target where the joining happens --
-    `Path.copy(recursive=True)`, `PathSyncer` and `utils.unpack_archive()`
+    `Path.copy(recursive=True)`, `PathSyncer` and `unpack_archive()`
     each check `is_safe_child_name(..., windows=is_windows_flavoured(dest))`.
     A trailing `/` (a directory marker) is allowed."""
     if name.endswith("/"):

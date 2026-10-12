@@ -11,6 +11,7 @@ import sys as _sys
 import types as _types
 
 from . import _backend
+from ._pack import detect_format, make_archive, unpack_archive
 from ._path import ArchivePath, TarPath, ZipPath
 from ._snapshot import MAX_LINKS, LinkTarget
 
@@ -21,6 +22,9 @@ __all__ = [
     "MEMBER_SPOOL_BYTES",
     "TarPath",
     "ZipPath",
+    "detect_format",
+    "make_archive",
+    "unpack_archive",
 ]
 
 

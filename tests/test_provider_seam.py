@@ -35,11 +35,16 @@ NOT_THE_CORES = {
     ("uri/schemes/_gitrepo.py", "_replace"): "a `Source` named tuple's method",
 }
 
+# (module, public name): documented helpers a provider calls, defined in a
+# private module and listed in the public module's `__all__`.
+PROVIDER_HELPERS = [
+    ("pathlib_next.archive", "detect_format"),
+]
+
 # (module, public name, the underscore name it replaced)
 PUBLIC_HELPERS = [
     ("pathlib_next.path", "check_follow", "_check_follow"),
     ("pathlib_next.path", "contains", "_contains"),
-    ("pathlib_next.utils.archive", "detect_format", "_detect_format"),
     ("pathlib_next.utils._commit", "CommitOnClose", "_CommitOnClose"),
     ("pathlib_next.uri", "same_authority", "_same_authority"),
     ("pathlib_next.uri", "DerivedBackend", "_DerivedBackend"),
@@ -248,4 +253,12 @@ def test_a_public_helper_is_the_object_its_underscore_name_stays_as(
 
 @pytest.mark.parametrize(("module", "public", "private"), PUBLIC_HELPERS)
 def test_a_public_helper_is_documented_in_the_header(module, public, private):
+    assert public in documented_names(HEADER.read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize(("module", "public"), PROVIDER_HELPERS)
+def test_a_provider_helper_is_exported_and_documented(module, public):
+    imported = importlib.import_module(module)
+    assert public in imported.__all__
+    assert callable(getattr(imported, public))
     assert public in documented_names(HEADER.read_text(encoding="utf-8"))

@@ -128,67 +128,6 @@ def test_parsedate_tuple_with_offset_applies_it():
     assert utils.parsedate((2015, 10, 21, 9, 28, 0, 0, 1, -1, 7200)) == 1445412480
 
 
-def test_archive_helpers(tmp_path):
-    from pathlib_next import LocalPath
-    from pathlib_next.utils import make_archive, unpack_archive
-    from pathlib_next.mempath import MemPath
-
-    # 1. LocalPath to LocalPath
-    src = LocalPath(tmp_path / "src")
-    src.mkdir()
-    (src / "file1.txt").write_text("hello")
-    (src / "sub").mkdir()
-    (src / "sub" / "file2.txt").write_text("world")
-
-    for fmt in ("zip", "tar"):
-        archive_path = LocalPath(tmp_path / f"archive.{fmt}")
-        make_archive(src, fmt, archive_path)
-        assert archive_path.exists()
-
-        dest = LocalPath(tmp_path / f"dest_{fmt}")
-        unpack_archive(archive_path, dest)
-        assert (dest / "file1.txt").read_text() == "hello"
-        assert (dest / "sub" / "file2.txt").read_text() == "world"
-
-    # 2. Scheme-agnostic check: MemPath as destination
-    mem_dest = MemPath("/extracted")
-    zip_archive = LocalPath(tmp_path / "archive.zip")
-    unpack_archive(zip_archive, mem_dest)
-    assert (mem_dest / "file1.txt").read_text() == "hello"
-    assert (mem_dest / "sub" / "file2.txt").read_text() == "world"
-
-
-@pytest.mark.parametrize(
-    "name, peek, expected",
-    [
-        ("a.zip", b"", "zip"),
-        ("a.jar", b"", "zip"),
-        ("A.ZIP", b"", "zip"),
-        ("a.tar", b"", "tar"),
-        ("a.tar.gz", b"", "tar"),
-        ("a.tgz", b"", "tar"),
-        ("a.tar.bz2", b"", "tar"),
-        ("a.tar.xz", b"", "tar"),
-        ("noext", b"PK\x03\x04", "zip"),
-        ("noext", b"\x1f\x8b", "tar"),
-    ],
-)
-def test_detect_format(name, peek, expected):
-    from pathlib_next.utils.archive import _detect_format
-
-    assert _detect_format(name, lambda: peek) == expected
-
-
-def test_detect_format_does_not_peek_when_extension_is_conclusive():
-    from pathlib_next.utils.archive import _detect_format
-
-    def _boom():
-        raise AssertionError("peek() should not be called for a conclusive extension")
-
-    assert _detect_format("a.zip", _boom) == "zip"
-    assert _detect_format("a.tar", _boom) == "tar"
-
-
 @pytest.mark.skipif(
     sys.version_info >= (3, 10),
     reason="the ParamSpec fallback is only reachable on 3.9 (3.10+ has typing.ParamSpec)",
