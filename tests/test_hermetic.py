@@ -278,6 +278,14 @@ def test_a_proxy_in_the_developers_shell_is_not_used_for_a_loopback_server(
     assert requests.get(f"{http_server}/a.txt", timeout=10).text == "a"
 
 
+def test_a_proxy_in_the_developers_shell_is_not_used_by_the_built_in_transport(
+    http_server, monkeypatch
+):
+    from pathlib_next.uri import UriPath
+
+    assert UriPath(f"{http_server}/a.txt").read_text() == "a"
+
+
 # --- the session itself, in a child pytest ------------------------------------
 
 

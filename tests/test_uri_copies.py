@@ -14,6 +14,7 @@ import pytest
 
 pytest.importorskip("uritools")
 
+from http_fakes import FakeTransport
 from pathlib_next.uri import Uri, UriPath
 from pathlib_next.uri.source import Source
 
@@ -122,7 +123,6 @@ def test_a_backend_that_declares_itself_picklable_goes_along():
 
 
 def test_a_derived_backend_is_not_pickled_and_is_built_again():
-    pytest.importorskip("requests")
     path = UriPath("http://h/x")
     backend = path.backend
     again = _roundtrip(path)
@@ -155,9 +155,8 @@ def test_the_stat_hint_and_the_file_object_cache_are_not_pickled(tmp_path):
 
 
 def test_an_http_path_pickles_without_its_session_headers():
-    requests = pytest.importorskip("requests")
-    path = UriPath("http://h/x").with_session(
-        requests.Session(), headers={"Authorization": "Bearer S3CR3T-dummy"}
+    path = UriPath("http://h/x").with_transport(
+        FakeTransport(), headers={"Authorization": "Bearer S3CR3T-dummy"}
     )
     assert path._supplied_backend() is not None
     data = pickle.dumps(path)
@@ -319,7 +318,6 @@ _IDENTITY_URLS = [
 @pytest.mark.parametrize("url", _IDENTITY_URLS)
 @pytest.mark.parametrize("how", ["pickle", "deepcopy", "copy"])
 def test_equality_hash_and_filesystem_answers_survive(url, how):
-    pytest.importorskip("requests")
     first, second = UriPath(url), UriPath(url)
     for path in (first, second):
         try:

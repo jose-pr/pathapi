@@ -13,7 +13,6 @@ import zipfile
 import pytest
 
 pytest.importorskip("uritools")
-pytest.importorskip("requests")
 
 from pathlib_next.uri import UriPath
 

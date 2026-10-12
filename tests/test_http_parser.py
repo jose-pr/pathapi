@@ -11,8 +11,6 @@ import time
 
 import pytest
 
-pytest.importorskip("requests")
-
 from pathlib_next.uri.schemes.http import _DirectoryListingParser, _human2bytes
 
 

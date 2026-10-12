@@ -9,12 +9,11 @@ this was previously exercised by anything but the fallback branch.
 
 import pytest
 
-pytest.importorskip("requests")
-
-import requests
-
+from http_fakes import on_current_transport
 from pathlib_next.uri import UriPath
 from pathlib_next.uri.schemes.http import HttpPath
+
+pytestmark = pytest.mark.usefixtures("http_transport_kind")
 
 
 def test_apache_pre_listing_end_to_end(http_server_apache_pre):
@@ -93,7 +92,7 @@ def test_exception_translation_matrix(http_status_server, status, exc_type):
 
 def test_exception_translation_timeout(http_status_server):
     p = UriPath(f"{http_status_server}/timeout")
-    p = p.with_session(requests.Session(), timeout=0.5)
+    p = on_current_transport(p, timeout=0.5)
     with pytest.raises(TimeoutError):
         p.read_text()
 

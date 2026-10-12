@@ -58,7 +58,6 @@ def recording_http_server():
 
 
 def test_http_request_carries_the_encoded_query_unchanged(recording_http_server):
-    pytest.importorskip("requests")
     base, seen = recording_http_server
     UriPath(f"{base}/download?name=a%26b&sig=ab%2Bcd%3D%3D").read_bytes()
     # It used to go out as "name=a&b&sig=ab+cd==": a presigned signature
@@ -67,7 +66,6 @@ def test_http_request_carries_the_encoded_query_unchanged(recording_http_server)
 
 
 def test_http_request_with_dict_query_is_encoded_once(recording_http_server):
-    pytest.importorskip("requests")
     base, seen = recording_http_server
     UriPath(f"{base}/search").with_query({"q": "a b", "k": "x&y"}).read_bytes()
     assert "/search?q=a%20b&k=x%26y" in seen
@@ -198,7 +196,6 @@ def test_non_utf8_escape_constructs_and_round_trips():
 
 
 def test_non_utf8_escape_constructs_a_scheme_path():
-    pytest.importorskip("requests")
     path = UriPath("http://h/caf%E9.html")
     assert type(path).__name__ == "HttpPath"
     assert str(path) == "http://h/caf%E9.html"

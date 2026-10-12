@@ -77,7 +77,6 @@ def test_a_zip_member_holds_what_was_read_whatever_stat_says(claimed):
 
 
 def test_a_tar_of_an_http_file_served_without_a_length_holds_all_its_bytes():
-    pytest.importorskip("requests")
     from pathlib_next.uri import UriPath
 
     class Handler(http.server.BaseHTTPRequestHandler):

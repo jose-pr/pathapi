@@ -13,12 +13,13 @@ import time
 
 import pytest
 
-pytest.importorskip("requests")
-
+from http_fakes import on_current_transport
 from pathlib_next import LocalPath
 from pathlib_next.uri.schemes.dav import DavPath
 from pathlib_next.uri import UriPath
 from pathlib_next.uri.schemes.http import HttpPath
+
+pytestmark = pytest.mark.usefixtures("http_transport_kind")
 
 
 def _http(dav_url):
@@ -354,10 +355,8 @@ def test_truncated_body_raises_oserror(wire_server):
 
 
 def test_body_stalled_after_headers_raises_timeouterror(wire_server):
-    import requests
-
     host, _store, _seen = wire_server
-    p = HttpPath(f"http://{host}/stall").with_session(requests.Session(), timeout=1)
+    p = on_current_transport(HttpPath(f"http://{host}/stall"), timeout=1)
     with pytest.raises(TimeoutError):
         p.read_bytes()
 
@@ -404,8 +403,7 @@ def test_http_last_modified_is_utc(wire_server):
 
 
 def test_with_session_args_do_not_collide(wire_server, dav_server):
-    import requests
-
+    requests = pytest.importorskip("requests")
     host, _store, seen = wire_server
     p = HttpPath(f"http://{host}/redirect.txt").with_session(
         requests.Session(),

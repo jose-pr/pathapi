@@ -19,9 +19,10 @@ import pytest
 from pathlib_next.path._relation import _same_file
 from pathlib_next.uri import Uri, UriPath
 
-requests = pytest.importorskip("requests")
-
+from http_fakes import on_current_transport
 from pathlib_next.uri.schemes.http import HttpPath
+
+pytestmark = pytest.mark.usefixtures("http_transport_kind")
 
 
 class _Recorder(http.server.BaseHTTPRequestHandler):
@@ -78,11 +79,9 @@ def two_servers():
             server.server_close()
 
 
-def _session(**headers):
-    session = requests.Session()
-    session.trust_env = False
-    session.headers.update(headers)
-    return session
+def _with(path, **headers):
+    """`path` with a backend that sends `headers` with every request."""
+    return on_current_transport(path, headers=headers)
 
 
 def _read(path):
@@ -131,9 +130,7 @@ def _crossings():
 @pytest.mark.parametrize("route", list(_crossings()))
 def test_a_session_never_reaches_another_server(two_servers, route):
     a, b = two_servers
-    base = UriPath(f"{a.url}/api/d/f.txt").with_session(
-        _session(Authorization="Bearer SECRET-FOR-A")
-    )
+    base = _with(UriPath(f"{a.url}/api/d/f.txt"), Authorization="Bearer SECRET-FOR-A")
     other = Uri(f"{b.url}/other/d/")
 
     crossed = _crossings()[route](base, other)
@@ -147,7 +144,7 @@ def test_a_session_never_reaches_another_server(two_servers, route):
 
 def test_a_session_still_follows_a_join_on_its_own_server(two_servers):
     a, _ = two_servers
-    base = UriPath(f"{a.url}/api/").with_session(_session(**{"X-Session": "mine"}))
+    base = _with(UriPath(f"{a.url}/api/"), **{"X-Session": "mine"})
     for path in (
         base / "x",
         base / "sub" / "x",
@@ -169,12 +166,8 @@ def test_the_mirroring_idiom_keeps_the_destination_session(two_servers):
     file on another endpoint: the destination's own session must be used,
     not an ambient default and not the source's."""
     a, b = two_servers
-    src_root = UriPath(f"{a.url}/api/").with_session(
-        _session(Authorization="Bearer SECRET-FOR-A")
-    )
-    dst_root = UriPath(f"{b.url}/mirror/").with_session(
-        _session(**{"X-Session": "dst"})
-    )
+    src_root = _with(UriPath(f"{a.url}/api/"), Authorization="Bearer SECRET-FOR-A")
+    dst_root = _with(UriPath(f"{b.url}/mirror/"), **{"X-Session": "dst"})
     src = src_root / "sub" / "f.txt"
     rel = src.relative_to(src_root)
     assert rel._backend is None

@@ -13,7 +13,7 @@ import json
 
 import pytest
 
-pytest.importorskip("requests")
+pytestmark = pytest.mark.usefixtures("http_transport_kind")
 
 from http_fakes import FakeTransport, reply
 from pathlib_next.uri.schemes._gitrepo import BaseRepoBackend

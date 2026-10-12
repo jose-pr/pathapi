@@ -4,10 +4,10 @@ test_contract.py::TestDavContract).
 
 import pytest
 
-pytest.importorskip("requests")
-
 from pathlib_next.uri import UriPath
 from pathlib_next.uri.schemes.dav import DavPath
+
+pytestmark = pytest.mark.usefixtures("http_transport_kind")
 
 
 def test_dav_scheme_resolves_via_entry_point(dav_server):

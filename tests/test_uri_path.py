@@ -1,5 +1,6 @@
 import pytest
 
+from http_fakes import FakeTransport
 from pathlib_next.uri import Source, Uri, UriPath
 from pathlib_next.uri.schemes.file import FileUri
 from pathlib_next import FileStat
@@ -285,8 +286,7 @@ def test_str_destination_with_a_scheme_is_still_a_uri(target):
 
 def test_str_destination_reuses_the_backend_of_the_same_endpoint():
     """No second connection for a destination next to the source."""
-    requests = pytest.importorskip("requests")
-    base = UriPath("http://h/api/a.txt").with_session(requests.Session())
+    base = UriPath("http://h/api/a.txt").with_transport(FakeTransport())
     assert base._coerce_target("b.txt").backend is base.backend
 
 
@@ -352,8 +352,7 @@ def test_rename_and_copy_resolve_a_relative_str_the_same_way():
 def test_a_same_endpoint_uri_destination_keeps_the_configured_backend():
     """`copy("http://same-host/...")` opened a second, unauthenticated
     session against the host the caller had just authenticated to."""
-    requests = pytest.importorskip("requests")
-    base = UriPath("http://trusted.invalid/api/a.txt").with_session(requests.Session())
+    base = UriPath("http://trusted.invalid/api/a.txt").with_transport(FakeTransport())
     assert (
         base._coerce_target("http://trusted.invalid/api/b.txt").backend is base.backend
     )

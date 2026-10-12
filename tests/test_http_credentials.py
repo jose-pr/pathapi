@@ -8,10 +8,11 @@ import threading
 
 import pytest
 
-requests = pytest.importorskip("requests")
-
 import pathlib_next
+from http_fakes import on_current_transport
 from pathlib_next.uri import UriPath
+
+pytestmark = pytest.mark.usefixtures("http_transport_kind")
 
 
 class _Recorder(http.server.BaseHTTPRequestHandler):
@@ -143,8 +144,8 @@ def test_plain_read_modes_still_open(recorder, scheme, mode):
 
 
 def test_dav_write_method_is_the_method_that_uploads(recorder):
-    path = UriPath(f"dav://{recorder.base}/f.txt").with_session(
-        requests.Session(), write_method="POST"
+    path = on_current_transport(
+        UriPath(f"dav://{recorder.base}/f.txt"), write_method="POST"
     )
     path.write_bytes(b"data")
     assert [m for m, _p, _h in recorder.log] == ["POST"]
@@ -167,10 +168,10 @@ def test_dav_stat_accepts_the_keyword_of_its_base(recorder):
 def test_headers_other_than_authorization_follow_a_redirect(recorder):
     other = _start()
     try:
-        # Another port is another origin to `requests`: it drops `Authorization`.
+        # Another port is another origin: `Authorization` is dropped.
         recorder.redirect_to = f"http://127.0.0.1:{other.server_port}/landing"
-        path = UriPath(f"http://{recorder.base}/redirect").with_session(
-            requests.Session(),
+        path = on_current_transport(
+            UriPath(f"http://{recorder.base}/redirect"),
             headers={"Authorization": "Bearer T", "X-Api-Key": "K"},
         )
         path.read_bytes()

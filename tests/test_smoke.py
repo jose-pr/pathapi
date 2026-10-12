@@ -125,7 +125,6 @@ def test_readme_local_path():
 
 def test_readme_http_path_construct_only():
     uri = _uri()
-    pytest.importorskip("requests")
     http_path = uri.UriPath("http://example.com/data.txt")
     assert http_path.source.scheme == "http"
 

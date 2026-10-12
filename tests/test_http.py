@@ -9,10 +9,10 @@ import typing
 
 import pytest
 
-pytest.importorskip("requests")
-
 from http_fakes import FakeTransport, reply
 from pathlib_next.uri import UriPath
+
+pytestmark = pytest.mark.usefixtures("http_transport_kind")
 
 
 class _Request(typing.NamedTuple):
@@ -374,26 +374,15 @@ def test_http_append_rewrite_mode_multiple_writes(http_writable_server):
 
 
 @pytest.fixture
-def patch_mode_requests(monkeypatch):
-    """Record every request method sent through `requests`, passing each on
-    to the real server unchanged."""
-    import requests
+def patch_mode_requests(http_transport):
+    """The request methods sent, each passed on to the real server unchanged."""
+    from http_fakes import RecordingTransport
 
-    real_request = requests.Session.request
-    methods = []
-
-    def request(self, method, url, *args, **kwargs):
-        methods.append(method)
-        return real_request(self, method, url, *args, **kwargs)
-
-    monkeypatch.setattr(requests.Session, "request", request)
-    return methods
+    return RecordingTransport(http_transport)
 
 
-def _patch_mode(url):
-    import requests
-
-    return UriPath(url).with_session(requests.Session(), append_mode="patch")
+def _patch_mode(url, recorder):
+    return UriPath(url).with_transport(recorder, append_mode="patch")
 
 
 def test_http_append_patch_mode_existing_file_real_server(
@@ -401,13 +390,14 @@ def test_http_append_patch_mode_existing_file_real_server(
 ):
     # conftest's _WritableHandler.do_PATCH writes at the Content-Range
     # offset, so a wrong offset corrupts the persisted bytes.
-    p = _patch_mode(f"{http_writable_server}/patch_existing.txt")
+    p = _patch_mode(f"{http_writable_server}/patch_existing.txt", patch_mode_requests)
     p.write_bytes(b"hello")
     patch_mode_requests.clear()
     with p.open("ab") as f:
         f.write(b" wor")
         f.write(b"ld")
-    assert "PATCH" in patch_mode_requests and "GET" not in patch_mode_requests
+    methods = patch_mode_requests.methods
+    assert "PATCH" in methods and "GET" not in methods
     assert p.read_bytes() == b"hello world"
     with p.open("ab") as f:
         f.write(b"!")
@@ -417,10 +407,10 @@ def test_http_append_patch_mode_existing_file_real_server(
 def test_http_append_patch_mode_new_file_real_server(
     http_writable_server, patch_mode_requests
 ):
-    p = _patch_mode(f"{http_writable_server}/patch_new.txt")
+    p = _patch_mode(f"{http_writable_server}/patch_new.txt", patch_mode_requests)
     with p.open("ab") as f:
         f.write(b"abc")
-    assert patch_mode_requests.count("PATCH") == 1
+    assert patch_mode_requests.methods.count("PATCH") == 1
     assert p.read_bytes() == b"abc"
 
 
@@ -429,16 +419,18 @@ def test_http_append_patch_mode_empty_append_real_server(
 ):
     # pathlib's open("ab") with nothing written creates a missing file and
     # leaves an existing one alone; neither sends an (invalid) empty range.
-    new = _patch_mode(f"{http_writable_server}/patch_empty_new.txt")
+    new = _patch_mode(
+        f"{http_writable_server}/patch_empty_new.txt", patch_mode_requests
+    )
     with new.open("ab"):
         pass
     assert new.read_bytes() == b""
 
-    existing = _patch_mode(f"{http_writable_server}/a.txt")
+    existing = _patch_mode(f"{http_writable_server}/a.txt", patch_mode_requests)
     with existing.open("ab"):
         pass
     assert existing.read_bytes() == b"a"
-    assert "PATCH" not in patch_mode_requests
+    assert "PATCH" not in patch_mode_requests.methods
 
 
 def test_http_append_patch_mode_configured():
@@ -563,14 +555,10 @@ def test_listing_parser_marks_human_readable_sizes_approximate():
     assert listing["b.txt"].size_exact is True
 
 
-def test_patch_append_offset_ignores_listing_hint(site):
-    import requests
-
+def test_patch_append_offset_ignores_listing_hint(site, http_transport):
     site.index("/d/", '<a href="f.txt">f.txt</a>   01-Jan-1970 00:00  1228\n')
     site.serve("/d/f.txt", b"x" * 1000)
-    root = UriPath(site.url("/d/")).with_session(
-        requests.Session(), append_mode="patch"
-    )
+    root = UriPath(site.url("/d/")).with_transport(http_transport, append_mode="patch")
     child = next(root.iterdir())
     with child.open("ab") as f:
         f.write(b"hello!")

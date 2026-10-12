@@ -7,8 +7,6 @@ import warnings
 
 import pytest
 
-requests = pytest.importorskip("requests")
-
 from http_fakes import FakeTransport, reply
 from pathlib_next.uri import UriPath
 from pathlib_next.uri.schemes._gitrepo import (

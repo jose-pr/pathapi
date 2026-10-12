@@ -3,6 +3,7 @@ server: a table-driven fake and a wrapper that records what a real one sends."""
 
 from __future__ import annotations
 
+import os
 import typing
 
 from pathlib_next.uri.schemes.http import HTTPResponse
@@ -20,6 +21,23 @@ _REASONS = {
     500: "Internal Server Error",
     502: "Bad Gateway",
 }
+
+
+def current_kind():
+    """The transport kind the test runs with: what `http_transport_kind` set."""
+    return os.environ.get("PATHLIB_NEXT_HTTP_TRANSPORT", "builtin")
+
+
+def on_current_transport(path, **backend_args):
+    """`path` with a backend on a real transport of the kind under test;
+    `backend_args` are those of `with_transport()`."""
+    return path.with_transport(make_transport(current_kind()), **backend_args)
+
+
+def is_client_error(error):
+    """Whether `error` comes from a client library (`requests`, `urllib3`)
+    rather than being a builtin or pathlib exception."""
+    return type(error).__module__.split(".")[0] in ("requests", "urllib3")
 
 
 def make_transport(kind, **arguments):

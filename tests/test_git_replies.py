@@ -1,7 +1,7 @@
 """What `github:` and `gitlab:` do with API replies that are not the shape
 the API documents: a captive portal's page, a gateway's JSON, `null`, a
 truncated body. Each is `OSError(EIO)` naming the path, never an
-`AttributeError`, `KeyError` or `requests` exception, and `exists()` answers
+`AttributeError`, `KeyError` or client-library exception, and `exists()` answers
 `False`. Every request goes to a loopback server."""
 
 import base64
@@ -10,10 +10,11 @@ import json
 
 import pytest
 
-requests = pytest.importorskip("requests")
+pytestmark = pytest.mark.usefixtures("http_transport_kind")
 
 import http.server
 
+from http_fakes import is_client_error
 from pathlib_next.uri import UriPath
 from pathlib_next.uri.schemes._gitrepo import RepoBackend
 from pathlib_next.uri.schemes.github import GitHubPath
@@ -94,7 +95,7 @@ _ALL_BAD = {**_NOT_JSON, **_WRONG_TYPE}
 
 def _assert_eio(error, path):
     assert error.errno == errno.EIO, error
-    assert not isinstance(error, requests.exceptions.RequestException)
+    assert not is_client_error(error)
     assert str(path) in str(error)
 
 

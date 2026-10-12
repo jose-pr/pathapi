@@ -51,7 +51,6 @@ def test_copy_directory_without_recursive_leaves_target_intact(tmp_path):
 
 
 def test_copy_http_404_source_leaves_local_target_intact(http_server, tmp_path):
-    pytest.importorskip("requests")
     from pathlib_next.uri import UriPath
 
     target = LocalPath(tmp_path / "cache.json")

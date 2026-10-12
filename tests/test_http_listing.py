@@ -9,9 +9,7 @@ import typing
 
 import pytest
 
-requests = pytest.importorskip("requests")
-
-from http_fakes import spy_on_sends
+from http_fakes import is_client_error, on_current_transport, spy_on_sends
 from pathlib_next.uri import UriPath
 from pathlib_next.uri.schemes import http as http_module
 
@@ -93,15 +91,19 @@ def site(serve_http):
         yield site
 
 
+pytestmark = pytest.mark.usefixtures("http_transport_kind")
+
+
 def _http(site, name, **session_args):
-    return UriPath(site.base + name).with_session(
-        requests.Session(), **{"timeout": TIMEOUT, **session_args}
+    return on_current_transport(
+        UriPath(site.base + name), **{"timeout": TIMEOUT, **session_args}
     )
 
 
 def _dav(site, name, **session_args):
-    return UriPath("dav" + site.base[len("http") :] + name).with_session(
-        requests.Session(), **{"timeout": TIMEOUT, **session_args}
+    return on_current_transport(
+        UriPath("dav" + site.base[len("http") :] + name),
+        **{"timeout": TIMEOUT, **session_args},
     )
 
 
@@ -158,7 +160,7 @@ def test_index_cut_short_raises_instead_of_listing_part_of_it(site, cut):
     with pytest.raises(OSError) as raised:
         list(_http(site, "/d/").iterdir())
     # Not the transport's exception, and naming the directory.
-    assert not isinstance(raised.value, requests.exceptions.RequestException)
+    assert not is_client_error(raised.value)
     assert raised.value.errno == errno.EIO
     assert site.base + "/d/" in str(raised.value)
 
@@ -177,7 +179,7 @@ def test_undecodable_index_body_is_an_oserror_naming_the_path(site):
     )
     with pytest.raises(OSError) as raised:
         list(_http(site, "/d/").iterdir())
-    assert not isinstance(raised.value, requests.exceptions.RequestException)
+    assert not is_client_error(raised.value)
     assert raised.value.errno == errno.EIO
     assert site.base + "/d/" in str(raised.value)
 
@@ -547,7 +549,7 @@ def test_propfind_redirect_loop_is_refused_after_one_more_request(site):
     assert [r.path for r in site.log] == ["/a", "/b"]
 
 
-def test_get_still_follows_a_redirect_as_requests_does(site):
+def test_get_follows_a_redirect(site):
     site.on("GET", "/r/f.bin", (302, {"Location": "/store/f.bin"}, b""))
     site.on("GET", "/store/f.bin", (200, {"Content-Type": "text/plain"}, b"hello"))
     assert _dav(site, "/r/f.bin").read_bytes() == b"hello"
@@ -602,9 +604,9 @@ def test_rename_to_a_uri_keeps_that_uris_query_and_drops_its_fragment(site):
         "read",
     ],
 )
-def test_dav_verbs_fail_with_pathlib_errors_not_requests_errors(site, act):
+def test_dav_verbs_fail_with_pathlib_errors_not_client_library_errors(site, act):
     for method in ("GET", "HEAD", "PROPFIND", "MOVE", "PUT", "DELETE", "MKCOL"):
         site.on(method, "/d/f.txt", (500, {}, b""))
     with pytest.raises(OSError) as raised:
         act(_dav(site, "/d/f.txt"))
-    assert not isinstance(raised.value, requests.exceptions.RequestException)
+    assert not is_client_error(raised.value)

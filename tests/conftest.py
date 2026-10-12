@@ -661,6 +661,9 @@ def ftp_server(fixture_tree):
 def dav_server(fixture_tree):
     import time
     import threading
+
+    pytest.importorskip("wsgidav")
+    pytest.importorskip("cheroot")
     import wsgidav.wsgidav_app
     from cheroot import wsgi
 

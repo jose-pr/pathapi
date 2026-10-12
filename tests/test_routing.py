@@ -14,6 +14,7 @@ import zipfile
 import pytest
 
 import pathlib_next
+from http_fakes import on_current_transport
 from pathlib_next.mempath import MemPath
 
 pytest.importorskip("uritools")
@@ -32,9 +33,9 @@ def test_http_session_backend_does_not_follow_join_to_another_host():
     A `str` join cannot take one there at all: it names a path on THIS host
     (`Uri._join_arg`), so the session stays and so does the host. Only a
     `Uri` argument crosses, and then the backend is dropped."""
-    requests = pytest.importorskip("requests")
-    base = UriPath("http://trusted.invalid/api/").with_session(
-        requests.Session(), auth=("svc", "s3cret")
+    base = on_current_transport(
+        UriPath("http://trusted.invalid/api/"),
+        headers={"Authorization": "Bearer s3cret"},
     )
     assert (base / "child").backend is base.backend
 
@@ -54,9 +55,9 @@ def test_http_session_backend_does_not_follow_join_to_another_host():
 
 
 def test_with_source_keeps_backend_only_for_the_same_authority():
-    requests = pytest.importorskip("requests")
-    base = UriPath("http://trusted.invalid/api/").with_session(
-        requests.Session(), auth=("svc", "s3cret")
+    base = on_current_transport(
+        UriPath("http://trusted.invalid/api/"),
+        headers={"Authorization": "Bearer s3cret"},
     )
     same = base.with_source(Source("http", None, "trusted.invalid", None))
     other = base.with_source(Source("http", None, "other.invalid", None))
@@ -65,7 +66,6 @@ def test_with_source_keeps_backend_only_for_the_same_authority():
 
 
 def test_github_token_backend_does_not_follow_join_to_another_host():
-    pytest.importorskip("requests")
     from pathlib_next.uri.schemes.github import GitHubPath
 
     root = GitHubPath("github://ghp_SECRET@github.com/acme/widgets")

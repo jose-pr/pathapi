@@ -12,14 +12,15 @@ import typing
 
 import pytest
 
-requests = pytest.importorskip("requests")
-
+from http_fakes import on_current_transport
 from pathlib_next.uri import UriPath
 from pathlib_next.uri.schemes.dav import DavPath, _DavWriteStream
 from pathlib_next.uri.schemes.http import HttpAppendStream, HttpPath, HttpWriteStream
 
 # (connect, read) seconds: a reply is waited for generously, except when a
 # test makes the server stall, which needs a read timeout short enough to hit.
+pytestmark = pytest.mark.usefixtures("http_transport_kind")
+
 TIMEOUT = (5, 30)
 STALL_TIMEOUT = (5, 0.3)
 
@@ -156,9 +157,7 @@ def _path(wire, scheme, name, **session_args):
     out after `STALL_TIMEOUT` when a rule stalls the server, else `TIMEOUT`."""
     url = f"{scheme}{wire.base[len('http'):]}{name}"
     timeout = STALL_TIMEOUT if _stall in wire.rules.values() else TIMEOUT
-    return UriPath(url).with_session(
-        requests.Session(), **{"timeout": timeout, **session_args}
-    )
+    return on_current_transport(UriPath(url), **{"timeout": timeout, **session_args})
 
 
 def _stall(handler):
@@ -484,7 +483,7 @@ def test_a_followed_redirect_ignores_userinfo_in_its_location(wire):
 
 def test_a_followed_redirect_keeps_the_request_credentials(wire):
     url = f"http://user:hunter2@127.0.0.1:{wire.port}/r307/f.bin"
-    UriPath(url).with_session(requests.Session(), timeout=TIMEOUT).write_bytes(b"NEW")
+    on_current_transport(UriPath(url), timeout=TIMEOUT).write_bytes(b"NEW")
     first, second = wire.log
     assert first.headers["Authorization"] == second.headers["Authorization"]
     assert first.headers["Authorization"].startswith("Basic ")
@@ -492,7 +491,7 @@ def test_a_followed_redirect_keeps_the_request_credentials(wire):
 
 def test_a_refused_redirect_names_the_url_without_credentials(wire):
     url = f"http://user:hunter2@127.0.0.1:{wire.port}/r302/f.bin"
-    path = UriPath(url).with_session(requests.Session(), timeout=TIMEOUT)
+    path = on_current_transport(UriPath(url), timeout=TIMEOUT)
     with pytest.raises(OSError) as excinfo:
         path.write_bytes(b"NEW")
     assert "hunter2" not in str(excinfo.value)
@@ -500,9 +499,9 @@ def test_a_refused_redirect_names_the_url_without_credentials(wire):
 
 
 @pytest.mark.parametrize("scheme", _SCHEMES)
-def test_allow_redirects_in_the_session_arguments_does_not_follow_a_write(wire, scheme):
+def test_allow_redirects_in_the_call_does_not_follow_a_write(wire, scheme):
     wire.files["/store/f.bin"] = b"ORIGINAL"
-    path = _path(wire, scheme, "/r302/f.bin", allow_redirects=True)
+    path = _path(wire, scheme, "/r302/f.bin")
     with pytest.raises(OSError):
         path.write_bytes(b"NEW")
     assert [r.method for r in wire.log] == ["PUT"]
@@ -511,6 +510,20 @@ def test_allow_redirects_in_the_session_arguments_does_not_follow_a_write(wire, 
             "PUT", f"{wire.base}/r302/f.bin", data=b"NEW", allow_redirects=True
         )
     assert [r.method for r in wire.log] == ["PUT", "PUT"]
+    assert wire.files == {"/store/f.bin": b"ORIGINAL"}
+
+
+@pytest.mark.parametrize("scheme", _SCHEMES)
+def test_allow_redirects_in_the_session_arguments_does_not_follow_a_write(wire, scheme):
+    requests = pytest.importorskip("requests")
+    wire.files["/store/f.bin"] = b"ORIGINAL"
+    url = f"{scheme}{wire.base[len('http'):]}/r302/f.bin"
+    path = UriPath(url).with_session(
+        requests.Session(), timeout=TIMEOUT, allow_redirects=True
+    )
+    with pytest.raises(OSError):
+        path.write_bytes(b"NEW")
+    assert [r.method for r in wire.log] == ["PUT"]
     assert wire.files == {"/store/f.bin": b"ORIGINAL"}
 
 

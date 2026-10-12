@@ -95,7 +95,7 @@ class TestHttpContract(ReadPathContract):
     distinguishes_file_types = False
 
     @pytest.fixture
-    def root(self, http_server):
+    def root(self, http_server, http_transport_kind):
         from pathlib_next.uri.schemes.http import HttpPath
 
         return HttpPath(http_server)
@@ -241,8 +241,7 @@ class TestDavContract(PathContract):
     supports_utime = False
 
     @pytest.fixture
-    def root(self, dav_server):
-        pytest.importorskip("requests")
+    def root(self, dav_server, http_transport_kind):
         from pathlib_next.uri.schemes.dav import DavPath
 
         return DavPath(dav_server)
@@ -274,8 +273,7 @@ class TestGitHubContract(ReadPathContract):
     supports_empty_directories = False
 
     @pytest.fixture
-    def root(self, github_api_server):
-        pytest.importorskip("requests")
+    def root(self, github_api_server, http_transport_kind):
         from pathlib_next.uri.schemes.github import GitHubPath, RepoBackend
 
         base_url, owner, repo = github_api_server
@@ -289,8 +287,7 @@ class TestGitLabContract(ReadPathContract):
     supports_empty_directories = False
 
     @pytest.fixture
-    def root(self, gitlab_api_server):
-        pytest.importorskip("requests")
+    def root(self, gitlab_api_server, http_transport_kind):
         from pathlib_next.uri.schemes.gitlab import GitLabPath, RepoBackend
 
         base_url, owner, repo = gitlab_api_server
@@ -305,8 +302,7 @@ class TestGitGitHubContract(ReadPathContract):
     supports_empty_directories = False
 
     @pytest.fixture
-    def root(self, github_api_server):
-        pytest.importorskip("requests")
+    def root(self, github_api_server, http_transport_kind):
         from pathlib_next.uri.schemes.git import GitHubGitPath
         from pathlib_next.uri.schemes.github import RepoBackend
 
@@ -319,8 +315,7 @@ class TestGitGitLabContract(ReadPathContract):
     supports_empty_directories = False
 
     @pytest.fixture
-    def root(self, gitlab_api_server):
-        pytest.importorskip("requests")
+    def root(self, gitlab_api_server, http_transport_kind):
         from pathlib_next.uri.schemes.git import GitLabGitPath
         from pathlib_next.uri.schemes.gitlab import RepoBackend
 

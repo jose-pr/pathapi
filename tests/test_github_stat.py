@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-requests = pytest.importorskip("requests")
+pytestmark = pytest.mark.usefixtures("http_transport_kind")
 
 from pathlib_next.uri import UriPath
 from pathlib_next.uri.schemes._gitrepo import RepoBackend

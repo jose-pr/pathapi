@@ -297,8 +297,7 @@ class _Counting(http.server.BaseHTTPRequestHandler):
 
 
 @pytest.fixture
-def counting_server():
-    requests = pytest.importorskip("requests")
+def counting_server(http_transport_kind):
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Counting)
     server.accepted = []
     thread = threading.Thread(target=server.serve_forever, daemon=True)

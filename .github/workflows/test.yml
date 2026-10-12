@@ -217,7 +217,31 @@ jobs:
             tests/test_providers.py \
             tests/test_filestat.py \
             tests/test_http_date.py \
-            tests/test_mempath.py \
+            tests/test_mempath.py
+      - name: Run the HTTP, WebDAV and git suites on the standard library
+        # `http:`, `dav:`, `github:`, `gitlab:` and `git:` need no client
+        # library. Every test that runs over both transports skips its
+        # `requests` leg here; the WebDAV server and the TLS tests skip
+        # without wsgidav and cryptography.
+        run: |
+          python -m pytest -q -rs \
+            tests/test_http.py \
+            tests/test_http_listing.py \
+            tests/test_http_writes.py \
+            tests/test_http_live.py \
+            tests/test_http_parser.py \
+            tests/test_http_credentials.py \
+            tests/test_httpdav_safety.py \
+            tests/test_webdav.py \
+            tests/test_gitrepo.py \
+            tests/test_git_replies.py \
+            tests/test_git_backend_sharing.py \
+            tests/test_github_stat.py \
+            tests/test_git_requests.py \
+            tests/test_listing_hints_http.py \
+            tests/test_transport_security.py \
+            tests/test_backend_scope.py \
+            tests/test_backend_family.py \
             tests/test_http_transport.py \
             tests/test_http_pool.py \
             tests/test_http_proxy.py \
