@@ -282,15 +282,15 @@ def test_http_rmdir_ignores_dot_entries_in_listing(site):
     assert [r.path for r in site.sent("DELETE")] == ["/dir/"]
 
 
-def test_http_rmdir_on_file_raises_notadirectoryerror(site):
+@pytest.mark.parametrize("content_type", ["text/plain", "text/html"])
+def test_http_rmdir_on_file_raises_notadirectoryerror(site, content_type):
     # rmdir() on a *file* must raise NotADirectoryError (matching
-    # os.rmdir()'s ENOTDIR contract), not silently DELETE it -- an empty
-    # directory's listing and a file whose body parses to zero entries are
-    # indistinguishable from the listing alone.
-    site.serve("/file.txt", b"")
+    # os.rmdir()'s ENOTDIR contract), not silently DELETE it -- a page served
+    # as HTML parses to zero entries, exactly like an empty directory's index.
+    site.serve("/file", b"<html><body></body></html>", content_type)
 
     with pytest.raises(NotADirectoryError):
-        UriPath(site.url("/file.txt")).rmdir()
+        UriPath(site.url("/file")).rmdir()
 
     assert site.sent("DELETE") == []
 
