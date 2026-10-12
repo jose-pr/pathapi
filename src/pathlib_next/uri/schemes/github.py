@@ -9,7 +9,9 @@ from ._gitrepo import (  # noqa: F401  (re-exported)
     InsecureTransportWarning,
     RepoBackend,
     _RepoApiPath,
+    _drop_body,
     _raise_for_status,
+    _reply_limit,
     _translate_repo_errors,
 )
 from .http import _server_size
@@ -58,16 +60,23 @@ class GitHubPath(_RepoApiPath):
         return {"ref": ref} if ref else {}
 
     def _request(self, headers=None, url=None, params=None):
+        """A streamed `GET` that succeeded: the caller decodes or reads the
+        body, which closes the response."""
         with _translate_repo_errors(self):
             resp = self.backend.request(
                 "GET",
                 url or self._contents_url(),
                 params=self._params() if params is None else params,
                 headers=headers,
+                stream=True,
             )
             # A rate-limited reply (403/429) becomes EAGAIN in
             # `_translate_repo_errors`.
-            _raise_for_status(resp)
+            try:
+                _raise_for_status(resp)
+            except BaseException:
+                _drop_body(resp, _reply_limit())
+                raise
         return resp
 
     def _object(self, data: dict) -> dict:
@@ -210,6 +219,12 @@ class GitHubPath(_RepoApiPath):
     def _open(self, mode="r", buffering=-1):
         self._check_read_mode(mode)
         resp = self._request(headers={"Accept": self._RAW_ACCEPT})
+        try:
+            return self._read_contents(resp)
+        finally:
+            resp.close()
+
+    def _read_contents(self, resp):
         content_type = resp.headers.get("Content-Type", "")
         if content_type.startswith("application/json"):
             # "raw" is ignored by the API for a directory listing (and for

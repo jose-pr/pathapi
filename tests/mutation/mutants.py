@@ -1306,3 +1306,49 @@ mutant(
     "tests/test_http_redirects.py::test_a_location_that_is_not_an_http_url_is_a_refused_redirect",
     "a redirect with an unusable Location reads as the answer itself",
 )
+_LIMITS = "tests/test_http_reply_limits.py"
+
+mutant(
+    "http-reply-limit-not-applied",
+    f"{_HTTP_PKG}/_response.py",
+    "            if limit is not None and len(data) > limit:\n",
+    "            if False:\n",
+    (
+        f"{_LIMITS}::test_a_propfind_reply_over_the_limit_is_efbig_counted_in_decoded_bytes",
+        f"{_LIMITS}::test_a_git_api_reply_over_the_limit_is_efbig_and_a_file_is_not_limited",
+        f"{_LIMITS}::test_the_backend_reads_a_reply_whole_only_up_to_the_limit",
+    ),
+    "a reply read whole is held in memory however long it decodes to",
+)
+mutant(
+    "http-dropped-reply-read-without-a-bound",
+    f"{_HTTP_PKG}/_status.py",
+    "            remaining -= len(chunk)\n",
+    "            pass\n",
+    f"{_LIMITS}::test_the_reply_to_a_write_is_dropped_and_its_connection_is_not_kept",
+    "the body of a reply nobody looks at is read to its end, however long",
+)
+mutant(
+    "dav-propfind-reply-read-unbounded",
+    "uri/schemes/dav.py",
+    "        body = _read_limited(resp, http_module.MAX_LISTING_BYTES, self)\n",
+    "        body = resp.read()\n",
+    f"{_LIMITS}::test_a_propfind_reply_over_the_limit_is_efbig_counted_in_decoded_bytes",
+    "a PROPFIND reply is read whole whatever its size",
+)
+mutant(
+    "git-json-reply-read-unbounded",
+    f"{_HTTP_PKG}/_status.py",
+    "    return _json.loads(read_limited(resp, limit, what))",
+    "    return _json.loads(resp.read())",
+    f"{_LIMITS}::test_a_git_api_reply_over_the_limit_is_efbig_and_a_file_is_not_limited",
+    "a git API's JSON reply is read whole whatever its size",
+)
+mutant(
+    "http-backend-buffers-without-a-cap",
+    "uri/schemes/http.py",
+    "            resp._buffered(limit, _too_large(_follow.shown(url), limit))\n",
+    "            resp._buffered()\n",
+    f"{_LIMITS}::test_the_backend_reads_a_reply_whole_only_up_to_the_limit",
+    "request(stream=False) reads a reply to its end whatever its size",
+)

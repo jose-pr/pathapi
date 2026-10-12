@@ -230,11 +230,18 @@ class HTTPResponse:
             self._closed = True
             self._source.close()
 
-    def _buffered(self) -> "HTTPResponse":
+    def _buffered(
+        self, limit: "int | None" = None, message: str = ""
+    ) -> "HTTPResponse":
         """Reads the rest of the body into memory and closes the source, so the
-        response can be read after the connection has been given back."""
+        response can be read after the connection has been given back. A
+        decoded body longer than `limit` bytes is `OSError(EFBIG)` with
+        `message`, and its connection is closed."""
         try:
-            self._leftover = self.read()
+            data = self.read(-1 if limit is None else limit + 1)
+            if limit is not None and len(data) > limit:
+                raise OSError(_errno.EFBIG, message or f"larger than {limit} bytes")
+            self._leftover = data
             self._kept = True
         finally:
             self.close()

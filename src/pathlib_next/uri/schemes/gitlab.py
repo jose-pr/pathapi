@@ -11,7 +11,9 @@ from ._gitrepo import (  # noqa: F401  (re-exported)
     InsecureTransportWarning,
     RepoBackend,
     _RepoApiPath,
+    _drop_body,
     _raise_for_status,
+    _reply_limit,
     _translate_repo_errors,
 )
 
@@ -99,9 +101,15 @@ class GitLabPath(_RepoApiPath):
         return f"{self._api_base}/projects/{self._project_id}/repository/tree"
 
     def _request(self, method, url, **kwargs):
+        """A streamed request that succeeded: the caller decodes or reads the
+        body, which closes the response."""
         with _translate_repo_errors(self):
-            resp = self.backend.request(method, url, **kwargs)
-            _raise_for_status(resp)
+            resp = self.backend.request(method, url, stream=True, **kwargs)
+            try:
+                _raise_for_status(resp)
+            except BaseException:
+                _drop_body(resp, _reply_limit())
+                raise
         return resp
 
     def _resolved_ref(self) -> str:
@@ -257,4 +265,7 @@ class GitLabPath(_RepoApiPath):
                     _errno.EISDIR, "Is a directory", str(self)
                 ) from None
             raise
-        return self._reader(resp.read())
+        try:
+            return self._reader(resp.read())
+        finally:
+            resp.close()

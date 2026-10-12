@@ -18,7 +18,9 @@ from ._http._headers import check_url as _check_url
 from ._http._headers import merge_headers as _merge_headers
 from ._http._headers import peer_text
 from ._http._status import HTTPStatusError as _HTTPStatusError
+from ._http._status import drop_body as _drop_body
 from ._http._status import json_body as _json_body
+from ._http._status import too_large as _too_large
 
 DEFAULT_TIMEOUT = (10, 60)
 """`(connect, read)` timeout, in seconds, `RepoBackend` sends with every
@@ -121,6 +123,14 @@ def _translate_repo_errors(path_obj):
         ) from None
 
 
+def _reply_limit() -> int:
+    """The most bytes of a reply the library reads whole: the limit a listing
+    has (`http.MAX_LISTING_BYTES`), read now so that assigning it applies."""
+    from . import http
+
+    return http.MAX_LISTING_BYTES
+
+
 class BaseRepoBackend(object):
     """Protocol for issuing an authenticated HTTP request against a
     GitHub/GitLab REST API. Subclass this to plug in custom auth/session
@@ -215,19 +225,26 @@ class RepoBackend(TransportOwner, BaseRepoBackend):
         if timeout is _UNSET:
             timeout = self.timeout
         transport = self.transport
+        # Streamed from the transport and, unless the caller asked to read it,
+        # held in memory only up to the limit a listing has.
         if method.upper() in _follow.FOLLOWED_METHODS and data is None:
-            return _follow.send_following(
-                transport, method, url, headers=sent, timeout=timeout, stream=stream
+            resp = _follow.send_following(
+                transport, method, url, headers=sent, timeout=timeout, stream=True
             )
-        return _follow.send_once(
-            transport,
-            method,
-            url,
-            headers=sent,
-            body=data,
-            timeout=timeout,
-            stream=stream,
-        )
+        else:
+            resp = _follow.send_once(
+                transport,
+                method,
+                url,
+                headers=sent,
+                body=data,
+                timeout=timeout,
+                stream=True,
+            )
+        if not stream:
+            limit = _reply_limit()
+            resp._buffered(limit, _too_large(_follow.shown(url), limit))
+        return resp
 
 
 class _RepoApiPath(UriPath):
@@ -293,7 +310,7 @@ class _RepoApiPath(UriPath):
         `null`, a truncated body -- is `OSError(EIO)` naming this path, so
         `exists()` answers `False` and `stat()` raises."""
         try:
-            data = _json_body(resp)
+            data = _json_body(resp, _reply_limit(), self)
         except ValueError:
             data = None
         if not isinstance(data, expected):

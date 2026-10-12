@@ -12,14 +12,17 @@ from ... import FileStat
 from .. import Uri
 from ..source import compose_uri
 from . import _httpdate
+from . import http as http_module
 from ._http._headers import peer_text
 from .http import (
     _EXCLUSIVE_CREATE,
     _IDENTITY_ENCODING,
     HttpPath,
     _UploadStream,
+    _drop_body,
     _path_error,
     _raise_for_status,
+    _read_limited,
     _response_reader,
     _server_size,
     _split_userinfo,
@@ -122,7 +125,9 @@ def _raise_for_multistatus(resp, path) -> None:
     """RFC 4918 9.6.1/9.9.4: DELETE and MOVE answer 207 when a member of
     the collection could not be processed -- a partial failure, not a
     success."""
-    failures = _multistatus_failures(resp.read())
+    failures = _multistatus_failures(
+        _read_limited(resp, http_module.MAX_LISTING_BYTES, path)
+    )
     if failures == []:
         return
     detail = (
@@ -192,12 +197,13 @@ class DavPath(HttpPath):
             self.fragment or None,
         )
 
-    def _dav_request(self, method, *, statuses=None, **kwargs):
+    def _dav_request(self, method, *, statuses=None, keep=False, **kwargs):
         """Send `method` to this resource with pathlib exception types:
         `statuses` maps a status code to the exception class raised for it
         (called with `self`), ahead of `_translate_http_errors`' generic
         mapping; a 207 to DELETE/MOVE raises for its failed members; 423
-        Locked is a PermissionError."""
+        Locked is a PermissionError. The body of the reply is dropped (see
+        `drop_body`) unless `keep`, when the caller reads it."""
         statuses = {
             404: FileNotFoundError,
             401: PermissionError,
@@ -206,17 +212,22 @@ class DavPath(HttpPath):
             **(statuses or {}),
         }
         with _translate_http_errors(self):
-            resp = self.backend.request(method, self._wire_uri(), **kwargs)
-            error = statuses.get(resp.status)
-            if error is not None:
-                resp.close()
-                if isinstance(error, type):
-                    # `(errno, strerror, filename)`, as pathlib raises it.
-                    raise _path_error(error, self)
-                raise error(self)
-            if resp.status == 207 and method in ("DELETE", "MOVE"):
-                _raise_for_multistatus(resp, self)
-            _raise_for_status(resp)
+            resp = self.backend.request(method, self._wire_uri(), stream=True, **kwargs)
+            try:
+                error = statuses.get(resp.status)
+                if error is not None:
+                    if isinstance(error, type):
+                        # `(errno, strerror, filename)`, as pathlib raises it.
+                        raise _path_error(error, self)
+                    raise error(self)
+                if resp.status == 207 and method in ("DELETE", "MOVE"):
+                    _raise_for_multistatus(resp, self)
+                _raise_for_status(resp)
+            except BaseException:
+                _drop_body(resp, http_module.MAX_LISTING_BYTES)
+                raise
+        if not keep:
+            _drop_body(resp, http_module.MAX_LISTING_BYTES)
         return resp
 
     def _propfind(self, depth="0"):
@@ -229,9 +240,11 @@ class DavPath(HttpPath):
             "PROPFIND",
             headers={"Depth": depth, "Content-Type": "application/xml"},
             data=_PROPFIND_BODY,
+            keep=True,
         )
+        body = _read_limited(resp, http_module.MAX_LISTING_BYTES, self)
         try:
-            root = _ET.fromstring(resp.read())
+            root = _ET.fromstring(body)
         except _ET.ParseError:
             root = None
         if root is None or root.tag != _MULTISTATUS:

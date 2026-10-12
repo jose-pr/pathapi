@@ -27,7 +27,10 @@ from ._http._follow import (
     split_userinfo as _split_userinfo,
 )
 from ._http._status import HTTPStatusError as _HTTPStatusError
+from ._http._status import drop_body as _drop_body
 from ._http._status import raise_for_status as _raise_for_status
+from ._http._status import read_limited as _read_limited
+from ._http._status import too_large as _too_large
 from ._http._headers import check_headers as _check_headers
 from ._http._headers import check_url as _check_url
 from ._http._headers import has_header as _has_header
@@ -41,10 +44,13 @@ request unless the caller supplies `timeout` (`HttpBackend(timeout=...)`,
 request); `timeout=None` there waits without a limit."""
 
 MAX_LISTING_BYTES = 8 * 1024 * 1024
-"""Most bytes of a directory-index body `HttpPath` reads to list a directory
-(after any content decoding); a longer body raises `OSError(EFBIG)`. Raise it
-for an index that is legitimately larger; parsing costs about a second per
-megabyte. Read at the time of each listing."""
+"""Most bytes of a reply the library reads whole, after any content decoding: a
+directory index, and a reply it needs for what it says (a PROPFIND's, a git
+API's, `HttpBackend.request(stream=False)`'s). A longer body raises
+`OSError(EFBIG)` naming the path and closes the connection. The body of a
+reply nobody looks at (a write's, a DELETE's) is read up to this many bytes
+and dropped. Raise it for an index that is legitimately larger; parsing costs
+about a second per megabyte. Read at the time of each use."""
 
 _RE_URL_SCHEME = _re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://")
 
@@ -633,11 +639,18 @@ class HttpWriteStream(_UploadStream):
         extra = _EXCLUSIVE_CREATE if self._exclusive else {}
         with _translate_http_errors(self._path, conflict=FileNotFoundError):
             resp = backend.request(
-                backend.write_method, self._path.as_uri(), data=data, **extra
+                backend.write_method,
+                self._path.as_uri(),
+                data=data,
+                stream=True,
+                **extra,
             )
-            if self._exclusive and resp.status == 412:
-                raise _path_error(FileExistsError, self._path)
-            _raise_for_status(resp)
+            try:
+                if self._exclusive and resp.status == 412:
+                    raise _path_error(FileExistsError, self._path)
+                _raise_for_status(resp)
+            finally:
+                _drop_body(resp, MAX_LISTING_BYTES)
 
 
 class HttpAppendStream(_UploadStream):
@@ -675,9 +688,9 @@ class HttpAppendStream(_UploadStream):
         with _translate_http_errors(self._path, conflict=FileNotFoundError):
             if backend.append_mode == "rewrite":
                 resp = backend.request(
-                    backend.write_method, self._path.as_uri(), data=data
+                    backend.write_method, self._path.as_uri(), data=data, stream=True
                 )
-                _raise_for_status(resp)
+                _accept(resp)
             else:
                 # "patch" mode: send only new content via Content-Range
                 if not data:
@@ -685,17 +698,33 @@ class HttpAppendStream(_UploadStream):
                     # nothing to append, only a missing file to create.
                     if not self._existed:
                         resp = backend.request(
-                            backend.write_method, self._path.as_uri(), data=b""
+                            backend.write_method,
+                            self._path.as_uri(),
+                            data=b"",
+                            stream=True,
                         )
-                        _raise_for_status(resp)
+                        _accept(resp)
                     return
                 start = self._start_offset
                 end = start + len(data) - 1
                 headers = {"Content-Range": f"bytes {start}-{end}/*"}
                 resp = backend.request(
-                    "PATCH", self._path.as_uri(), data=data, headers=headers
+                    "PATCH",
+                    self._path.as_uri(),
+                    data=data,
+                    headers=headers,
+                    stream=True,
                 )
-                _raise_for_status(resp)
+                _accept(resp)
+
+
+def _accept(resp: HTTPResponse) -> None:
+    """Raise for an error status of `resp`, a reply whose body is not used:
+    the body is dropped (see `drop_body`) whichever way this goes."""
+    try:
+        _raise_for_status(resp)
+    finally:
+        _drop_body(resp, MAX_LISTING_BYTES)
 
 
 _UNSET = object()
@@ -769,29 +798,37 @@ class HttpBackend(TransportOwner):
         if isinstance(data, str):
             data = data.encode("utf-8")
         transport = self.transport
+        # Always streamed from the transport, so that no reply is read whole
+        # before it is known to be small enough (see `stream` below).
         if method.upper() in _FOLLOWED_METHODS and data is None:
             if allow_redirects is False and first is None:
-                return transport.send(
-                    method, url, headers=sent, timeout=timeout, stream=stream
+                resp = transport.send(
+                    method, url, headers=sent, timeout=timeout, stream=True
                 )
-            return _follow.send_following(
+            else:
+                resp = _follow.send_following(
+                    transport,
+                    method,
+                    url,
+                    headers=sent,
+                    timeout=timeout,
+                    stream=True,
+                    first=first,
+                )
+        else:
+            resp = _follow.send_once(
                 transport,
                 method,
                 url,
                 headers=sent,
+                body=data,
                 timeout=timeout,
-                stream=stream,
-                first=first,
+                stream=True,
             )
-        return _follow.send_once(
-            transport,
-            method,
-            url,
-            headers=sent,
-            body=data,
-            timeout=timeout,
-            stream=stream,
-        )
+        if not stream:
+            limit = MAX_LISTING_BYTES
+            resp._buffered(limit, _too_large(_follow.shown(url), limit))
+        return resp
 
     def request(
         self,
@@ -809,7 +846,11 @@ class HttpBackend(TransportOwner):
         is not re-sent after a redirect or a dropped connection.
         `allow_redirects=False` returns the first answer of a `GET`, `HEAD`
         or `OPTIONS` as it is. `ValueError` for a URL or header with a control
-        character, before anything is sent."""
+        character, before anything is sent.
+
+        With `stream=False` the body is read before this returns, and a decoded
+        body over `MAX_LISTING_BYTES` is `OSError(EFBIG)`; with `stream=True`
+        the caller reads it, and closes the response."""
         url, sent = self._prepared(uri, headers)
         return self._dispatch(method, url, sent, data, allow_redirects, stream, timeout)
 
@@ -928,7 +969,7 @@ class HttpPath(UriPath):
             try:
                 _raise_for_status(req)
             except BaseException:
-                req.close()
+                _drop_body(req, MAX_LISTING_BYTES)
                 raise
         return req
 
@@ -1090,12 +1131,13 @@ class HttpPath(UriPath):
         # The raw DELETE, with no collection guard: `rmdir()` has already
         # verified an empty directory before calling it.
         with _translate_http_errors(self):
-            resp = self.backend.request("DELETE", self)
+            resp = self.backend.request("DELETE", self, stream=True)
             if resp.status == 404:
+                _drop_body(resp, MAX_LISTING_BYTES)
                 if missing_ok:
                     return
                 raise FileNotFoundError(self)
-            _raise_for_status(resp)
+            _accept(resp)
 
     def rmdir(self):
         # An empty directory's listing and a file whose body parses to zero entries look

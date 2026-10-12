@@ -2173,7 +2173,13 @@ class HTTPResponse:
   `headers` given to the backend go with every request; request-specific
   headers merge over them by name (case-blind). A header value or URL with a
   control character (CR and LF included) is `ValueError`, before anything is
-  sent.
+  sent. A reply it needs whole (a PROPFIND's, a git API's JSON,
+  `request(stream=False)`'s) may be at most `MAX_LISTING_BYTES` after
+  decoding, however small it is on the wire: more is `OSError(EFBIG)` naming
+  the path, and the connection is closed. A reply whose body nobody looks at
+  (a write's, a DELETE's, an error's) is read up to that many bytes and
+  dropped, so its connection can be reused when the body was short. The
+  content of a file (`open("r")`, a git file) is not limited.
 - Timeout: `DEFAULT_TIMEOUT = (10, 60)` (connect, read) unless given;
   `timeout=None` waits forever.
 - Redirects: `GET`/`HEAD`/`OPTIONS` follow up to 30 (a `303` becomes a
@@ -2184,11 +2190,11 @@ class HTTPResponse:
   redirect that changes the scheme, host or port drops `Authorization` for
   every later hop, the asking again of `stat()`, `exists()`, `is_dir()`,
   `unlink()`, `open("x")` and a patch-mode append included (also on a
-  redirect from `https:` to `http:`), and nothing else: headers other than
-  `Authorization` from `with_transport(headers=...)` (`X-Api-Key`, a vendor
-  token header, a cookie) are sent to the new host as well, even to a plain
-  `http:` one, so keep a secret in `Authorization`, or point the path at the
-  final URL. Every other request
+  redirect from `https:` to `http:`), and nothing else: headers
+  other than `Authorization` from `with_transport(headers=...)` (`X-Api-Key`,
+  a vendor token header, a cookie) are sent to the new host as well, even to
+  a plain `http:` one, so keep a secret in `Authorization`, or point the path
+  at the final URL. Every other request
   (`PROPFIND`, `write_method`, `PATCH`, `DELETE`, `MKCOL`, `MOVE`) is sent
   without following: a 307/308 (for `PROPFIND` also a 301, 302 or 303) to the
   same scheme, host and port is re-sent once with the same method, headers
