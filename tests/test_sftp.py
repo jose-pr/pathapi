@@ -711,10 +711,36 @@ def _check_file_reply(algorithm="md5", digest=_MD5_DEADBEEF, prefixed=False):
     return msg
 
 
+def _paramiko_backend_over(monkeypatch, client):
+    """A paramiko `SftpBackend` whose connection is `client`, a double of
+    paramiko's `SFTPClient`. The backend's connection cache, liveness check and
+    check-file bookkeeping run as they do; only what leaves the process is
+    replaced: `paramiko.SSHClient.connect` and the transport it yields."""
+    import paramiko
+
+    from pathlib_next.uri.schemes.sftp import _checkfile
+    from pathlib_next.uri.schemes.sftp._paramiko import SftpBackend
+
+    if not hasattr(client, "sock"):
+        client.sock = _FakeSock(True)
+    if not hasattr(client, "close"):
+        client.close = lambda: None
+
+    class _Transport:
+        def open_sftp_client(self):
+            return client
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(paramiko.SSHClient, "connect", lambda self, **options: None)
+    monkeypatch.setattr(paramiko.SSHClient, "get_transport", lambda self: _Transport())
+    monkeypatch.setattr(_checkfile, "_SUPPORT_CACHE", {})
+    return SftpBackend({}, paramiko.AutoAddPolicy(), ssh_config=None, known_hosts=None)
+
+
 def test_paramiko_checksum_sends_correct_extended_request(monkeypatch):
     import paramiko.sftp as paramiko_sftp
-
-    from pathlib_next.uri.schemes.sftp._paramiko import SftpBackend as _RealSftpBackend
 
     calls = []
 
@@ -738,9 +764,8 @@ def test_paramiko_checksum_sends_correct_extended_request(monkeypatch):
             calls.append(("_request", cmd, args))
             return paramiko_sftp.CMD_EXTENDED_REPLY, _check_file_reply()
 
-    backend = _RealSftpBackend.__new__(_RealSftpBackend)
     fake_client = _FakeParamikoClient()
-    monkeypatch.setattr(_RealSftpBackend, "client", lambda self, source: fake_client)
+    backend = _paramiko_backend_over(monkeypatch, fake_client)
 
     p = _sftp("sftp://host/a.txt", backend=backend)
     result = backend.checksum(p, "md5")
@@ -759,8 +784,6 @@ def test_paramiko_checksum_sends_correct_extended_request(monkeypatch):
 
 
 def test_paramiko_checksum_closes_handle_even_when_request_raises(monkeypatch):
-    from pathlib_next.uri.schemes.sftp._paramiko import SftpBackend as _RealSftpBackend
-
     class _FakeHandleFile:
         def __init__(self):
             self.handle = b"h"
@@ -779,9 +802,8 @@ def test_paramiko_checksum_closes_handle_even_when_request_raises(monkeypatch):
         def _request(self, cmd, *args):
             raise OSError("SSH_FX_OP_UNSUPPORTED")
 
-    backend = _RealSftpBackend.__new__(_RealSftpBackend)
     fake_client = _FakeParamikoClient()
-    monkeypatch.setattr(_RealSftpBackend, "client", lambda self, source: fake_client)
+    backend = _paramiko_backend_over(monkeypatch, fake_client)
 
     p = _sftp("sftp://host/a.txt", backend=backend)
     with pytest.raises(OSError):
@@ -797,8 +819,6 @@ def test_paramiko_checksum_closes_handle_even_when_request_raises(monkeypatch):
 
 def test_paramiko_checksum_rejects_mismatched_reply_algorithm(monkeypatch):
     import paramiko.sftp as paramiko_sftp
-
-    from pathlib_next.uri.schemes.sftp._paramiko import SftpBackend as _RealSftpBackend
 
     class _FakeHandleFile:
         handle = b"h"
@@ -821,18 +841,13 @@ def test_paramiko_checksum_rejects_mismatched_reply_algorithm(monkeypatch):
             msg.rewind()
             return paramiko_sftp.CMD_EXTENDED_REPLY, msg
 
-    backend = _RealSftpBackend.__new__(_RealSftpBackend)
-    monkeypatch.setattr(
-        _RealSftpBackend, "client", lambda self, source: _FakeParamikoClient()
-    )
+    backend = _paramiko_backend_over(monkeypatch, _FakeParamikoClient())
     p = _sftp("sftp://host/a.txt", backend=backend)
     with pytest.raises(NotImplementedError):
         backend.checksum(p, "md5")
 
 
 def test_paramiko_checksum_rejects_non_extended_reply(monkeypatch):
-    from pathlib_next.uri.schemes.sftp._paramiko import SftpBackend as _RealSftpBackend
-
     class _FakeHandleFile:
         handle = b"h"
 
@@ -850,10 +865,7 @@ def test_paramiko_checksum_rejects_non_extended_reply(monkeypatch):
             # CMD_EXTENDED_REPLY must still be rejected.
             return 999, message.Message()
 
-    backend = _RealSftpBackend.__new__(_RealSftpBackend)
-    monkeypatch.setattr(
-        _RealSftpBackend, "client", lambda self, source: _FakeParamikoClient()
-    )
+    backend = _paramiko_backend_over(monkeypatch, _FakeParamikoClient())
     p = _sftp("sftp://host/a.txt", backend=backend)
     with pytest.raises(NotImplementedError):
         backend.checksum(p, "md5")
@@ -866,7 +878,6 @@ def test_paramiko_supported_checksums_reflects_working_server(monkeypatch):
     import paramiko.sftp as paramiko_sftp
 
     from pathlib_next.uri.schemes.sftp import _checkfile
-    from pathlib_next.uri.schemes.sftp._paramiko import SftpBackend as _RealSftpBackend
 
     class _FakeHandleFile:
         handle = b"h"
@@ -881,9 +892,8 @@ def test_paramiko_supported_checksums_reflects_working_server(monkeypatch):
         def _request(self, cmd, *args):
             return paramiko_sftp.CMD_EXTENDED_REPLY, _check_file_reply()
 
-    backend = _RealSftpBackend.__new__(_RealSftpBackend)
     fake_client = _FakeParamikoClient()
-    monkeypatch.setattr(_RealSftpBackend, "client", lambda self, source: fake_client)
+    backend = _paramiko_backend_over(monkeypatch, fake_client)
     # Fresh probe cache -- avoid cross-test pollution from other tests that
     # exercise the same real SftpBackend.checksum()/supported_checksums().
     monkeypatch.setattr(_checkfile, "_SUPPORT_CACHE", {})
@@ -896,7 +906,6 @@ def test_paramiko_supported_checksums_reflects_working_server(monkeypatch):
 
 def test_paramiko_supported_checksums_empty_when_server_lacks_extension(monkeypatch):
     from pathlib_next.uri.schemes.sftp import _checkfile
-    from pathlib_next.uri.schemes.sftp._paramiko import SftpBackend as _RealSftpBackend
 
     class _FakeHandleFile:
         handle = b"h"
@@ -911,10 +920,7 @@ def test_paramiko_supported_checksums_empty_when_server_lacks_extension(monkeypa
         def _request(self, cmd, *args):
             raise OSError("SSH_FX_OP_UNSUPPORTED")
 
-    backend = _RealSftpBackend.__new__(_RealSftpBackend)
-    monkeypatch.setattr(
-        _RealSftpBackend, "client", lambda self, source: _FakeParamikoClient()
-    )
+    backend = _paramiko_backend_over(monkeypatch, _FakeParamikoClient())
     monkeypatch.setattr(_checkfile, "_SUPPORT_CACHE", {})
 
     p = _sftp("sftp://host/a.txt", backend=backend)
@@ -925,7 +931,6 @@ def test_paramiko_supported_checksums_caches_per_connection(monkeypatch):
     import paramiko.sftp as paramiko_sftp
 
     from pathlib_next.uri.schemes.sftp import _checkfile
-    from pathlib_next.uri.schemes.sftp._paramiko import SftpBackend as _RealSftpBackend
 
     class _FakeHandleFile:
         handle = b"h"
@@ -944,9 +949,8 @@ def test_paramiko_supported_checksums_caches_per_connection(monkeypatch):
             self.request_calls += 1
             return paramiko_sftp.CMD_EXTENDED_REPLY, _check_file_reply()
 
-    backend = _RealSftpBackend.__new__(_RealSftpBackend)
     fake_client = _FakeParamikoClient()
-    monkeypatch.setattr(_RealSftpBackend, "client", lambda self, source: fake_client)
+    backend = _paramiko_backend_over(monkeypatch, fake_client)
     monkeypatch.setattr(_checkfile, "_SUPPORT_CACHE", {})
 
     p = _sftp("sftp://host/a.txt", backend=backend)
@@ -984,13 +988,7 @@ class _CountingParamikoClient:
 
 
 def _paramiko_backend_with(monkeypatch, client):
-    from pathlib_next.uri.schemes.sftp import _checkfile
-    from pathlib_next.uri.schemes.sftp._paramiko import SftpBackend as _RealSftpBackend
-
-    backend = _RealSftpBackend.__new__(_RealSftpBackend)
-    monkeypatch.setattr(_RealSftpBackend, "client", lambda self, source: client)
-    monkeypatch.setattr(_checkfile, "_SUPPORT_CACHE", {})
-    return backend
+    return _paramiko_backend_over(monkeypatch, client)
 
 
 def test_paramiko_checksum_refusal_is_cached_for_the_connection(monkeypatch):
