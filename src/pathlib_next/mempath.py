@@ -141,11 +141,8 @@ class MemPath(Path):
     def __init__(
         self, *segments: str | Pathname | Path, backend: MemPathBackend = None
     ):
-        # Joined and normalized like `PurePosixPath`: empty and "." segments
-        # collapse, and an absolute argument restarts the join. Raw
-        # concatenation made `MemPath("/") / "a"` the path "//a", unequal to
-        # (and hashed apart from) `MemPath("/a")`, gave "d/" an empty name,
-        # and let `MemPath("/root") / "/etc"` address "/root/etc".
+        # Joined and normalized like `PurePosixPath`: empty and "." segments collapse and
+        # an absolute argument restarts the join (`MemPath("/root") / "/etc"` is "/etc").
         path = ""
         _backend = None
         for segment in segments:
@@ -172,10 +169,8 @@ class MemPath(Path):
             elif text:
                 path = f"{path}/{text}"
         self._segments = self._parse(path)
-        # `is not None`, not truthiness: a freshly-created root's backend is
-        # an *empty* dict, which is falsy -- `if _backend:` silently treated
-        # that as "no backend found" and gave the child a disconnected new
-        # one, breaking backend sharing for any join off an empty MemPath.
+        # `is not None`, not truthiness: a fresh root's backend is an empty dict, which
+        # is falsy, and a join off it would get a disconnected new backend.
         if _backend is not None and backend is None:
             backend = _backend
         self._backend = backend if backend is not None else MemPathBackend()
@@ -207,11 +202,9 @@ class MemPath(Path):
         return self._backend is other._backend
 
     def _node_key(self):
-        # "a.txt", "/a.txt" and "/d/../a.txt" are one node although their
-        # segments differ. This reads no tree, so `..` is applied to the
-        # text; I/O applies it to the tree (`_parent_container`) and agrees
-        # on every path that exists. One that does not (`/missing/../a.txt`)
-        # fails on I/O whatever it compares equal to.
+        # "a.txt", "/a.txt" and "/d/../a.txt" are one node. This reads no tree, so `..` is
+        # applied to the text; I/O applies it to the tree (`_parent_container`) and agrees
+        # wherever the path exists (`/missing/../a.txt` fails on I/O whatever it equals).
         return self._backend, tuple(name for name in self.normalized if name)
 
     @property
@@ -219,14 +212,9 @@ class MemPath(Path):
         """The names of this path with `..` applied to the text and clamped
         at the root; `[""]` for the root. `_node_key()` reads it."""
         if self._normalized is None:
-            # Normalize against a virtual root ("/" + posix) so ".."-escaping
-            # paths (e.g. "..", "../x") get clamped at the root instead of
-            # mangling into "." (posixpath.normpath("..") == "..", and the
-            # old .removeprefix(".") turned that into a bare "."). Strip any
-            # existing leading "/" first: posixpath.normpath("//...") treats
-            # an exactly-double-leading-slash specially (POSIX
-            # implementation-defined root) and doesn't collapse it, which
-            # broke MemPath("/") (as_posix() == "/") into a bogus "//".
+            # Normalize against a virtual root ("/" + posix) so a ".."-escaping path is clamped
+            # at the root (posixpath.normpath("..") is ".."). The leading "/" is stripped first:
+            # normpath keeps an exactly double leading slash, which would turn "/" into "//".
             posix = self.as_posix().lstrip("/")
             self._normalized = _posix.normpath("/" + posix).removeprefix("/").split("/")
         return self._normalized
@@ -309,11 +297,9 @@ class MemPath(Path):
             if child is None:
                 raise _os_error(FileNotFoundError, _errno.ENOENT, self)
             if not isinstance(child, dict):
-                # An ancestor names a file. Without this the next step
-                # evaluates `"seg" not in bytearray` and raises TypeError,
-                # which sails past the OSError guards in stat()/exists()/
-                # is_dir(). NotADirectoryError is an OSError, which is what
-                # stdlib raises and what those guards already swallow.
+                # An ancestor names a file: without this the next step raises TypeError, which
+                # passes the OSError guards of stat()/exists()/is_dir(). NotADirectoryError is an
+                # OSError, as stdlib raises.
                 raise _os_error(
                     NotADirectoryError,
                     _errno.ENOTDIR,
