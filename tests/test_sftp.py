@@ -144,7 +144,7 @@ def test_opts_merges_connect_opts():
     assert opts["timeout"] == 5
 
 
-def test_opts_uses_ssh_config_defaults(monkeypatch):
+def test_opts_uses_ssh_config_defaults(tmp_path, monkeypatch):
     class _RecordedProxyCommand:
         commands = []
 
@@ -153,17 +153,19 @@ def test_opts_uses_ssh_config_defaults(monkeypatch):
 
     # The real class starts the command as a child process.
     monkeypatch.setattr("paramiko.ProxyCommand", _RecordedProxyCommand)
-    backend = SftpBackend({}, None)
-    monkeypatch.setattr(
-        "pathlib_next.uri.schemes.sftp._paramiko._lookup_ssh_config",
-        lambda host, ssh_config: {
-            "hostname": "real-host",
-            "port": "2200",
-            "user": "cfg-user",
-            "identityfile": ["id_test"],
-            "proxycommand": "ssh jump nc %h %p",
-        },
+    # paramiko expands an IdentityFile with this machine's FQDN, which asks
+    # the resolver.
+    monkeypatch.setattr("socket.getfqdn", lambda *args: "localhost")
+    config = tmp_path / "config"
+    config.write_text(
+        "Host alias-host\n"
+        "  HostName real-host\n"
+        "  Port 2200\n"
+        "  User cfg-user\n"
+        "  IdentityFile id_test\n"
+        "  ProxyCommand ssh jump nc %h %p\n"
     )
+    backend = SftpBackend({}, None, ssh_config=str(config))
     opts = backend.opts(Source("sftp", None, "alias-host", None))
     assert opts["hostname"] == "real-host"
     assert opts["port"] == 2200
@@ -174,56 +176,41 @@ def test_opts_uses_ssh_config_defaults(monkeypatch):
     assert isinstance(opts["sock"], _RecordedProxyCommand)
 
 
-def test_source_credentials_override_ssh_config(monkeypatch):
-    backend = SftpBackend({}, None)
-    monkeypatch.setattr(
-        "pathlib_next.uri.schemes.sftp._paramiko._lookup_ssh_config",
-        lambda host, ssh_config: {"port": "2200", "user": "cfg-user"},
-    )
+def test_source_credentials_override_ssh_config(tmp_path):
+    config = tmp_path / "config"
+    config.write_text("Host host\n  Port 2200\n  User cfg-user\n")
+    backend = SftpBackend({}, None, ssh_config=str(config))
     opts = backend.opts(Source("sftp", "url-user:url-pass", "host", 2222))
     assert opts["port"] == 2222
     assert opts["username"] == "url-user"
     assert opts["password"] == "url-pass"
 
 
-def test_sftppath_default_backend_uses_system_ssh_config(monkeypatch):
-    recorded = {}
+class _PinnedSftpPath(SftpPath):
+    _default_backend_cls = SftpBackend
+    __SCHEMES = ()
 
-    def _fake_default(cls, ssh_config):
-        recorded["ssh_config"] = ssh_config
-        return object()
 
-    monkeypatch.setattr(SftpBackend, "default", classmethod(_fake_default))
-
-    class _PinnedSftpPath(SftpPath):
-        _default_backend_cls = SftpBackend
-        __SCHEMES = ()
-
+def _unconnected(**options):
     inst = _PinnedSftpPath.__new__(_PinnedSftpPath)
-    inst._init(Source("sftp", None, "host", None), "/", "", "")
-    _ = inst.backend
+    inst._init(Source("sftp", None, "host", None), "/", "", "", **options)
+    return inst
+
+
+def test_sftppath_default_backend_uses_system_ssh_config():
     from pathlib_next.uri.schemes.sftp._paramiko import _DEFAULT_SSH_CONFIG
 
-    assert recorded["ssh_config"] is _DEFAULT_SSH_CONFIG
+    backend = _unconnected().backend
+
+    assert isinstance(backend, SftpBackend)
+    assert backend.ssh_config is _DEFAULT_SSH_CONFIG
 
 
-def test_sftppath_explicit_ssh_config_disables_system_lookup(monkeypatch):
-    recorded = {}
+def test_sftppath_explicit_ssh_config_disables_system_lookup():
+    backend = _unconnected(ssh_config=None).backend
 
-    def _fake_default(cls, ssh_config):
-        recorded["ssh_config"] = ssh_config
-        return object()
-
-    monkeypatch.setattr(SftpBackend, "default", classmethod(_fake_default))
-
-    class _PinnedSftpPath(SftpPath):
-        _default_backend_cls = SftpBackend
-        __SCHEMES = ()
-
-    inst = _PinnedSftpPath.__new__(_PinnedSftpPath)
-    inst._init(Source("sftp", None, "host", None), "/", "", "", ssh_config=None)
-    _ = inst.backend
-    assert recorded["ssh_config"] is None
+    assert isinstance(backend, SftpBackend)
+    assert backend.ssh_config is None
 
 
 # --- client cache keying/invalidation ---
@@ -234,50 +221,73 @@ def test_sftppath_explicit_ssh_config_disables_system_lookup(monkeypatch):
 # SftpBackend's (paramiko) real cache/invalidation logic directly instead.
 
 
-class _FakeTransport:
-    def __init__(self):
-        self.clients = []
+@pytest.fixture
+def paramiko_backend():
+    import paramiko
 
-    def open_sftp_client(self):
-        client = _FakeSftpClient()
-        self.clients.append(client)
-        return client
+    backends = []
+
+    def make():
+        backend = SftpBackend(
+            {"allow_agent": False, "look_for_keys": False},
+            paramiko.AutoAddPolicy(),
+            ssh_config=None,
+            known_hosts=None,
+        )
+        backends.append(backend)
+        return backend
+
+    yield make
+    for backend in backends:
+        backend.close()
 
 
-def test_sftp_backend_client_cached_across_calls(monkeypatch):
-    backend = SftpBackend({}, None)
-    transport = _FakeTransport()
-    monkeypatch.setattr(SftpBackend, "transport", lambda self, source: transport)
-    source = Source("sftp", None, "host", None)
+def test_sftp_backend_client_cached_across_calls(sftp_loopback, paramiko_backend):
+    backend = paramiko_backend()
+    source = sftp_loopback.source()
+
     client1 = backend.client(source)
     client2 = backend.client(source)
+
     assert client1 is client2
-    assert len(transport.clients) == 1
+    assert sftp_loopback.connections == 1
 
 
-def test_sftp_backend_client_recreated_when_channel_closed(monkeypatch):
+def test_sftp_backend_client_recreated_when_channel_closed(
+    sftp_loopback, sftp_root, paramiko_backend
+):
     # A dropped paramiko connection leaves `Channel.active` truthy and sets
-    # `closed`; the stale client must be replaced AND closed, not dropped.
-    backend = SftpBackend({}, None)
-    transport = _FakeTransport()
-    monkeypatch.setattr(SftpBackend, "transport", lambda self, source: transport)
-    source = Source("sftp", None, "host", None)
+    # `closed`; the stale client must be replaced AND its connection closed,
+    # not dropped.
+    (sftp_root / "a.txt").write_bytes(b"a")
+    backend = paramiko_backend()
+    source = sftp_loopback.source()
     client1 = backend.client(source)
-    client1.sock.closed = True
+    assert client1.sock.get_transport().is_active()
+    client1.sock.close()
+
     client2 = backend.client(source)
+
     assert client2 is not client1
-    assert len(transport.clients) == 2
-    assert client1.close_calls == 1
-    assert client2.close_calls == 0
+    assert client2.listdir(".") == ["a.txt"]
+    assert sftp_loopback.connections == 2
+    assert not client1.sock.get_transport().is_active()
+    assert client2.sock.get_transport().is_active()
 
 
-def test_sftp_backend_client_different_sources_not_shared(monkeypatch):
-    backend = SftpBackend({}, None)
-    transport = _FakeTransport()
-    monkeypatch.setattr(SftpBackend, "transport", lambda self, source: transport)
-    backend.client(Source("sftp", None, "host1", None))
-    backend.client(Source("sftp", None, "host2", None))
-    assert len(transport.clients) == 2
+def test_sftp_backend_client_different_sources_not_shared(
+    tmp_path, sftp_loopback, sftp_loopbacks, paramiko_backend
+):
+    other_root = tmp_path / "other"
+    other_root.mkdir()
+    other = sftp_loopbacks(other_root)
+    backend = paramiko_backend()
+
+    first = backend.client(sftp_loopback.source())
+    second = backend.client(other.source())
+
+    assert first is not second
+    assert (sftp_loopback.connections, other.connections) == (1, 1)
 
 
 # --- B12: chmod follow_symlinks ---
