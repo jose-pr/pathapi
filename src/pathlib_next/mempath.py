@@ -10,6 +10,8 @@ from urllib.parse import quote as _urlquote
 from .path import Path, Pathname, _os_error
 from ._filestat import FileStat
 
+__all__ = ["MemBytesIO", "MemFile", "MemPath", "MemPathBackend"]
+
 
 class MemPathBackend(dict):
     """Nested-dict storage backing one or more `MemPath` trees. A `dict`

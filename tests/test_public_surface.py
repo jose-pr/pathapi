@@ -104,6 +104,17 @@ EXPORTS = {
     },
     "pathlib_next.checksum": {"md5", "native", "sha256", "stream"},
     "pathlib_next.exceptions": {"NonRelativePatternError", "PathError"},
+    "pathlib_next.mempath": {"MemBytesIO", "MemFile", "MemPath", "MemPathBackend"},
+    "pathlib_next.sync": {"PathAndStat", "PathSyncer", "SyncEvent"},
+    "pathlib_next.testing": {
+        "DIRECTORY_ERRORS",
+        "FIXTURE_TREE",
+        "NOT_EMPTY_ERRNOS",
+        "PathContract",
+        "PurePathContract",
+        "ReadPathContract",
+        "populate_fixture_tree",
+    },
     "pathlib_next.glob": {
         "RECURSIVE",
         "full_match",
@@ -115,19 +126,63 @@ EXPORTS = {
 
 # Documented too, in modules that declare no `__all__` of their own.
 ALSO_IMPORTABLE = {
-    "pathlib_next.mempath": {"MemPath", "MemPathBackend", "MemFile"},
-    "pathlib_next.sync": {"PathSyncer", "SyncEvent", "PathAndStat"},
-    "pathlib_next.testing": {
-        "DIRECTORY_ERRORS",
-        "FIXTURE_TREE",
-        "NOT_EMPTY_ERRNOS",
-        "PathContract",
-        "PurePathContract",
-        "ReadPathContract",
-        "populate_fixture_tree",
-    },
     "pathlib_next.uri": {"Uri", "UriPath"},
 }
+
+
+# Every module of the core that is public: it declares `__all__`. Every other
+# module of the core starts with an underscore. The URI layer (`uri`, `tools`)
+# is outside this list.
+CORE_PUBLIC = {
+    "pathlib_next",
+    "pathlib_next.archive",
+    "pathlib_next.checksum",
+    "pathlib_next.exceptions",
+    "pathlib_next.fspath",
+    "pathlib_next.ftp",
+    "pathlib_next.glob",
+    "pathlib_next.mempath",
+    "pathlib_next.path",
+    "pathlib_next.protocols",
+    "pathlib_next.protocols.checksum",
+    "pathlib_next.protocols.fs",
+    "pathlib_next.protocols.io",
+    "pathlib_next.providers",
+    "pathlib_next.sync",
+    "pathlib_next.testing",
+}
+
+
+def _core_modules():
+    """Dotted names of the core's modules, private ones included."""
+    found = set()
+    for path in PACKAGE.rglob("*.py"):
+        parts = path.relative_to(PACKAGE).with_suffix("").parts
+        if parts[0] in ("uri", "tools") or "__pycache__" in parts:
+            continue
+        if parts[-1] == "__init__":
+            parts = parts[:-1]
+        found.add(".".join(("pathlib_next", *parts)))
+    return found
+
+
+def test_every_public_module_of_the_core_declares_all_and_each_name_exists():
+    for module in sorted(CORE_PUBLIC):
+        imported = importlib.import_module(module)
+        names = getattr(imported, "__all__", None)
+        assert names is not None, f"{module} has no __all__"
+        assert len(names) == len(set(names)), f"{module} lists a name twice"
+        missing = [name for name in names if not hasattr(imported, name)]
+        assert missing == [], f"{module} lists {missing}, which it does not have"
+
+
+def test_every_other_module_of_the_core_is_private():
+    public = {
+        module
+        for module in _core_modules()
+        if not any(part.startswith("_") for part in module.split("."))
+    }
+    assert public == CORE_PUBLIC
 
 
 def _uri_available():

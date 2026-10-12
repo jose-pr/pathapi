@@ -80,6 +80,16 @@ import stat as _stat
 
 import pytest
 
+__all__ = [
+    "DIRECTORY_ERRORS",
+    "FIXTURE_TREE",
+    "NOT_EMPTY_ERRNOS",
+    "PathContract",
+    "PurePathContract",
+    "ReadPathContract",
+    "populate_fixture_tree",
+]
+
 #: The standard tree `ReadPathContract`/`PathContract` expect under `root`:
 #: relative POSIX name -> file content, or `None` for a directory.
 FIXTURE_TREE = {

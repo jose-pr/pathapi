@@ -19,6 +19,8 @@ from ._filestat import FileStat
 from . import checksum as _checksum
 from . import glob as _glob
 
+__all__ = ["PathAndStat", "PathSyncer", "SyncEvent"]
+
 _logger = _logging.getLogger("pathlib_next.sync")
 
 #: `PathSyncer`'s own default checksum policy (native digest preferred, streaming

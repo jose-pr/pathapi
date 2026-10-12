@@ -49,11 +49,13 @@ exceptions `PathError` and `NonRelativePatternError`, and the modules `glob`
 `MemPathBackend` and `MemFile`; `pathlib_next.testing` is never imported
 implicitly.
 
-The root, `path`, `fspath`, `protocols` (and its `fs`, `io`, `checksum`),
-`glob`, `checksum` and `providers` declare `__all__` with exactly the names
-this file documents for them, so `from pathlib_next import *` publishes those
-and nothing else (`P` and `PN` are not among them; they stay importable from
-`pathlib_next.path`).
+Every public module declares `__all__` with exactly the names this file
+documents for it: the root, `path`, `fspath`, `mempath`, `protocols` (and its
+`fs`, `io`, `checksum`), `testing`, `sync`, `glob`, `checksum`, `archive`,
+`ftp`, `providers` and `exceptions`. So `from pathlib_next import *` publishes
+the root's names and nothing else (`P` and `PN` are not among them; they stay
+importable from `pathlib_next.path`). Every other module of the core starts
+with an underscore and is private.
 
 The package ships `py.typed`: `Path(...)`, `LocalPath(...)`, `MemPath(...)` and
 `FileStat(...)` pass mypy and pyright at their defaults. A protocol stub (`stat`,
