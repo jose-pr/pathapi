@@ -119,17 +119,6 @@ def test_as_owner_keeps_ids_names_and_the_unchanged_sentinels():
     assert utils.as_owner((1 << 32) - 1, -1) == ((1 << 32) - 1, None)
 
 
-# --- parsedate ------------------------------------------------------------
-
-
-def test_parsedate_states_what_it_accepts_and_what_it_does_not():
-    text = " ".join((utils.parsedate.__doc__ or "").split())
-    assert "Nothing else is accepted" in text
-    for word in ("bytes", "datetime", "fewer than six"):
-        assert word in text
-    assert "31 Feb" in text
-
-
 # --- FileStat -------------------------------------------------------------
 
 

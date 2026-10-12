@@ -13,6 +13,7 @@ import urllib.parse as _urlparse
 from ... import utils as _utils
 from ... import FileStat
 from .. import DerivedBackend, UriPath
+from . import _httpdate
 from ._extras import import_or_stub as _import_or_stub
 
 # The `http` extra. Without it a path still constructs and joins; the first
@@ -986,12 +987,12 @@ class HttpPath(UriPath):
                 continue
             if is_dir:
                 stat = FileStat(
-                    st_size=0, st_mtime=_utils.parsedate(entry.modified), is_dir=True
+                    st_size=0, st_mtime=_httpdate.parsedate(entry.modified), is_dir=True
                 )
             elif entry.size is not None and entry.size_exact and entry.modified:
                 stat = FileStat(
                     st_size=entry.size,
-                    st_mtime=_utils.parsedate(entry.modified),
+                    st_mtime=_httpdate.parsedate(entry.modified),
                     is_dir=False,
                 )
             else:
@@ -1080,7 +1081,9 @@ class HttpPath(UriPath):
                     pass
 
         size_stated = is_dir or stated is not None
-        stat = FileStat(st_size=st_size, st_mtime=_utils.parsedate(lm), is_dir=is_dir)
+        stat = FileStat(
+            st_size=st_size, st_mtime=_httpdate.parsedate(lm), is_dir=is_dir
+        )
         return stat, size_stated
 
     def _ensure_missing(self) -> None:

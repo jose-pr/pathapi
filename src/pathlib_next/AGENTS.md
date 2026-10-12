@@ -1391,7 +1391,6 @@ def as_error_predicate(on_error) -> OfferedOnce: ...
 class OfferedOnce:
     def __call__(self, error, path) -> bool: ...
 def notimplemented(method): ...
-def parsedate(date): ...
 
 class LRU:
     def __init__(self, func, maxsize=128, on_evict=None): ...
@@ -1435,12 +1434,6 @@ UNCHANGED = None
   passes it down never offers one failure twice.
 - **`notimplemented()`** — decorator; calling raises
   `NotImplementedError("Method not implemented: <name>")`.
-- **`parsedate()`** — UTC epoch seconds from an HTTP date
-  string (zone offset applied, none = UTC), a `struct_time`/tuple (UTC minus
-  any offset), or a number (returned unchanged); `None` or an unparseable
-  string → `0`. `bytes`, a `datetime` and a tuple of fewer than six items are
-  not accepted (`ValueError`/`TypeError`), and a date that does not exist
-  (31 Feb) rolls over instead of being refused.
 
 ## Testing helpers (`pathlib_next.testing`, needs `pytest`)
 

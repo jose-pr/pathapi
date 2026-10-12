@@ -97,7 +97,6 @@ EXPORTS = {
         "is_safe_child_name",
         "is_windows_flavoured",
         "notimplemented",
-        "parsedate",
     },
     "pathlib_next.checksum": {"md5", "native", "sha256", "stream"},
     "pathlib_next.glob": {

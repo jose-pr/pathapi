@@ -11,6 +11,7 @@ from ...path import check_follow
 from ... import FileStat
 from .. import Uri
 from ..source import compose_uri
+from . import _httpdate
 from .http import (
     _EXCLUSIVE_CREATE,
     _IDENTITY_ENCODING,
@@ -247,7 +248,7 @@ class DavPath(HttpPath):
         if not responses:
             raise FileNotFoundError(self)
         _href, is_dir, size, lm = _parse_response(responses[0])
-        return FileStat(st_size=size, st_mtime=_utils.parsedate(lm), is_dir=is_dir)
+        return FileStat(st_size=size, st_mtime=_httpdate.parsedate(lm), is_dir=is_dir)
 
     def _scandir(self):
         # One PROPFIND (Depth: 1) already carries type/size/mtime for every
@@ -304,7 +305,7 @@ class DavPath(HttpPath):
             # "..", which let a recursive copy write outside its destination.
             if _utils.is_safe_child_name(name):
                 yield name, FileStat(
-                    st_size=size, st_mtime=_utils.parsedate(lm), is_dir=is_dir
+                    st_size=size, st_mtime=_httpdate.parsedate(lm), is_dir=is_dir
                 )
 
     def _listdir(self):
