@@ -13,7 +13,7 @@ import time as _time
 import typing as _ty
 import uuid as _uuid
 
-from . import utils as _utils
+from . import _errorpolicy, _names
 from .path import Path, _listing, _relation, _write_batch_of
 from ._filestat import FileStat
 from . import checksum as _checksum
@@ -680,7 +680,7 @@ class PathSyncer(object):
             )
         self.symlink_mode = symlink_mode
         self.ignore_error = _ty.cast(
-            _OnPathSyncerError, _utils.as_error_handler(ignore_error)
+            _OnPathSyncerError, _errorpolicy.as_error_handler(ignore_error)
         )
         self.quick_check = quick_check
         self.preserve_mtime = preserve_mtime
@@ -815,7 +815,7 @@ class PathSyncer(object):
         children: "list[tuple[str, PathAndStat]]" = []
         for name, stat in _listing(entry.path) if listing is None else listing:
             child = _glob._child(entry.path, name)
-            if not _utils.is_safe_child_name(name, windows=windows):
+            if not _names.is_safe_child_name(name, windows=windows):
                 children.append((name, PathAndStat.from_stat(child, None)))
             elif _is_leftover(name):
                 # The library's own temporary file, not an entry of the
@@ -867,7 +867,7 @@ class PathSyncer(object):
                 )
                 return
         for name, stat in listing:
-            if not (_is_leftover(name) and _utils.is_safe_child_name(name)):
+            if not (_is_leftover(name) and _names.is_safe_child_name(name)):
                 continue
             child = _glob._child(target_dir, name)
             if stat is None:
@@ -954,7 +954,7 @@ class PathSyncer(object):
         _ignore_error = (
             self.ignore_error
             if ignore_error is None
-            else _utils.as_error_handler(ignore_error)
+            else _errorpolicy.as_error_handler(ignore_error)
         )
         root = target.path if isinstance(target, PathAndStat) else target
         # One commit for the whole tree where the target pays for each write;
@@ -1287,7 +1287,7 @@ class PathSyncer(object):
                     return
 
             source_children = None
-            windows_target = _utils.is_windows_flavoured(target.path)
+            windows_target = _names.is_windows_flavoured(target.path)
             target_entries_cache = None
 
             def target_entries():
@@ -1308,7 +1308,7 @@ class PathSyncer(object):
                 # A listed name that is not a single component inside `target` (`..`, or a
                 # backslash or colon on a Windows target) is never joined onto it; it is
                 # reported, not silently skipped.
-                if _utils.is_safe_child_name(name, windows=windows_target):
+                if _names.is_safe_child_name(name, windows=windows_target):
                     return False
                 error = ValueError(
                     f"refusing unsafe child name {name!r} under {target.path}"

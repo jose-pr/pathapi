@@ -539,7 +539,7 @@ def test_sftppath_recursive_rm_uses_scandir_metadata_bottom_up():
 def test_sftppath_checksum_raises_notimplemented_when_backend_lacks_support():
     # Covers the "no native hashing at all" case (a custom backend with no
     # checksum() override) and, transitively, PathSyncer's
-    # fallback-to-streaming trigger (utils.checksum.native() catches
+    # fallback-to-streaming trigger (checksum.native() catches
     # exactly this).
     p = _sftp("sftp://host/a.txt")
     with pytest.raises(NotImplementedError):

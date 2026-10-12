@@ -8,7 +8,7 @@ import sys as _sys
 import threading as _threading
 import typing as _ty
 
-from ... import utils as _utils
+from ... import providers as _providers
 from ... import FileStat
 from . import _objstore as _store
 from ._extras import import_client as _import_client
@@ -23,7 +23,7 @@ class BaseGsBackend(object):
     # derived for itself (see `UriPath._supplied_backend()`).
     __slots__ = ("__weakref__",)
 
-    @_utils.notimplemented
+    @_providers.notimplemented
     def client(self):
         """The `google.cloud.storage` client every call of a path goes through."""
 
@@ -383,7 +383,7 @@ class GsPath(_store.ObjectStorePath):
                 continue
             # A key segment is whatever its writer chose: "..", "." or an
             # embedded "/" must not become a child path.
-            if _utils.is_safe_child_name(name) and name not in seen:
+            if _providers.is_safe_child_name(name) and name not in seen:
                 seen.add(name)
                 yield name, FileStat(is_dir=True)
         # Blobs (files)
@@ -391,7 +391,7 @@ class GsPath(_store.ObjectStorePath):
             name = blob.name[len(prefix) :]
             if name.endswith("/"):
                 continue
-            if _utils.is_safe_child_name(name) and name not in seen:
+            if _providers.is_safe_child_name(name) and name not in seen:
                 seen.add(name)
                 mtime = int(blob.updated.timestamp()) if blob.updated else 0
                 yield name, FileStat(

@@ -7,7 +7,7 @@ import re as _re
 import threading as _threading
 import typing as _ty
 
-from ... import utils as _utils
+from ... import providers as _providers
 from ... import FileStat
 from . import _objstore as _store
 from ._extras import import_client as _import_client
@@ -28,7 +28,7 @@ class BaseS3Backend(object):
     # derived for itself (see `UriPath._supplied_backend()`).
     __slots__ = ("__weakref__",)
 
-    @_utils.notimplemented
+    @_providers.notimplemented
     def client(self):
         """The `boto3` S3 client every call of a path goes through."""
 
@@ -371,13 +371,13 @@ class S3Path(_store.ObjectStorePath):
                         continue
                     # A key segment is whatever its writer chose: "..", "." or
                     # an embedded "/" must not become a child path.
-                    if _utils.is_safe_child_name(name) and name not in seen:
+                    if _providers.is_safe_child_name(name) and name not in seen:
                         seen.add(name)
                         yield name, FileStat(is_dir=True)
                 for obj in page.get("Contents", []):
                     empty = False
                     name = obj["Key"][len(prefix) :]
-                    if _utils.is_safe_child_name(name) and name not in seen:
+                    if _providers.is_safe_child_name(name) and name not in seen:
                         seen.add(name)
                         lm = obj.get("LastModified")
                         mtime = int(lm.timestamp()) if lm else 0

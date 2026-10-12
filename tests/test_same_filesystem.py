@@ -10,7 +10,8 @@ import pytest
 
 from pathlib_next import Path
 from pathlib_next.mempath import MemPath
-from pathlib_next.path import _contains, _same_file
+from pathlib_next.path import _same_file
+from pathlib_next.providers import contains
 from pathlib_next.sync import PathSyncer, _paths_overlap
 
 
@@ -162,12 +163,12 @@ def test_the_three_guards_agree():
     source, target = _two_hosts(HostPath)
     a, b = source / "app.conf", target / "app.conf"
     assert not _same_file(a, b)
-    assert not _contains(a.parent, b)
+    assert not contains(a.parent, b)
     assert not _paths_overlap(a.parent, b.parent)
 
     same = a.parent / "app.conf"
     assert _same_file(a, same)
-    assert _contains(a.parent, same)
+    assert contains(a.parent, same)
     assert _paths_overlap(a.parent, same.parent)
 
 
@@ -236,7 +237,7 @@ def test_node_key_makes_two_spellings_of_one_node_the_same_file():
 
     assert (host / "etc" / "app.conf") != shout
     assert _same_file(host / "etc" / "app.conf", shout)
-    assert _contains(host / "etc", shout)
+    assert contains(host / "etc", shout)
     assert not _same_file(host / "etc", shout)
     with pytest.raises(OSError, match="same file"):
         (host / "etc" / "app.conf").copy(shout, overwrite=True)
@@ -256,9 +257,9 @@ def test_node_key_of_a_nested_target_is_inside_its_source():
     root = MemPath("/")
     (root / "d").mkdir()
     inner = MemPath("d/x", backend=root.backend)
-    assert _contains(root / "d", inner)
-    assert not _contains(inner, root / "d")
-    assert _contains(root, inner)
+    assert contains(root / "d", inner)
+    assert not contains(inner, root / "d")
+    assert contains(root, inner)
 
 
 class _ByBackend(MemPath):

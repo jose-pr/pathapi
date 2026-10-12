@@ -255,7 +255,7 @@ mutant(
 # --- guards of the library, from the first review of the suite -------------
 mutant(
     "safe-child-name-accepts-everything",
-    "utils/__init__.py",
+    "_names.py",
     '    if not isinstance(name, str) or name in ("", ".", "..") or "/" in name:\n',
     '    return True\n    if not isinstance(name, str) or name in ("", ".", "..") or "/" in name:\n',
     "tests/test_destructive_safety.py::test_unsafe_child_names_rejected_on_every_flavour",
@@ -304,7 +304,7 @@ mutant(
 mutant(
     "sftp-listing-keeps-unsafe-names",
     "uri/schemes/sftp/__init__.py",
-    "            if not _utils.is_safe_child_name(name):\n",
+    "            if not _providers.is_safe_child_name(name):\n",
     "            if False:\n",
     "tests/test_sftp.py::test_a_hostile_listing_name_never_becomes_a_child",
     "SftpPath listing filter no-op",
@@ -312,7 +312,7 @@ mutant(
 mutant(
     "http-listing-keeps-unsafe-names",
     "uri/schemes/http.py",
-    "            if not _utils.is_safe_child_name(name):\n",
+    "            if not _providers.is_safe_child_name(name):\n",
     "            if False:\n",
     "tests/test_http.py::test_http_listing_leaves_out_a_name_that_is_not_a_safe_component",
     "HttpPath listing filter no-op",
@@ -320,7 +320,7 @@ mutant(
 mutant(
     "dav-listing-keeps-unsafe-names",
     "uri/schemes/dav.py",
-    "            if _utils.is_safe_child_name(name):\n",
+    "            if _providers.is_safe_child_name(name):\n",
     "            if True:\n",
     "tests/test_webdav.py::test_propfind_dot_entries_are_not_children",
     "DavPath listing filter no-op",
@@ -415,7 +415,7 @@ mutant(
 )
 mutant(
     "lru-never-calls-on-evict",
-    "utils/__init__.py",
+    "_lru.py",
     "                on_evict(key, value)\n",
     "                pass\n",
     "tests/test_transport_security.py::test_ftps_verify_false_opt_out_accepts",
@@ -432,15 +432,15 @@ mutant(
 mutant(
     "copy-recursive-accepts-unsafe-child-names",
     "path.py",
-    "                    if not _utils.is_safe_child_name(\n",
-    "                    if False and not _utils.is_safe_child_name(\n",
+    "                    if not _names.is_safe_child_name(\n",
+    "                    if False and not _names.is_safe_child_name(\n",
     "tests/test_destructive_safety.py::test_copy_recursive_never_merges_names_windows_rewrites",
     "copy(recursive): unsafe child-name refusal off",
 )
 mutant(
     "sync-accepts-unsafe-child-names",
     "sync.py",
-    "                if _utils.is_safe_child_name(name, windows=windows_target):\n",
+    "                if _names.is_safe_child_name(name, windows=windows_target):\n",
     "                if True:\n",
     "tests/test_destructive_safety.py::test_sync_never_merges_names_windows_rewrites",
     "PathSyncer: unsafe child-name refusal off",
@@ -551,7 +551,7 @@ mutant(
 )
 mutant(
     "windows-child-name-with-a-drive-accepted",
-    "utils/__init__.py",
+    "_names.py",
     '        if "\\\\" in name or ":" in name:\n',
     '        if "\\\\" in name:\n',
     "tests/test_destructive_safety.py::test_windows_only_unsafe_child_names",
@@ -559,7 +559,7 @@ mutant(
 )
 mutant(
     "child-name-with-nul-accepted",
-    "utils/__init__.py",
+    "_names.py",
     '    if "\\0" in name:\n',
     "    if False:\n",
     "tests/test_destructive_safety.py::test_unsafe_child_names_rejected_on_every_flavour",
@@ -667,7 +667,7 @@ mutant(
 mutant(
     "rm-builds-a-child-from-an-unsafe-listed-name",
     "path.py",
-    '                    if not _utils.is_safe_child_name(name):\n                        raise ValueError(\n                            f"refusing unsafe child name {name!r} under {path}"\n                        )\n                    child = _glob._child(path, name)',
+    '                    if not _names.is_safe_child_name(name):\n                        raise ValueError(\n                            f"refusing unsafe child name {name!r} under {path}"\n                        )\n                    child = _glob._child(path, name)',
     '                    if False:\n                        raise ValueError(\n                            f"refusing unsafe child name {name!r} under {path}"\n                        )\n                    child = _glob._child(path, name)',
     "tests/test_listing_names.py::test_rm_recursive_offers_each_unsafe_name_to_ignore_error",
     "rm(recursive=True) builds a child from a listed name such as '..'",
@@ -675,7 +675,7 @@ mutant(
 mutant(
     "walk-yields-an-unsafe-listed-name",
     "path.py",
-    "                if not _utils.is_safe_child_name(name):\n                    # A listing is untrusted input",
+    "                if not _names.is_safe_child_name(name):\n                    # A listing is untrusted input",
     "                if False:\n                    # A listing is untrusted input",
     "tests/test_listing_names.py::test_walk_omits_unsafe_names_and_reports_them_to_on_error",
     "walk() descends into a listed name such as '..'",
@@ -690,7 +690,7 @@ mutant(
 )
 mutant(
     "windows-child-name-with-trailing-dot-accepted",
-    "utils/__init__.py",
+    "_names.py",
     '        name[-1] in " ."\n        or name.partition',
     "        False\n        or name.partition",
     "tests/test_destructive_safety.py::test_windows_only_unsafe_child_names",

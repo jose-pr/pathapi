@@ -9,7 +9,7 @@ import threading as _thread
 import time as _time
 import typing as _ty
 
-from ... import utils as _utils
+from ... import providers as _providers
 from ... import FileStat
 from .. import Uri
 from . import _objstore as _store
@@ -26,7 +26,7 @@ class BaseAzBackend(object):
     # derived for itself (see `UriPath._supplied_backend()`).
     __slots__ = ("__weakref__",)
 
-    @_utils.notimplemented
+    @_providers.notimplemented
     def client(self):
         """The `BlobServiceClient` every call of a path goes through."""
 
@@ -403,7 +403,7 @@ class AzPath(_store.ObjectStorePath):
             with _translate_errors(self):
                 names = [item.name for item in self._client.list_containers()]
             for name in names:
-                if _utils.is_safe_child_name(name):
+                if _providers.is_safe_child_name(name):
                     yield name, FileStat(is_dir=True)
             return
         prefix = f"{self.key}/" if self.key else ""
@@ -433,13 +433,13 @@ class AzPath(_store.ObjectStorePath):
                     continue
                 # A blob name segment is whatever its writer chose: "..", "."
                 # or an embedded "/" must not become a child path.
-                if _utils.is_safe_child_name(name) and name not in seen:
+                if _providers.is_safe_child_name(name) and name not in seen:
                     seen.add(name)
                     yield name, FileStat(is_dir=True)
                 continue
 
             name = item.name[len(prefix) :]
-            if _utils.is_safe_child_name(name) and name not in seen:
+            if _providers.is_safe_child_name(name) and name not in seen:
                 seen.add(name)
                 mtime = int(item.last_modified.timestamp()) if item.last_modified else 0
                 yield name, FileStat(

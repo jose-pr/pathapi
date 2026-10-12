@@ -195,7 +195,8 @@ flag is described in the
 | `pathlib_next.protocols` | `Stat`, `Chmod`, `BinaryOpen`, `NativeChecksum` |
 | `pathlib_next.uri` | `Uri`, `UriPath`, `Source`, `Query` |
 | `pathlib_next.uri.schemes` | Built-in schemes: `file`, `data`, `zip`/`tar`/`archive`, `ftp`, `http`, `dav`, `sftp`, `s3`, `gs`, `az`, `github`, `gitlab`, `git` |
-| `pathlib_next.utils` | `glob`, `sync` (`PathSyncer`), `stat` (`FileStat`), `checksum`, `archive` and helpers |
+| `pathlib_next.glob`, `pathlib_next.sync` (`PathSyncer`), `pathlib_next.checksum` | glob engine, tree sync, checksums |
+| `pathlib_next.providers` | helpers for a class built on `Path` |
 | `pathlib_next.testing` | pytest contracts for custom implementations |
 | `pathlib_next.tools.uripath` | the `uripath` command |
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import stat
+
 from pathlib_next import FileStat
 
 
@@ -31,7 +33,6 @@ def test_filestat_methods():
     assert st.st_ctime == 123
 
     st.setmode(0o755, isdir=False)
-    import stat
 
     assert stat.S_ISREG(st.st_mode)
     assert (st.st_mode & 0o777) == 0o755
@@ -83,7 +84,6 @@ def test_filestat_methods():
 
 def test_stat_protocol_helpers():
     from pathlib_next.protocols.fs import Stat
-    import stat
 
     class StubStatPath(Stat):
         def __init__(self, mode):
@@ -135,3 +135,35 @@ def test_stat_protocol_helpers():
     assert not p_err.is_dir()
     assert not p_err.is_file()
     assert not p_err.is_symlink()
+
+
+def test_a_bare_permission_mode_gets_the_type_of_the_file():
+    assert FileStat(st_mode=0o644).is_file()
+    assert not FileStat(st_mode=0o644).is_dir()
+    assert FileStat(st_mode=0o755, is_dir=True).is_dir()
+    assert not FileStat(st_mode=0o755, is_dir=True).is_file()
+    assert stat.S_IMODE(FileStat(st_mode=0o755, is_dir=True).st_mode) == 0o755
+
+
+def test_a_mode_that_has_a_type_keeps_it():
+    assert FileStat(st_mode=stat.S_IFLNK | 0o777).is_symlink()
+    assert FileStat(st_mode=stat.S_IFREG | 0o600, is_dir=True).is_file()
+    assert FileStat(st_mode=stat.S_IFDIR | 0o700).is_dir()
+
+
+def test_a_permission_mode_counts_as_reported():
+    assert FileStat(st_mode=0o644).mode_known is True
+    assert FileStat().mode_known is False
+    assert FileStat(is_dir=True).is_dir()
+
+
+def test_setmode_keeps_a_device_or_socket_from_becoming_a_directory():
+    for kind in (stat.S_IFBLK, stat.S_IFSOCK, stat.S_IFCHR):
+        listed = FileStat(st_mode=kind | 0o600)
+        listed.setmode(0o644)
+        assert listed.is_file()
+        assert not listed.is_dir()
+    directory = FileStat(is_dir=True)
+    directory.setmode(0o700)
+    assert directory.is_dir()
+    assert stat.S_IMODE(directory.st_mode) == 0o700

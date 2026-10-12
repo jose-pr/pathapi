@@ -47,12 +47,12 @@ deletes when `rename()` is missing) or raise `NotImplementedError`:
 | --- | --- |
 | `stat(*, follow_symlinks=True)` | a `FileStatLike`; `FileStat(st_mode=None, st_size=0, st_mtime=0, is_dir=False)` is ready-made. Raise `FileNotFoundError` for a missing path. |
 | `iterdir()` | yield child instances; raise `FileNotFoundError`/`NotADirectoryError` like pathlib. Required for any listing: `copy(recursive=True)` and `for child in path` call it, and the default `_scandir()` is built on it. |
-| `_scandir()` | optional addition: yield `(name, FileStat or None)` when the listing already carries metadata. `walk()`, `glob()`, `rm(recursive=True)` and `PathSyncer` use it instead of a `stat()` per child. The stat is non-following; `None` means "unknown", and `FileStat(is_dir=False, size_known=False)` means "a file, size and time unknown" (a listing that knows a type and not a size: `walk()`, `glob()` and `rm(recursive=True)` use it, `stat()` of the child asks again, `PathSyncer` re-stats it). Skip a name that is not one path component (`""`, `.`, `..`, or one containing `/` or NUL; `utils.is_safe_child_name()` decides): a server chooses its listing, and a joined `..` leaves the directory. |
+| `_scandir()` | optional addition: yield `(name, FileStat or None)` when the listing already carries metadata. `walk()`, `glob()`, `rm(recursive=True)` and `PathSyncer` use it instead of a `stat()` per child. The stat is non-following; `None` means "unknown", and `FileStat(is_dir=False, size_known=False)` means "a file, size and time unknown" (a listing that knows a type and not a size: `walk()`, `glob()` and `rm(recursive=True)` use it, `stat()` of the child asks again, `PathSyncer` re-stats it). Skip a name that is not one path component (`""`, `.`, `..`, or one containing `/` or NUL; `providers.is_safe_child_name()` decides): a server chooses its listing, and a joined `..` leaves the directory. |
 | `_open(mode, buffering)` | a **binary** stream. `open()` validates the mode and passes a canonical `"r"`, `"w"`, `"x"` or `"a"`, optionally with `"+"` (never `"b"`/`"t"`); raise `NotImplementedError` for a mode you do not support. `read_text()`, `write_bytes()`, `copy()`, `touch()` all derive from it. |
 | `_mkdir(mode)` | create this one directory: `FileExistsError` if it exists, `FileNotFoundError` if the parent is missing (`mkdir(parents=True)` relies on it). |
 | `unlink(missing_ok=False)`, `rmdir()` | pathlib's exceptions: `IsADirectoryError`, `NotADirectoryError`, `OSError(errno.ENOTEMPTY)`. |
 | `rename(target)` | return the new path. |
-| `chmod(mode, *, follow_symlinks=True)` | normalize with `utils.as_mode(mode)` so octal strings work. |
+| `chmod(mode, *, follow_symlinks=True)` | normalize with `providers.as_mode(mode)` so octal strings work. |
 | `_symlink_to(target, target_is_directory=False)`, `readlink()` | `symlink_to(..., force=)` is derived; `target` is already a path object. |
 | `_chown(uid, gid, *, follow_symlinks=True)` | receives a canonical pair (`None` = unchanged); `chown()` is derived. |
 | `_utime(*, atime=None, mtime=None)` | set an existing entry's times, in seconds since the epoch (`None` = leave that one alone); whole seconds, or no access time, is fine. Raise `NotImplementedError` (the default) when the backend cannot set a time: `touch()` of an existing file then leaves it as it is, and `PathSyncer(preserve_mtime=True)` leaves the copy's own time. |
@@ -60,10 +60,10 @@ deletes when `rename()` is missing) or raise `NotImplementedError`:
 `rm()` is derived from `stat()`, `_scandir()`, `unlink()` and `rmdir()`. An
 implementation that overrides it to remove a tree natively still accepts
 `follow_symlinks=` and `follow_binds=` (the shared contract calls both), checks
-them with `pathlib_next.path.check_follow(name, policy)` before it removes
+them with `pathlib_next.providers.check_follow(name, policy)` before it removes
 anything, and forwards them to `super().rm()` wherever it falls back to the
 generic walk. An override of `copy()` that copies a tree natively refuses a
-target inside the source with `pathlib_next.path.contains(source, target)`.
+target inside the source with `pathlib_next.providers.contains(source, target)`.
 
 When a method accepts a `str` path, turn it into a path with
 `self.with_segments(value)`, never `type(self)(value)`, which drops
@@ -266,7 +266,7 @@ Conventions for a scheme implementation:
   `pathlib_next.uri.same_authority(a.source, b.source)`.
 - A backend that cannot be written piecewise (an FTP `STOR`, an archive
   rewrite) is returned from `_open()` as
-  `pathlib_next.utils._commit.CommitOnClose(commit)`: `commit(buffer)` runs once,
+  `pathlib_next.providers.CommitOnClose(commit)`: `commit(buffer)` runs once,
   when the stream is closed.
 
 The shipped API header (`AGENTS.md` inside the package) lists every one of

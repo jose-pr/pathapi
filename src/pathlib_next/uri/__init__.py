@@ -22,7 +22,7 @@ if _ty.TYPE_CHECKING:
 else:
     TypeAlias = _ty.Any
 
-from .. import utils as _utils
+from .. import providers as _providers
 from ..path import Path, Pathname, _name_stem, _name_suffix
 from .. import FileStat
 from .query import Query
@@ -1603,7 +1603,7 @@ class UriPath(Uri, Path):
             return self._from_decoded_path(target)
         return target
 
-    @_utils.notimplemented
+    @_providers.notimplemented
     def _listdir(self) -> "_ty.Iterator[str]": ...
 
     def _scandir(self) -> "_ty.Iterator[_ty.Tuple[str, _ty.Optional[FileStat]]]":
@@ -1612,12 +1612,12 @@ class UriPath(Uri, Path):
         call already returns metadata should override this directly instead
         (see docs/guides/extending.md) -- HttpPath/DavPath/SftpPath/FtpPath/
         S3Path all do. A name that is not one path component
-        (`utils.is_safe_child_name()`) is skipped, and an override must skip
+        (`providers.is_safe_child_name()`) is skipped, and an override must skip
         it too."""
         for name in self._listdir():
             # A listing is untrusted input: a name that is not one component
             # ("..", "a/b", "") must never become a child path.
-            if not _utils.is_safe_child_name(name):
+            if not _providers.is_safe_child_name(name):
                 continue
             child = self._make_child_relpath(name)
             try:

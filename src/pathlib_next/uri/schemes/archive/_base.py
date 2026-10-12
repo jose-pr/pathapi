@@ -9,8 +9,8 @@ from .... import archive as _archive
 from ....archive import MAX_LINKS as MAX_LINKS
 from ....archive import ArchivePath
 from ....archive import LinkTarget as LinkTarget
-from ....path import check_follow
-from ....utils import as_error_handler
+from ....providers import check_follow
+from ....providers import as_error_handler
 from ... import Uri, UriPath
 from ...source import SAFE_PATH, Source, percent_encode
 from .._delegate import DelegatingPath

@@ -4,7 +4,7 @@ import io as _io
 import shutil as _shutil
 import typing as _ty
 
-from .. import utils as _utils
+from .. import _stubs
 
 __all__ = ["BinaryOpen"]
 
@@ -62,7 +62,7 @@ class BinaryOpen(_ty.Protocol):
         All operations should be binary
         To be used only by open() to obtain binary stream to provide implementations for all methods
         """
-        return _utils._unimplemented("_open")
+        return _stubs._unimplemented("_open")
 
     def open(
         self,

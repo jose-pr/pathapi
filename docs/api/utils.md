@@ -1,6 +1,6 @@
 # Utilities API
 
-::: pathlib_next.utils
+::: pathlib_next.providers
 
 ::: pathlib_next.glob
 

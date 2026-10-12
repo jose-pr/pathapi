@@ -545,7 +545,7 @@ def test_file_uri_scandir_reports_symlink_not_directory(tmp_path):
     "name", ["", ".", "..", "a/b", "../x", "/abs", "nul\0byte", None, 3]
 )
 def test_unsafe_child_names_rejected_on_every_flavour(name):
-    from pathlib_next.utils import is_safe_child_name
+    from pathlib_next.providers import is_safe_child_name
 
     assert not is_safe_child_name(name)
     assert not is_safe_child_name(name, windows=True)
@@ -584,7 +584,7 @@ def test_unsafe_child_names_rejected_on_every_flavour(name):
     ],
 )
 def test_windows_only_unsafe_child_names(name):
-    from pathlib_next.utils import is_safe_child_name
+    from pathlib_next.providers import is_safe_child_name
 
     assert is_safe_child_name(name)
     assert not is_safe_child_name(name, windows=True)
@@ -613,7 +613,7 @@ def test_windows_only_unsafe_child_names(name):
     ],
 )
 def test_ordinary_child_names_accepted(name):
-    from pathlib_next.utils import is_safe_child_name
+    from pathlib_next.providers import is_safe_child_name
 
     assert is_safe_child_name(name)
     assert is_safe_child_name(name, windows=True)
@@ -622,7 +622,7 @@ def test_ordinary_child_names_accepted(name):
 def test_is_windows_flavoured_matches_path_semantics(tmp_path):
     from pathlib import PurePosixPath, PureWindowsPath
 
-    from pathlib_next.utils import is_windows_flavoured
+    from pathlib_next.providers import is_windows_flavoured
 
     assert is_windows_flavoured(PureWindowsPath("C:/x"))
     assert not is_windows_flavoured(PurePosixPath("/x"))
@@ -916,9 +916,9 @@ def test_rm_of_a_binding_named_directly_removes_the_binding(tmp_path):
 def windows_flavoured(monkeypatch):
     """Every path counts as one read with Windows rules, so the rule runs on
     any platform against `MemPath`."""
-    from pathlib_next import utils
+    from pathlib_next import _names
 
-    monkeypatch.setattr(utils, "is_windows_flavoured", lambda path: True)
+    monkeypatch.setattr(_names, "is_windows_flavoured", lambda path: True)
 
 
 def _refused(errors):

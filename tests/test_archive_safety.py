@@ -19,10 +19,10 @@ import pytest
 from capabilities import requires_posix_modes
 
 from pathlib_next import LocalPath
-from pathlib_next import path as path_module
 from pathlib_next.mempath import MemPath
 from pathlib_next.uri import UriPath
 from pathlib_next.archive._zipentries import _strip_zip64_extra
+from pathlib_next import _names as names_module
 from pathlib_next.archive import _pack as archive_module
 from pathlib_next.archive import unpack_archive
 
@@ -397,7 +397,7 @@ def test_archive_recursive_copy_stays_inside_destination(tmp_path, fmt, monkeypa
     """A Windows destination refuses every child name it would read as a
     drive or a separator, so nothing lands outside it. Checked with the
     target's flavour forced, since the same archive is safe on POSIX."""
-    monkeypatch.setattr(path_module._utils, "is_windows_flavoured", lambda p: True)
+    monkeypatch.setattr(names_module, "is_windows_flavoured", lambda p: True)
     archive = _crafted(tmp_path / "src", fmt)
     work = tmp_path / "work"
     dest = work / "deep" / "dest"
@@ -560,7 +560,7 @@ def test_recursive_copy_refuses_a_backslash_child_on_a_windows_target(
     """The destination rule for `\\`, in the one format that can carry such
     a member on every platform: a Windows target would read it as a
     separator, so the copy refuses it and copies the rest."""
-    monkeypatch.setattr(path_module._utils, "is_windows_flavoured", lambda p: True)
+    monkeypatch.setattr(names_module, "is_windows_flavoured", lambda p: True)
     archive = _write_tar(
         tmp_path / "bs.tar", [("dir/back\\slash.txt", b"evil"), ("dir/ok.txt", b"ok")]
     )

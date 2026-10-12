@@ -4,7 +4,7 @@ import calendar as _calendar
 import stat as _stat
 import time as _time
 
-from ..utils import is_safe_child_name as _is_safe_child_name
+from .._names import is_safe_child_name as _is_safe_child_name
 from .._filestat import FileStat
 
 # Reply codes meaning "command not implemented" (RFC 959): the server lacks
@@ -23,7 +23,7 @@ def is_child_entry(name: str, facts: dict) -> bool:
     `cdir`/`pdir` entries describe the directory itself and its parent, and
     may carry any name -- RFC 3659's own example lists `tmp` and `/tmp` --
     so they are skipped by type, not only as `.`/`..`; a name that is not one
-    path component (`utils.is_safe_child_name()`) is not a child name either."""
+    path component (`providers.is_safe_child_name()`) is not a child name either."""
     kind = str(facts.get("type", "")).lower()
     return kind not in ("cdir", "pdir") and _is_safe_child_name(name)
 

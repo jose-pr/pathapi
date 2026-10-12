@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import typing as _ty
 
-from .. import utils as _utils
+from .. import _stubs
 
 __all__ = ["NativeChecksum"]
 
@@ -16,7 +16,7 @@ class NativeChecksum(_ty.Protocol):
     package (`io.BinaryOpen`, `fs.Stat`, `fs.Chmod`) -- most backends will
     never implement it, and the base `Path` ABC does not require it.
     `sync.PathSyncer` (and any other caller) is expected to try this
-    first and fall back to a streaming checksum (`utils.checksum.md5`/
+    first and fall back to a streaming checksum (`checksum.md5`/
     `sha256`) on `NotImplementedError`.
 
     Two methods, two different jobs: `supported_checksums()` is an
@@ -74,4 +74,4 @@ class NativeChecksum(_ty.Protocol):
         `supported_checksums()` not listing `algorithm` is advisory, not a
         substitute for this method enforcing its own contract.
         """
-        return _utils._unimplemented("checksum")
+        return _stubs._unimplemented("checksum")

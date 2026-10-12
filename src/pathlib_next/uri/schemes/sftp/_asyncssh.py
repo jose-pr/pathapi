@@ -27,7 +27,7 @@ import asyncssh as _asyncssh
 import asyncssh.packet as _packet
 
 from ... import Source
-from .... import utils as _utils
+from .... import providers as _providers
 from .... import FileStat
 from . import _checkfile, _errors
 from ._sshconfig import _DEFAULT_SSH_CONFIG, _check_host, _check_proxy_user
@@ -640,7 +640,7 @@ class _SyncSftpClient:
 
 
 # --- connection cache: keyed by (backend, source), no thread (one loop) --------
-# Not `utils.LRU`: an evicted entry is closed on the bridge loop, and concurrent
+# Not `providers.LRU`: an evicted entry is closed on the bridge loop, and concurrent
 # misses on one key wait for one connection instead of each opening their own.
 
 
@@ -1031,7 +1031,7 @@ async def _read_children(aclient, semaphore, current):
         # The server chooses these names: one that is not a single component
         # inside `current` must never become a child path (see
         # `SftpPath._scandir`). The walkers bypass `_scandir`, so they filter.
-        if not _utils.is_safe_child_name(entry.filename):
+        if not _providers.is_safe_child_name(entry.filename):
             continue
         attrs = getattr(entry, "attrs", None)
         listed = None

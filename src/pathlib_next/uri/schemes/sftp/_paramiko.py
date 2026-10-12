@@ -12,7 +12,7 @@ import paramiko as _paramiko
 import paramiko.sftp as _paramiko_sftp
 from paramiko.sftp_attr import SFTPAttributes as _SFTPAttributes
 
-from .... import utils as _utils
+from .... import providers as _providers
 from ... import Source
 from . import _checkfile, _errors
 
@@ -57,7 +57,7 @@ def _file_stamps(config_paths: "tuple[str, ...]") -> tuple:
     return tuple(stamps)
 
 
-@_utils.LRU
+@_providers.LRU
 def _load_ssh_config(
     config_paths: "tuple[str, ...]", stamps: tuple = ()
 ) -> "_SSHConfig | None":
@@ -357,7 +357,7 @@ def _client_is_alive(client) -> bool:
 # Thread-keyed (paramiko's client is bound to the thread owning its socket loop)
 # and module-level, so every SftpBackend shares it, keyed (backend, source,
 # thread_id). Evicted and invalidated clients have their transport closed.
-_CACHED_CLIENTS = _utils.LRU(
+_CACHED_CLIENTS = _providers.LRU(
     _create_sftpclient, maxsize=128, on_evict=_close_sftpclient
 )
 

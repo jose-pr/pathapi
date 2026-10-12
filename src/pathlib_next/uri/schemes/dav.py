@@ -6,8 +6,8 @@ import typing as _ty
 import urllib.parse as _urlparse
 import xml.etree.ElementTree as _ET
 
-from ... import utils as _utils
-from ...path import check_follow
+from ... import providers as _providers
+from ...providers import check_follow
 from ... import FileStat
 from .. import Uri
 from ..source import compose_uri
@@ -303,7 +303,7 @@ class DavPath(HttpPath):
         for name, is_dir, size, lm in members:
             # The href is untrusted: an entry such as `%2E%2E/` decodes to
             # "..", which let a recursive copy write outside its destination.
-            if _utils.is_safe_child_name(name):
+            if _providers.is_safe_child_name(name):
                 yield name, FileStat(
                     st_size=size, st_mtime=_httpdate.parsedate(lm), is_dir=is_dir
                 )

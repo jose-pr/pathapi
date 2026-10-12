@@ -39,13 +39,14 @@ NOT_THE_CORES = {
 # private module and listed in the public module's `__all__`.
 PROVIDER_HELPERS = [
     ("pathlib_next.archive", "detect_format"),
+    ("pathlib_next.providers", "CommitOnClose"),
+    ("pathlib_next.providers", "check_follow"),
+    ("pathlib_next.providers", "contains"),
+    ("pathlib_next.providers", "copy_error_predicate"),
 ]
 
 # (module, public name, the underscore name it replaced)
 PUBLIC_HELPERS = [
-    ("pathlib_next.path", "check_follow", "_check_follow"),
-    ("pathlib_next.path", "contains", "_contains"),
-    ("pathlib_next.utils._commit", "CommitOnClose", "_CommitOnClose"),
     ("pathlib_next.uri", "same_authority", "_same_authority"),
     ("pathlib_next.uri", "DerivedBackend", "_DerivedBackend"),
     ("pathlib_next.uri.source", "compose_uri", "_compose_uri"),

@@ -12,9 +12,9 @@ import urllib.parse as _urlparse
 import weakref as _weakref
 
 from .._tree import TreePath
-from ..utils import as_mode as _as_mode
-from ..utils import is_safe_child_name as _is_safe_child_name
-from ..utils._commit import CommitOnClose
+from .._permissions import as_mode as _as_mode
+from .._names import is_safe_child_name as _is_safe_child_name
+from .._commit import CommitOnClose
 from .._filestat import FileStat
 from ._backend import (
     DEFAULT_PORT,

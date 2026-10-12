@@ -51,9 +51,6 @@ EXPORTS = {
         "PathLike",
         "Pathname",
         "PurePathLike",
-        "check_follow",
-        "contains",
-        "copy_error_predicate",
     },
     "pathlib_next.fspath": {"LocalPath", "PosixPathname", "WindowsPathname"},
     "pathlib_next.archive": {
@@ -86,14 +83,18 @@ EXPORTS = {
     "pathlib_next.protocols.fs": {"Chmod", "FileStatLike", "Stat"},
     "pathlib_next.protocols.io": {"BinaryOpen"},
     "pathlib_next.protocols.checksum": {"NativeChecksum"},
-    "pathlib_next.utils": {
+    "pathlib_next.providers": {
+        "CommitOnClose",
         "LRU",
-        "UNCHANGED",
         "OfferedOnce",
+        "UNCHANGED",
         "as_error_handler",
         "as_error_predicate",
         "as_mode",
         "as_owner",
+        "check_follow",
+        "contains",
+        "copy_error_predicate",
         "is_safe_child_name",
         "is_windows_flavoured",
         "notimplemented",
@@ -162,13 +163,12 @@ def test_star_import_of_the_root_publishes_only_the_declared_names():
     exec("from pathlib_next import *", namespace)
     published = {name for name in namespace if name != "__builtins__"}
     assert published == set(pathlib_next.__all__)
-    for leaked in ("P", "PN", "annotations", "fspath", "path", "protocols", "utils"):
+    for leaked in ("P", "PN", "annotations", "fspath", "path", "protocols"):
         assert leaked not in published
 
 
 def test_names_that_were_never_documented_stay_importable_by_name():
     from pathlib_next.path import P, PN  # noqa: F401
-    from pathlib_next.utils import K, V  # noqa: F401
 
 
 def _header_import_lines():

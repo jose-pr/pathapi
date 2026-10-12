@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64 as _base64
 import errno as _errno
 
-from ... import utils as _utils
+from ... import providers as _providers
 from ... import FileStat
 from ._gitrepo import (  # noqa: F401  (re-exported)
     InsecureTransportWarning,
@@ -199,7 +199,7 @@ class GitHubPath(_RepoApiPath):
     def _scandir(self):
         for entry in self._entries(self.repo_path):
             # The API's names are not trusted to be one path component.
-            if not _utils.is_safe_child_name(entry["name"]):
+            if not _providers.is_safe_child_name(entry["name"]):
                 continue
             is_dir = entry["type"] == "dir"
             yield entry["name"], FileStat(

@@ -8,7 +8,7 @@ import typing as _ty
 import urllib.parse as _urlparse
 import warnings as _warnings
 
-from ... import utils as _utils
+from ... import providers as _providers
 from .. import Source, UriPath
 from ..source import compose_host
 from ._extras import import_or_stub as _import_or_stub
@@ -122,7 +122,7 @@ class BaseRepoBackend(object):
     # derived for itself (see `UriPath._supplied_backend()`).
     __slots__ = ("__weakref__",)
 
-    @_utils.notimplemented
+    @_providers.notimplemented
     def request(self, method, url, **kwargs):
         """Send one request to the API and return the `requests` response."""
 
@@ -223,7 +223,7 @@ class _RepoApiPath(UriPath):
     def _api_base(self) -> str:
         return getattr(self.backend, "api_base", None) or self._default_api_base()
 
-    @_utils.notimplemented
+    @_providers.notimplemented
     def _default_api_base(self) -> str:
         """The API root of this host when the backend names none."""
 

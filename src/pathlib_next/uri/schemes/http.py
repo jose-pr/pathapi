@@ -10,7 +10,7 @@ import time as _time
 import typing as _ty
 import urllib.parse as _urlparse
 
-from ... import utils as _utils
+from ... import providers as _providers
 from ... import FileStat
 from .. import DerivedBackend, UriPath
 from . import _httpdate
@@ -980,7 +980,7 @@ class HttpPath(UriPath):
             # is "".
             is_dir = entry.name.endswith("/")
             name = entry.name.removesuffix("/")
-            if not _utils.is_safe_child_name(name):
+            if not _providers.is_safe_child_name(name):
                 # A listing is untrusted: wsgidav renders its parent row as `<a href="..">` and a
                 # `<pre>` index can carry `./`. "." or ".." as a child would make `unlink()` DELETE
                 # the parent collection and `walk()` loop forever. Filtered here for every parser.

@@ -7,7 +7,7 @@ import urllib.parse as _urlparse
 from .._tree import TreePath
 from ..fspath import LocalPath
 from ..path import Path
-from ..utils import is_safe_child_name
+from .._names import is_safe_child_name
 from ._backend import (
     _ArchiveBackend,
     _UndecidedBackend,

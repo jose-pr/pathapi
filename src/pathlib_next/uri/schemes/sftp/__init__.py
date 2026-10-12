@@ -11,8 +11,8 @@ import threading as _threading
 import typing as _ty
 import weakref as _weakref
 
-from .... import utils as _utils
-from ....path import check_follow, contains, copy_error_predicate
+from .... import providers as _providers
+from ....providers import check_follow, contains, copy_error_predicate
 from .... import FileStat
 from ... import Source, Uri, UriPath, same_authority
 
@@ -165,7 +165,7 @@ class BaseSftpBackend(object):
         """
         return frozenset()
 
-    @_utils.notimplemented
+    @_providers.notimplemented
     def client(self, source: Source):
         """A ready-to-use SFTP client for `source`, cached or newly opened."""
 
@@ -174,7 +174,7 @@ class BaseSftpBackend(object):
         both real backends override it. The backend stays usable: the next
         `client()` call reconnects."""
 
-    @_utils.notimplemented
+    @_providers.notimplemented
     def checksum(self, path: "SftpPath", algorithm: str) -> str:
         """Backend-native digest for `path`'s content, e.g. via the
         filexfer draft's `check-file-handle` SFTP extension (implemented by
@@ -475,7 +475,7 @@ class SftpPath(UriPath):
             raise translated from error
         for attr in attrs:
             name = attr.filename
-            if not _utils.is_safe_child_name(name):
+            if not _providers.is_safe_child_name(name):
                 # A listing is untrusted: a name that is not a single component of this
                 # directory ("..", anything with "/") must never become a child, or rm(recursive)
                 # deletes outside the tree. Both backends' `listdir_attr()` arrive here.
@@ -585,7 +585,7 @@ class SftpPath(UriPath):
             raise
 
     def chmod(self, mode: int | str, *, follow_symlinks: bool = True):
-        mode = _utils.as_mode(mode)
+        mode = _providers.as_mode(mode)
         if follow_symlinks:
             return self._sftpclient.chmod(self.path, mode)
         if not self.backend.supports_lchmod:

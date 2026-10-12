@@ -645,7 +645,7 @@ def test_a_mempath_child_keeps_the_name_it_was_given(name):
 )
 @settings(max_examples=300)
 def test_a_name_called_safe_is_one_component_on_both_path_flavours(name):
-    from pathlib_next.utils import is_safe_child_name
+    from pathlib_next.providers import is_safe_child_name
 
     if is_safe_child_name(name):
         joined = pathlib.PurePosixPath("/d") / name

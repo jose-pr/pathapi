@@ -49,6 +49,3 @@ class CommitOnClose(_io.BytesIO):
             # Closed even when the commit fails, so `IOBase.__del__` does not
             # retry it (over newer content) at garbage collection.
             super().close()
-
-
-_CommitOnClose = CommitOnClose

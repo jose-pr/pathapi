@@ -9,7 +9,7 @@ import typing as _ty
 import warnings
 import zipfile
 
-from ..utils import _is_safe_name, is_windows_flavoured
+from .._names import _is_safe_name, is_windows_flavoured
 from .._filestat import FileStat
 
 if _ty.TYPE_CHECKING:

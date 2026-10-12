@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..utils import is_safe_child_name
+from .._names import is_safe_child_name
 
 
 def _is_safe_member_name(name: str) -> bool:

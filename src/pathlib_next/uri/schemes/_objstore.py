@@ -19,8 +19,8 @@ import tempfile as _tempfile
 import threading as _threading
 import typing as _ty
 
-from ... import utils as _utils
-from ...path import check_follow, copy_error_predicate
+from ... import providers as _providers
+from ...providers import check_follow, copy_error_predicate
 from ... import FileStat
 from .. import UriPath as _UriPath
 
@@ -171,8 +171,8 @@ def unreachable_keys(
             continue
         *directories, leaf = rest.split("/")
         marker = leaf == ""
-        if not all(_utils.is_safe_child_name(name) for name in directories) or (
-            not marker and not _utils.is_safe_child_name(leaf)
+        if not all(_providers.is_safe_child_name(name) for name in directories) or (
+            not marker and not _providers.is_safe_child_name(leaf)
         ):
             unreachable.append(key)
         elif marker and size:

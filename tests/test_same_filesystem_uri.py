@@ -9,7 +9,8 @@ import io
 
 import pytest
 
-from pathlib_next.path import _contains, _same_file
+from pathlib_next.path import _same_file
+from pathlib_next.providers import contains
 from pathlib_next.uri import UriPath, _DerivedBackend
 from pathlib_next import FileStat
 from pathlib_next.sync import PathSyncer, _paths_overlap
@@ -123,7 +124,7 @@ def _server():
 
 
 def _guards(a, b):
-    return _same_file(a, b), _contains(a.parent, b), _paths_overlap(a.parent, b.parent)
+    return _same_file(a, b), contains(a.parent, b), _paths_overlap(a.parent, b.parent)
 
 
 def test_dispatch():

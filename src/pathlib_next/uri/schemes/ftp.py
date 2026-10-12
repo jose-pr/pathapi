@@ -9,7 +9,7 @@ import netimps as _netimps
 from ...ftp import DEFAULT_TIMEOUT as DEFAULT_TIMEOUT
 from ...ftp import IDLE_PROBE_SECONDS as IDLE_PROBE_SECONDS
 from ...ftp import BaseFTPBackend, FTPBackend, FTPPath
-from ...utils import notimplemented as _notimplemented
+from ...providers import notimplemented as _notimplemented
 from .. import Source, Uri
 from ._delegate import DelegatingPath
 

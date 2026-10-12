@@ -4,7 +4,7 @@ import abc as _abc
 import stat as _stat
 import typing as _ty
 
-from .. import utils as _utils
+from .. import _permissions, _stubs
 
 __all__ = ["Chmod", "FileStatLike", "Stat"]
 
@@ -32,7 +32,7 @@ class Stat(_ty.Protocol):
 
     def stat(self, *, follow_symlinks=True) -> FileStatLike:
         """Return the stat of the path (a stub: `NotImplementedError`)."""
-        return _utils._unimplemented("stat")
+        return _stubs._unimplemented("stat")
 
     def lstat(self) -> FileStatLike:
         """
@@ -121,16 +121,16 @@ class Chmod(_ty.Protocol):
 
         Extension: `mode` may be a `str`, which is parsed as **octal**
         (`"0755"`, `"755"` and `0o755` all mean the same thing) -- see
-        `utils.as_mode()` for why the base is never left implicit.
+        `providers.as_mode()` for why the base is never left implicit.
 
         Every implementation normalizes its argument through
-        `utils.as_mode()` on entry. Unlike `symlink_to`/`chown`, `chmod` is
+        `providers.as_mode()` on entry. Unlike `symlink_to`/`chown`, `chmod` is
         overridden directly by each backend (each has real per-scheme logic
         -- version shims, capability gates, a `SITE CHMOD` command), so
         there is no single wrapper to hang the conversion on; the shared
         helper is what keeps the base from drifting between them.
         """
-        return _utils._unimplemented("chmod")
+        return _stubs._unimplemented("chmod")
 
     def lchmod(self, mode: int | str):
         """
@@ -154,7 +154,7 @@ class Chmod(_ty.Protocol):
         `os.chown`, an omitted attr field for SFTP `setstat`. Normalizing
         the caller's input is `chown()`'s job, not the primitive's.
         """
-        return _utils._unimplemented("_chown")
+        return _stubs._unimplemented("_chown")
 
     def _utime(self, *, atime: float | None = None, mtime: float | None = None) -> None:
         """Backend primitive: set the access and/or modification time of the
@@ -163,7 +163,7 @@ class Chmod(_ty.Protocol):
         sets what it can and ignores the rest; one that cannot set a time at
         all raises `NotImplementedError`, which is the default. `touch()` of an
         existing file and `PathSyncer(preserve_mtime=True)` call it."""
-        return _utils._unimplemented("_utime")
+        return _stubs._unimplemented("_utime")
 
     def chown(
         self,
@@ -186,10 +186,10 @@ class Chmod(_ty.Protocol):
         that can resolve one.
 
         Backends implement `_chown()` and receive an already-canonical pair
-        (see `utils.as_owner()`), so the "unchanged" semantics cannot drift
+        (see `providers.as_owner()`), so the "unchanged" semantics cannot drift
         between schemes.
         """
-        uid, gid = _utils.as_owner(uid, gid)
+        uid, gid = _permissions.as_owner(uid, gid)
         if uid is None and gid is None:
             # Nothing to change -- don't spend a round trip (or make a
             # backend decide what an all-sentinel call means).

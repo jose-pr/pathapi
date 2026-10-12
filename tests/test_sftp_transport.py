@@ -7,7 +7,7 @@ connect timeouts, asyncssh `_run()` request-vs-whole-operation timeouts and
 bridge-loop re-entry, dead/evicted/failed connections closed and replaced,
 the asyncssh connection-cache race, open-handle capping during recursive
 copy, `ssh_config` capture on direct construction, paramiko `Include` /
-`ProxyJump`, and `utils.LRU`'s eviction callback. Assertions are on what the
+`ProxyJump`, and `providers.LRU`'s eviction callback. Assertions are on what the
 server saw (credentials, live connections) or what the backend received.
 """
 
@@ -24,7 +24,7 @@ from waits import wait_until
 
 asyncssh = pytest.importorskip("asyncssh")
 
-from pathlib_next import utils  # noqa: E402
+from pathlib_next import providers  # noqa: E402
 from pathlib_next.uri import Source  # noqa: E402
 from pathlib_next.uri.schemes import sftp as sftp_pkg  # noqa: E402
 from pathlib_next.uri.schemes.sftp import _asyncssh as backend_mod  # noqa: E402
@@ -823,12 +823,12 @@ def test_paramiko_ssh_config_proxyjump_fails_loudly(home):
     assert opts["sock"] is sock
 
 
-# --- utils.LRU eviction callback ---------------------------------------------------
+# --- providers.LRU eviction callback ---------------------------------------------------
 
 
 def test_lru_on_evict_receives_every_dropped_value():
     evicted = []
-    lru = utils.LRU(
+    lru = providers.LRU(
         lambda x: [x], maxsize=2, on_evict=lambda k, v: evicted.append((k, v))
     )
     one, two = lru(1), lru(2)
@@ -848,7 +848,7 @@ def test_lru_on_evict_errors_do_not_break_lookups():
     def _explode(key, value):
         raise OSError("close failed")
 
-    lru = utils.LRU(lambda x: x * 2, maxsize=1, on_evict=_explode)
+    lru = providers.LRU(lambda x: x * 2, maxsize=1, on_evict=_explode)
     assert lru(1) == 2
     assert lru(2) == 4
     assert lru.invalidate(2) == 4
@@ -857,7 +857,7 @@ def test_lru_on_evict_errors_do_not_break_lookups():
 def test_lru_concurrent_misses_share_the_first_result_and_evict_the_rest():
     barrier = threading.Barrier(4)
     evicted = []
-    lru = utils.LRU(
+    lru = providers.LRU(
         lambda key: (barrier.wait(), object())[1],
         on_evict=lambda k, v: evicted.append(v),
     )

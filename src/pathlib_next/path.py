@@ -22,7 +22,8 @@ import time as _time
 import types as _types
 import typing as _ty
 
-from . import utils as _utils
+from . import _errorpolicy, _names, _stubs
+from ._errorpolicy import check_follow, copy_error_predicate
 from .protocols import BinaryOpen, Chmod, Stat
 from .protocols.io import _ASK_STAT
 from . import glob as _glob
@@ -34,9 +35,6 @@ __all__ = [
     "PathLike",
     "Pathname",
     "PurePathLike",
-    "check_follow",
-    "contains",
-    "copy_error_predicate",
 ]
 
 P = _ty.TypeVar("P", bound="Path")
@@ -112,7 +110,7 @@ class FsPathLike(_ty.Protocol):
     __slots__ = ()
 
     def __fspath__(self) -> str:
-        return _utils._unimplemented("__fspath__")
+        return _stubs._unimplemented("__fspath__")
 
 
 _os.PathLike.register(FsPathLike)
@@ -228,7 +226,7 @@ class Pathname(FsPathLike, _ty.Generic[_P]):
         or "x/y" was spliced in verbatim, so a caller relying on pathlib's
         validation of an untrusted file name got a path outside the
         directory. A bare ".." is accepted, also as pathlib does; use
-        `utils.is_safe_child_name()` to reject it. `with_stem()`/
+        `providers.is_safe_child_name()` to reject it. `with_stem()`/
         `with_suffix()` validate their result through here.
         """
         if not name or "/" in name or name == ".":
@@ -775,7 +773,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
     def __iter__(self):
         return self.iterdir()
 
-    @_utils.notimplemented
+    @_stubs.notimplemented
     def iterdir(self) -> "_ty.Iterator[_ty.Self]":
         """Yield path objects of the directory contents.
 
@@ -987,7 +985,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         from a loop.
 
         A listed name that is not one path component (`""`, `.`, `..`, or one
-        containing `/` or NUL; see `utils.is_safe_child_name()`) is left out
+        containing `/` or NUL; see `providers.is_safe_child_name()`) is left out
         of `dirnames` and `filenames`. `on_error`, when given, is called with
         a `ValueError` for it, `error.filename` naming the directory.
         """
@@ -1010,7 +1008,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
             dirnames: "list[str]" = []
             filenames: "list[str]" = []
             for name, stat in entries:
-                if not _utils.is_safe_child_name(name):
+                if not _names.is_safe_child_name(name):
                     # A listing is untrusted input: "..", "a/b" or "" would
                     # build a child outside `path` and send the walk there.
                     if on_error is not None:
@@ -1101,7 +1099,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
             except NotImplementedError:
                 pass
 
-    @_utils.notimplemented
+    @_stubs.notimplemented
     def _mkdir(self, mode: int): ...
 
     def mkdir(self, mode=0o777, parents=False, exist_ok=False):
@@ -1122,14 +1120,14 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
             if not exist_ok or not self.is_dir():
                 raise
 
-    @_utils.notimplemented
+    @_stubs.notimplemented
     def unlink(self, missing_ok=False):
         """
         Remove this file or link.
         If the path is a directory, use rmdir() instead.
         """
 
-    @_utils.notimplemented
+    @_stubs.notimplemented
     def rmdir(self):
         """
         Remove this directory.  The directory must be empty.
@@ -1176,7 +1174,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         `ValueError` before anything is removed; so does a callable's answer
         that is not one of the three, whatever `ignore_error` says. A listed
         name that is not one path component (`""`, `.`, `..`, or one
-        containing `/` or NUL; see `utils.is_safe_child_name()`) is never
+        containing `/` or NUL; see `providers.is_safe_child_name()`) is never
         joined onto the directory: it raises `ValueError`, offered to
         `ignore_error` as `(error, directory)` once per entry, and nothing is
         removed for it.
@@ -1184,7 +1182,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         # Same bool-or-callable normalization as copy()/PathSyncer, via the
         # shared helper. A supplied callable keeps rm()'s own `(error, path)`
         # arity -- arities differ per call site by design, see the helper.
-        _onerror = _utils.as_error_handler(ignore_error)
+        _onerror = _errorpolicy.as_error_handler(ignore_error)
         check_follow("follow_symlinks", follow_symlinks)
         check_follow("follow_binds", follow_binds)
 
@@ -1220,7 +1218,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
                 try:
                     # Checked before any child is built from the name; only the one-component
                     # rule, as a listed name is not rewritten by the platform that listed it.
-                    if not _utils.is_safe_child_name(name):
+                    if not _names.is_safe_child_name(name):
                         raise ValueError(
                             f"refusing unsafe child name {name!r} under {path}"
                         )
@@ -1409,12 +1407,12 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
                 continue
         return False
 
-    @_utils.notimplemented
+    @_stubs.notimplemented
     def rename(self, target: "_ty.Self | str"):
         """Rename this file or directory to the given target."""
         ...
 
-    @_utils.notimplemented
+    @_stubs.notimplemented
     def _symlink_to(
         self, target: "_ty.Self", target_is_directory: bool = False
     ) -> None:
@@ -1583,12 +1581,12 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
                         raise FileExistsError(target)
                 else:
                     target.mkdir()
-                windows_target = _utils.is_windows_flavoured(target)
+                windows_target = _names.is_windows_flavoured(target)
                 for child in children:
                     try:
                         # A listed name is untrusted: one that is not a single component inside
                         # `target` is refused (see the child-name paragraph of the docstring).
-                        if not _utils.is_safe_child_name(
+                        if not _names.is_safe_child_name(
                             child.name, windows=windows_target
                         ):
                             raise ValueError(
@@ -1947,17 +1945,6 @@ def _listing(path: Path) -> "_ty.Iterator[_ty.Tuple[str, _ty.Optional[FileStat]]
         yield entry.name, stat
 
 
-def copy_error_predicate(ignore_error, on_error) -> "_utils.OfferedOnce | None":
-    """The `(error, path) -> bool` predicate for `copy()`'s `on_error=`, or
-    None when it was not given. Raises `TypeError` when `ignore_error=` was
-    given too: a `copy()` override calls this before it copies anything."""
-    if on_error is None:
-        return None
-    if ignore_error is not None:
-        raise TypeError("copy() takes ignore_error or on_error, not both")
-    return _utils.as_error_predicate(on_error)
-
-
 class _PathInfo:
     """`Path.info`: the file type of one path, from at most one stat that
     follows links and one that does not, both kept on this object only."""
@@ -2150,17 +2137,6 @@ def _copy_mode(
         pass
 
 
-def check_follow(name: str, policy) -> None:
-    """Raise `ValueError` naming `name` unless `policy` is `True`, `False`,
-    `None` or a callable: what `rm()` accepts for `follow_symlinks=` and
-    `follow_binds=`. An `rm()` override calls it before removing anything."""
-    if not (policy is None or callable(policy) or isinstance(policy, bool)):
-        raise ValueError(f"{name} must be True, False, None or a callable")
-
-
-_check_follow = check_follow
-
-
 # How `move()` and `copy()` find a target standing to the source (`_relation`).
 _SAME = "same"  # one directory entry, spelled differently
 _OTHER = "other"  # another name of the same file (a hard link, a link to it)
@@ -2307,9 +2283,6 @@ def contains(src: Path, target: Path) -> bool:
         _OTHER,
         _INNER,
     )
-
-
-_contains = contains
 
 
 def _same_file(src: Path, target: Path, *, identity: bool = True) -> bool:

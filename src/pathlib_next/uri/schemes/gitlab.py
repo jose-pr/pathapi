@@ -4,7 +4,7 @@ import errno as _errno
 import itertools as _itertools
 import urllib.parse as _urlparse
 
-from ... import utils as _utils
+from ... import providers as _providers
 from ... import FileStat
 from .http import _server_size
 from ._gitrepo import (  # noqa: F401  (re-exported)
@@ -221,7 +221,7 @@ class GitLabPath(_RepoApiPath):
             return
         for entry in _itertools.chain((first,), entries):
             # The API's names are not trusted to be one path component.
-            if not _utils.is_safe_child_name(entry["name"]):
+            if not _providers.is_safe_child_name(entry["name"]):
                 continue
             # The tree listing carries no size: a blob is known to be a file
             # (and a tree a directory), which is all `walk()` and `glob()` ask.

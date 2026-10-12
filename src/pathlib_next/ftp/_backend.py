@@ -10,8 +10,8 @@ import time as _time
 import typing as _ty
 import weakref as _weakref
 
-from ..utils import LRU as _LRU
-from ..utils import notimplemented as _notimplemented
+from .._lru import LRU as _LRU
+from .._stubs import notimplemented as _notimplemented
 
 DEFAULT_PORT = 21
 """The control port `FTPBackend` connects to when it is not given one. `tls`

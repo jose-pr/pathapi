@@ -4,9 +4,8 @@ import contextlib as _contextlib
 import errno as _errno
 import typing as _ty
 
-from ..path import check_follow
-from ..utils import as_error_handler
-from ..utils._commit import CommitOnClose
+from .._errorpolicy import as_error_handler, check_follow
+from .._commit import CommitOnClose
 from ._names import _normalize_member_name
 from ._snapshot import _Snapshot
 

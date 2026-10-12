@@ -697,7 +697,7 @@ def _identity(path: _Globable) -> "tuple | None":
 
 def _child(directory: _Globable, name: str, stat=None) -> _Globable:
     """The child of `directory` called exactly `name`, a name its listing
-    returned. A caller that has not checked it with `utils.is_safe_child_name()`
+    returned. A caller that has not checked it with `providers.is_safe_child_name()`
     must, since a `UriPath` joined with `/` resolves `..` and splits at `/`."""
     if getattr(directory, "_pop_stat_hint", None) is not None:
         # UriPath: the name is attached as one segment, and seeding the

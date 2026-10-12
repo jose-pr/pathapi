@@ -15,7 +15,7 @@ Names are imported from the module named in the heading of the section that
 documents them; the root `pathlib_next` re-exports the core ones ("Package
 root"). A module or name that starts with an underscore is private: where this
 file names one (`pathlib_next.uri.schemes._gitrepo`,
-`pathlib_next.uri.schemes.archive._base`, `pathlib_next.utils._commit`) it names the public names to use from
+`pathlib_next.uri.schemes.archive._base`) it names the public names to use from
 it, and nothing else there is contract. The file has two parts: the core
 (`Package root` through `Testing helpers`) and the URI layer (`pathlib_next.uri`
 and every scheme, from `URIs`), each readable without the other; the closing
@@ -26,7 +26,7 @@ keep the core and the URI layer under separate headings.
 
 | Extra | Installs | Needed for |
 | --- | --- | --- |
-| *(none)* | — | `Path`, `LocalPath`, `MemPath`, `FTPPath`, `ZipPath`, `TarPath`, `ArchivePath`, `utils`, `testing`, `uripath` on local paths |
+| *(none)* | — | `Path`, `LocalPath`, `MemPath`, `FTPPath`, `ZipPath`, `TarPath`, `ArchivePath`, `sync`, `glob`, `checksum`, `providers`, `testing`, `uripath` on local paths |
 | `uri` | `uritools`, `netimps>=0.4.0,<0.5` | `pathlib_next.uri` and **every** URI scheme (`file:`, `data:`, `ftp(s):`, archives included) |
 | `http` | `requests` + `uri` | `http(s):`, `dav(s):`, `github:`, `gitlab:`, `git:` |
 | `sftp` | `paramiko` + `uri` | `sftp:` (paramiko backend) |
@@ -48,7 +48,7 @@ keep the core and the URI layer under separate headings.
 imported implicitly.
 
 The root, `path`, `fspath`, `protocols` (and its `fs`, `io`, `checksum`),
-`utils`, `utils.stat` and `utils.glob` declare `__all__` with exactly the names
+`glob`, `checksum` and `providers` declare `__all__` with exactly the names
 this file documents for them, so `from pathlib_next import *` publishes those
 and nothing else (`P` and `PN` are not among them; they stay importable from
 `pathlib_next.path`).
@@ -241,7 +241,7 @@ Base class for I/O paths.
   child. Consumed by `walk()`, `glob()`, `rm(recursive=True)` and
   `PathSyncer`; override it when the listing call already returns metadata.
   `None` means "unknown", never "missing". Never yield a name that is not
-  one path component (`utils.is_safe_child_name()`: `""`, `.`, `..`, or one
+  one path component (`providers.is_safe_child_name()`: `""`, `.`, `..`, or one
   containing `/` or NUL): every URI scheme's listing skips such a name, the
   `UriPath` default included, and an override must too.
 - `glob()` —
@@ -317,7 +317,7 @@ Base class for I/O paths.
   (`is_junction()`) are listed in `filenames` and not entered, as
   `pathlib.Path.walk()` does; with it they are entered, and nothing protects
   the walk from a loop (`LocalPath` included: its walk is this one).
-  A listed name that is not one path component (`utils.is_safe_child_name()`)
+  A listed name that is not one path component (`providers.is_safe_child_name()`)
   is left out of `dirnames`/`filenames`; `on_error`, when given, is called
   with a `ValueError` for it (`error.filename` is the directory).
 - `touch()` — `FileExistsError` when `exist_ok=False`
@@ -352,7 +352,7 @@ Base class for I/O paths.
   symlinks or bindings, so the keywords decide nothing there; `sftp:`
   uses its concurrent native walk (asyncssh backend) only for the default
   `follow_symlinks=False` and runs this walk otherwise. A listed name that is not one path component
-  (`utils.is_safe_child_name()` with `windows=False`: the names come from
+  (`providers.is_safe_child_name()` with `windows=False`: the names come from
   the directory's own listing) is never joined onto it: it raises
   `ValueError`, offered to `ignore_error` as `(error, directory)` once per
   entry, and nothing is removed for it.
@@ -391,7 +391,7 @@ Base class for I/O paths.
     the archive as it was.
   - A recursive copy refuses any child name that would not stay inside
     `target` — `..`, and when the target reads names with Windows rules
-    (`utils.is_windows_flavoured()`) `\`, `:`, a trailing dot or space, and
+    (`providers.is_windows_flavoured()`) `\`, `:`, a trailing dot or space, and
     the reserved device names (`CON`, `PRN`, `AUX`, `NUL`, `COM1`-`COM9`,
     `LPT1`-`LPT9`, with or without an extension). The names come from a
     listing the destination does not control (an archive, a remote index,
@@ -475,13 +475,12 @@ class FsPathLike(Protocol):
 `Protocol` with `__fspath__()`.
 **`PathLike`** = `str | Path`; **`PurePathLike`** = `str | Pathname`.
 
-### For path implementers (`pathlib_next.path`, `pathlib_next.archive`, `pathlib_next.utils._commit`)
+### For path implementers (`pathlib_next.path`, `pathlib_next.providers`, `pathlib_next.archive`)
 
 The names a class built on `Path` overrides or calls beyond the stubs above,
 in one place: the built-in schemes use all of them, so they are contract. The
-four helpers were underscore names (`_check_follow`, `_contains`,
-`_detect_format`, `_CommitOnClose`); those spellings stay importable and are
-the same objects.
+helpers are imported from `pathlib_next.providers`, except `detect_format`,
+which is in `pathlib_next.archive`.
 
 ```python
 class Pathname(FsPathLike):
@@ -1066,7 +1065,7 @@ class Chmod(Protocol):
 ```
 
 `chmod()` (stub; every
-implementation normalizes through `utils.as_mode()`, so `"0755"` works),
+implementation normalizes through `providers.as_mode()`, so `"0755"` works),
 `lchmod()`, `_chown()` (stub, receives a
 canonical pair) / `chown()` —
 `None` or `-1` leaves a field unchanged, `int` is an id, `str` a name; an
@@ -1117,7 +1116,7 @@ it cannot return a genuine content digest under exactly that algorithm
 multipart ETag); callers catch only `NotImplementedError`. `supported_checksums()` (default
 empty) is advisory and never raises.
 
-## Utilities (`pathlib_next.utils`)
+## Utilities (`pathlib_next.glob`, `pathlib_next.sync`, `pathlib_next.checksum`, `pathlib_next.providers`)
 
 ### `glob` (`pathlib_next.glob`)
 
@@ -1377,7 +1376,7 @@ members with a part Windows would rewrite or send to a device
 copies, other links — to nothing, to a directory, or in a loop — skipped
 with `UserWarning`).
 
-### Helpers (`pathlib_next.utils`)
+### Helpers (`pathlib_next.providers`)
 
 ```python
 def is_safe_child_name(name, *, windows=False) -> bool: ...
