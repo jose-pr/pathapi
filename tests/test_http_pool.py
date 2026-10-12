@@ -224,8 +224,11 @@ def test_a_timeout_on_a_reused_connection_is_not_sent_again(transport):
 def test_each_thread_has_its_own_connection(transport):
     with Wire() as wire:
         get(transport, wire.url + "/").read()
-        threading.Thread(target=lambda: get(transport, wire.url + "/").read()).start()
+        worker = threading.Thread(target=lambda: get(transport, wire.url + "/").read())
+        worker.start()
         assert wait_until(lambda: wire.connections == 2)
+        # Its reply is read before the server goes away.
+        worker.join()
         get(transport, wire.url + "/").read()
     assert wire.connections == 2
 
