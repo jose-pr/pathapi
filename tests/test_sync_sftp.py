@@ -15,7 +15,7 @@ import pytest
 import pathlib_next
 from pathlib_next.mempath import MemPath
 from pathlib_next.uri.schemes.sftp import BaseSftpBackend, SftpPath
-from pathlib_next.utils.sync import PathAndStat, PathSyncer
+from pathlib_next.sync import PathAndStat, PathSyncer
 
 
 def checksum(entry: PathAndStat):

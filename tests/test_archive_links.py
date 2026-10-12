@@ -22,7 +22,7 @@ pytest.importorskip("uritools")
 from pathlib_next import LocalPath
 from pathlib_next.uri import UriPath
 from pathlib_next.archive import MAX_LINKS
-from pathlib_next.utils.sync import PathSyncer
+from pathlib_next.sync import PathSyncer
 
 #: (name, kind, payload): a file's bytes, or a link's text.
 TREE = [

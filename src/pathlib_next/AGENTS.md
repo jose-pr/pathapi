@@ -41,7 +41,7 @@ keep the core and the URI layer under separate headings.
 `import pathlib_next` exposes `Path`, `Pathname`, `LocalPath`,
 `PosixPathname`, `WindowsPathname`, `FileStat`, the protocols `Stat`, `Chmod`,
 `BinaryOpen`, `FsPathLike`, the aliases `PathLike`/`PurePathLike`, and the modules
-`glob` (`pathlib_next.glob`) and `sync` (`utils.sync`). `FTPPath`, `ZipPath`,
+`glob` (`pathlib_next.glob`) and `sync` (`pathlib_next.sync`). `FTPPath`, `ZipPath`,
 `TarPath` and `ArchivePath` are exported too, imported on first use so that
 `import pathlib_next` loads neither `ftplib` nor `ssl` nor any archive code.
 `MemPath` lives in `pathlib_next.mempath`; `pathlib_next.testing` is never
@@ -1155,7 +1155,7 @@ as a compiled regular expression, cached), `glob.ANY_PATTERN` (a lone `*`) and
 `glob.WILDCARD_PATTERN` (a wildcard character), both compiled expressions, and
 `glob.WILCARD_PATTERN`, the old misspelling of `WILDCARD_PATTERN`.
 
-### `sync` (`pathlib_next.utils.sync`)
+### `sync` (`pathlib_next.sync`)
 
 ```python
 class PathSyncer:

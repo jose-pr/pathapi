@@ -24,7 +24,7 @@ from pathlib_next import LocalPath
 from pathlib_next.mempath import MemPath
 from pathlib_next.uri import UriPath
 from pathlib_next.uri.schemes.archive._base import ArchiveUri
-from pathlib_next.utils.sync import PathSyncer
+from pathlib_next.sync import PathSyncer
 
 RUNAWAY = 100_000
 

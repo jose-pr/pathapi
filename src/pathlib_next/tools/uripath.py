@@ -9,7 +9,7 @@ import sys
 import typing as _ty
 
 from .. import LocalPath
-from ..utils.sync import PathSyncer, SyncEvent
+from ..sync import PathSyncer, SyncEvent
 
 try:
     from ..uri import Source, UriPath

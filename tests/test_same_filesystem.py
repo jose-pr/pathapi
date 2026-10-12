@@ -11,7 +11,7 @@ import pytest
 from pathlib_next import Path
 from pathlib_next.mempath import MemPath
 from pathlib_next.path import _contains, _same_file
-from pathlib_next.utils.sync import PathSyncer, _paths_overlap
+from pathlib_next.sync import PathSyncer, _paths_overlap
 
 
 class FrontPath(Path):

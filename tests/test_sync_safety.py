@@ -15,7 +15,7 @@ from capabilities import requires_fifos, requires_junctions
 import pathlib_next
 from pathlib_next.mempath import MemPath
 from pathlib_next.tools import uripath
-from pathlib_next.utils.sync import PathSyncer, SyncEvent
+from pathlib_next.sync import PathSyncer, SyncEvent
 
 IS_WINDOWS = sys.platform == "win32"
 
@@ -899,7 +899,7 @@ def test_real_fifo_is_skipped(tmp_path):
 
 # --- a listed entry is never "missing" ---------------------------------------
 
-from pathlib_next.utils.sync import PathAndStat
+from pathlib_next.sync import PathAndStat
 
 
 def _dangling_layout(tmp_path):
@@ -1361,7 +1361,7 @@ import re
 import time
 
 from pathlib_next.mempath import MemPathBackend
-from pathlib_next.utils.sync import _is_leftover, _temp_sibling
+from pathlib_next.sync import _is_leftover, _temp_sibling
 
 DAY = 24 * 60 * 60
 
@@ -1873,7 +1873,7 @@ def _mem_tree():
     ],
 )
 def test_overlap_sees_one_mempath_tree_under_another_spelling(spelling, overlap):
-    from pathlib_next.utils.sync import _paths_overlap
+    from pathlib_next.sync import _paths_overlap
 
     backend, root = _mem_tree()
     other = MemPath(spelling, backend=backend)

@@ -568,7 +568,7 @@ def test_walk_of_a_prefix_with_dot_segment_keys_stays_inside_it(moto_s3):
 
 def test_sync_remove_missing_leaves_the_neighbours_of_a_dot_segment_key(moto_s3):
     from pathlib_next.mempath import MemPath
-    from pathlib_next.utils.sync import PathSyncer, SyncEvent
+    from pathlib_next.sync import PathSyncer, SyncEvent
 
     for key in _DOT_KEYS:
         moto_s3.put_object(Bucket="bkt", Key=key, Body=b"x")
@@ -591,7 +591,7 @@ def test_sync_remove_missing_leaves_the_neighbours_of_a_dot_segment_key(moto_s3)
 
 def test_sync_from_a_prefix_with_dot_segment_keys_copies_only_its_own_tree(moto_s3):
     from pathlib_next.mempath import MemPath
-    from pathlib_next.utils.sync import PathSyncer, SyncEvent
+    from pathlib_next.sync import PathSyncer, SyncEvent
 
     for key in _DOT_KEYS:
         moto_s3.put_object(Bucket="bkt", Key=key, Body=b"x")
@@ -1052,7 +1052,7 @@ def test_supported_checksums_asks_the_store_nothing():
 
 
 def test_syncing_an_unchanged_tree_to_another_prefix_reads_no_object(moto_s3):
-    from pathlib_next.utils.sync import PathSyncer
+    from pathlib_next.sync import PathSyncer
 
     for index in range(100):
         moto_s3.put_object(

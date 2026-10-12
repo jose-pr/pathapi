@@ -22,7 +22,7 @@ from pathlib_next.uri import UriPath
 from pathlib_next.archive import _snapshot as _base
 from pathlib_next.archive._zip import _ZipBackend
 from pathlib_next.archive._zipentries import _NO_LINK
-from pathlib_next.utils.sync import PathSyncer
+from pathlib_next.sync import PathSyncer
 
 DERIVATIONS = 2
 MEMBERS = 1000

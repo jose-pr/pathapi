@@ -1062,7 +1062,7 @@ def test_paramiko_checksum_rejects_digest_of_wrong_length(monkeypatch):
 
 
 def test_pathsyncer_uses_sftp_native_checksum_no_open_when_supported():
-    from pathlib_next.utils.sync import PathSyncer, SyncEvent
+    from pathlib_next.sync import PathSyncer, SyncEvent
 
     class _RecordingChecksumBackend(_ChecksumCapableBackend):
         def __init__(self, digests):
@@ -1110,7 +1110,7 @@ def test_pathsyncer_sftp_falls_back_to_streaming_when_backend_unsupported(
 ):
     import netimps
 
-    from pathlib_next.utils.sync import PathSyncer
+    from pathlib_next.sync import PathSyncer
 
     # PathSyncer asks `is_local()` of "sftp://host", which resolves "host":
     # answer "does not resolve" without a real DNS query.
@@ -1149,7 +1149,7 @@ def test_pathsyncer_sftp_falls_back_to_streaming_when_backend_unsupported(
     syncer._hook = lambda s, t, e, dry: events.append(e)
     syncer.sync(source, target)
 
-    from pathlib_next.utils.sync import SyncEvent
+    from pathlib_next.sync import SyncEvent
 
     assert SyncEvent.Copy not in events
 

@@ -4,7 +4,7 @@
 
 ::: pathlib_next.glob
 
-::: pathlib_next.utils.sync
+::: pathlib_next.sync
 
 ::: pathlib_next.FileStat
 

@@ -34,7 +34,7 @@ from .fspath import LocalPath, PosixPathname, WindowsPathname
 from .path import FsPathLike, Path, PathLike, Pathname, PurePathLike
 from .protocols import BinaryOpen, Chmod, Stat
 from . import glob as glob
-from .utils import sync as sync
+from . import sync as sync
 from ._filestat import FileStat
 
 _uri_unavailable: "ImportError | None" = None

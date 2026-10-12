@@ -108,7 +108,7 @@ def test_is_local_false_for_nonresolving_hostname(monkeypatch):
     # netimps.resolve()'s own docstring). This is an improvement over the
     # old socket.gethostbyname()-based implementation, which raised
     # socket.gaierror for the same input -- callers like
-    # utils.sync._is_local() that used to catch that exception and treat
+    # sync._is_local() that used to catch that exception and treat
     # it as "local" (safe-default fallback) now get a real answer instead.
     #
     # The resolver is stubbed with that "not found" answer: a real lookup

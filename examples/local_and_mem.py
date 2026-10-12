@@ -9,7 +9,7 @@ import tempfile
 from pathlib_next import Path, glob
 from pathlib_next.mempath import MemPath
 from pathlib_next.uri import Query, Source
-from pathlib_next.utils.sync import PathAndStat, PathSyncer
+from pathlib_next.sync import PathAndStat, PathSyncer
 
 
 def local_path_basics(root: Path):

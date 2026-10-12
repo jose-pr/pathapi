@@ -16,7 +16,7 @@ import pytest
 from pathlib_next import LocalPath
 from pathlib_next.mempath import MemPath
 from pathlib_next import FileStat
-from pathlib_next.utils.sync import PathSyncer, SyncEvent
+from pathlib_next.sync import PathSyncer, SyncEvent
 
 UNSAFE = ["a/b", "..", ".", ""]
 

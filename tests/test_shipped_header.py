@@ -279,7 +279,7 @@ def test_the_header_has_blocks_for_both_layers():
     assert len(found) > 40
     assert {m for _t, mods, _l, _s in found for m in mods} >= {
         "pathlib_next.path",
-        "pathlib_next.utils.sync",
+        "pathlib_next.sync",
         "pathlib_next.uri",
         "pathlib_next.uri.schemes.sftp",
     }

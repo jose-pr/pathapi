@@ -505,7 +505,7 @@ def test_zip_rename_str_destination_is_a_literal_member_name(zip_archive, name):
 def test_sync_overlap_sees_one_archive_member_under_another_spelling(
     zip_archive, inner_source, spelling, overlap
 ):
-    from pathlib_next.utils.sync import PathSyncer, _paths_overlap
+    from pathlib_next.sync import PathSyncer, _paths_overlap
 
     source = UriPath(_zip_uri(zip_archive, inner_source))
     target = UriPath(spelling.format(outer=zip_archive.as_uri()))

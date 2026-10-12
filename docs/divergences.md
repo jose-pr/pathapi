@@ -205,7 +205,7 @@ because a behavioral decision needed documenting:
   **Hard contract, not a style choice:** an implementation MUST raise
   `NotImplementedError` (never return a value) when it cannot produce a
   genuine content digest under the requested `algorithm` -- this is what
-  keeps `PathSyncer` (see its class docstring, `utils/sync.py`) from ever
+  keeps `PathSyncer` (see its class docstring, `sync.py`) from ever
   comparing a native digest to a streamed one under a mismatched algorithm,
   or trusting something hash-shaped but not actually a content hash (e.g.
   S3's ETag for a multipart upload, which `S3Path.checksum()` refuses for

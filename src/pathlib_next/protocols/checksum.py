@@ -15,7 +15,7 @@ class NativeChecksum(_ty.Protocol):
     Optional per-`Path`-subclass, like every other protocol in this
     package (`io.BinaryOpen`, `fs.Stat`, `fs.Chmod`) -- most backends will
     never implement it, and the base `Path` ABC does not require it.
-    `utils.sync.PathSyncer` (and any other caller) is expected to try this
+    `sync.PathSyncer` (and any other caller) is expected to try this
     first and fall back to a streaming checksum (`utils.checksum.md5`/
     `sha256`) on `NotImplementedError`.
 

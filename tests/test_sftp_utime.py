@@ -13,7 +13,7 @@ pytest.importorskip("asyncssh")
 from pathlib_next import LocalPath  # noqa: E402
 from pathlib_next.uri.schemes.sftp import SftpPath  # noqa: E402
 from pathlib_next.uri.schemes.sftp import _asyncssh as backend_mod  # noqa: E402
-from pathlib_next.utils.sync import PathSyncer, SyncEvent  # noqa: E402
+from pathlib_next.sync import PathSyncer, SyncEvent  # noqa: E402
 
 try:
     import paramiko

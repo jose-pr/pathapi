@@ -271,7 +271,7 @@ mutant(
 )
 mutant(
     "sync-overlap-check-dropped",
-    "utils/sync.py",
+    "sync.py",
     "            elif _paths_overlap(source.path, target.path):\n",
     "            elif False:\n",
     "tests/test_sync_safety.py::test_source_inside_target_raises_and_source_survives",
@@ -279,7 +279,7 @@ mutant(
 )
 mutant(
     "sync-missing-source-root-is-no-error",
-    "utils/sync.py",
+    "sync.py",
     "            error = None\n            if not source.exists():\n",
     "            error = None\n            if False:\n",
     "tests/test_sync_safety.py::test_missing_root_source_raises_and_keeps_target",
@@ -439,7 +439,7 @@ mutant(
 )
 mutant(
     "sync-accepts-unsafe-child-names",
-    "utils/sync.py",
+    "sync.py",
     "                if _utils.is_safe_child_name(name, windows=windows_target):\n",
     "                if True:\n",
     "tests/test_destructive_safety.py::test_sync_never_merges_names_windows_rewrites",
@@ -447,7 +447,7 @@ mutant(
 )
 mutant(
     "sync-replaces-a-non-empty-target-directory",
-    "utils/sync.py",
+    "sync.py",
     "        if self.remove_missing or target.is_symlink() or not target.is_dir():\n",
     "        if True:\n",
     "tests/test_low_sync.py::test_dir_to_file_without_remove_missing_raises_and_keeps_tree",
@@ -535,7 +535,7 @@ mutant(
 )
 mutant(
     "sync-removes-extras-without-remove-missing",
-    "utils/sync.py",
+    "sync.py",
     "            if self.remove_missing and not target_absent:\n",
     "            if not target_absent:\n",
     "tests/test_sync_safety.py::test_root_target_symlink_is_followed",
@@ -543,7 +543,7 @@ mutant(
 )
 mutant(
     "sync-leaves-its-temp-file-after-a-failed-copy",
-    "utils/sync.py",
+    "sync.py",
     "                                temp.unlink(missing_ok=True)\n",
     "                                pass\n",
     "tests/test_sync_safety.py::test_unlink_refused_during_the_fallback_keeps_the_old_version",
@@ -738,7 +738,7 @@ mutant(
 )
 mutant(
     "sync-overlap-is-not-resolved-through-links",
-    "utils/sync.py",
+    "sync.py",
     "    return _relation(source, target, follow=True, identity=False) is not None\n",
     "    return _relation(source, target, follow=False, identity=False) is not None\n",
     "tests/test_sync_safety.py::test_overlap_hidden_behind_symlink_is_detected",

@@ -21,7 +21,7 @@ from urllib.parse import quote
 
 from pathlib_next import Path
 from pathlib_next.uri import UriPath
-from pathlib_next.utils.sync import PathAndStat, PathSyncer
+from pathlib_next.sync import PathAndStat, PathSyncer
 
 
 def checksum(entry: PathAndStat):

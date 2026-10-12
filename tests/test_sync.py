@@ -5,7 +5,7 @@ import pytest
 import pathlib_next
 from pathlib_next.mempath import MemPath
 from pathlib_next import FileStat
-from pathlib_next.utils.sync import PathAndStat, PathSyncer
+from pathlib_next.sync import PathAndStat, PathSyncer
 
 
 def checksum(entry: PathAndStat):
@@ -45,7 +45,7 @@ def test_sync_skips_matching_checksum(tmp_path):
     events = []
     syncer._hook = lambda s, t, e, dry: events.append(e)
     syncer.sync(source, target)
-    from pathlib_next.utils.sync import SyncEvent
+    from pathlib_next.sync import SyncEvent
 
     # a.txt already has the same checksum -- no Copy event for it, only
     # for sub/b.txt.
@@ -433,7 +433,7 @@ def test_sync_symlink_preserve_fires_symlink_event(tmp_path):
     syncer._hook = lambda s, t, e, dry: events.append(e)
     syncer.sync(source, target)
 
-    from pathlib_next.utils.sync import SyncEvent
+    from pathlib_next.sync import SyncEvent
 
     assert SyncEvent.Symlink in events
 

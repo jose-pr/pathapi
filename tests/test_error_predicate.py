@@ -10,7 +10,7 @@ import pytest
 
 from pathlib_next import LocalPath
 from pathlib_next.mempath import MemPath
-from pathlib_next.utils.sync import PathSyncer
+from pathlib_next.sync import PathSyncer
 
 
 class Stop(Exception):

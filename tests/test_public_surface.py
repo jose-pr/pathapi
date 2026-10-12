@@ -112,7 +112,7 @@ EXPORTS = {
 # Documented too, in modules that declare no `__all__` of their own.
 ALSO_IMPORTABLE = {
     "pathlib_next.mempath": {"MemPath", "MemPathBackend", "MemFile"},
-    "pathlib_next.utils.sync": {"PathSyncer", "SyncEvent", "PathAndStat"},
+    "pathlib_next.sync": {"PathSyncer", "SyncEvent", "PathAndStat"},
     "pathlib_next.utils.archive": {"make_archive", "unpack_archive"},
     "pathlib_next.testing": {
         "DIRECTORY_ERRORS",

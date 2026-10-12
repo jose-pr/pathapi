@@ -35,7 +35,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from pathlib_next import Uri, UriPath, LocalPath
 from pathlib_next.mempath import MemPath, MemPathBackend
-from pathlib_next.utils.sync import PathSyncer
+from pathlib_next.sync import PathSyncer
 
 SCHEMA = "pathlib_next.bench/1"
 MAX_SAMPLES = 100

@@ -17,7 +17,7 @@ from capabilities import can_make_junctions, requires_junctions
 
 import pathlib_next
 from pathlib_next.mempath import MemPath
-from pathlib_next.utils.sync import PathSyncer
+from pathlib_next.sync import PathSyncer
 
 LocalPath = pathlib_next.LocalPath
 

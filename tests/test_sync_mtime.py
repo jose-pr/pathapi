@@ -13,8 +13,8 @@ import pytest
 from pathlib_next import LocalPath
 from pathlib_next.mempath import MemPath
 from pathlib_next import FileStat
-from pathlib_next.utils.sync import PathAndStat, PathSyncer, SyncEvent
-from pathlib_next.utils.sync import _quick_check_in_sync, _same_mtime
+from pathlib_next.sync import PathAndStat, PathSyncer, SyncEvent
+from pathlib_next.sync import _quick_check_in_sync, _same_mtime
 
 #: 2001-09-09 01:46:40 UTC, a time no copy or touch made today can produce.
 OLD = 1_000_000_000

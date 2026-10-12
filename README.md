@@ -144,7 +144,7 @@ print(UriPath("github://github.com/owner/repo/README.md?ref=main").read_text())
 ```python
 from pathlib_next import Path
 from pathlib_next.mempath import MemPath
-from pathlib_next.utils.sync import PathSyncer
+from pathlib_next.sync import PathSyncer
 
 source = MemPath("/site")
 (source / "css").mkdir(parents=True)

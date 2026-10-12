@@ -200,7 +200,7 @@ def test_another_scheme_splits_a_key_on_slashes_only():
 
 
 def test_sync_overlap_sees_a_local_path_and_its_file_uri(tmp_path):
-    from pathlib_next.utils.sync import PathSyncer, _paths_overlap
+    from pathlib_next.sync import PathSyncer, _paths_overlap
 
     tree = tmp_path / "tree"
     (tree / "inner").mkdir(parents=True)

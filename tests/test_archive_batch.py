@@ -19,7 +19,7 @@ from pathlib_next.mempath import MemPath
 from pathlib_next.uri import UriPath
 from pathlib_next.archive import _zipentries as zip_module
 from pathlib_next.archive._zip import _ZipBackend
-from pathlib_next.utils.sync import PathSyncer
+from pathlib_next.sync import PathSyncer
 
 
 def _zip_uri(path, inner=""):

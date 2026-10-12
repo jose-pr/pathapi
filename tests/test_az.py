@@ -312,7 +312,7 @@ def test_az_checksum_of_a_blob_without_a_content_md5_is_refused(
 
 
 def test_az_syncing_an_unchanged_tree_downloads_no_blob(az_server, az_api_server):
-    from pathlib_next.utils.sync import PathSyncer
+    from pathlib_next.sync import PathSyncer
 
     path, _ = az_server
     state = az_api_server.state

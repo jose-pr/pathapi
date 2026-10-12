@@ -339,7 +339,7 @@ def test_gs_checksum_of_an_object_without_an_md5_is_refused(gs_server, gcs_api_s
 
 
 def test_gs_syncing_an_unchanged_tree_downloads_no_object(gs_server, gcs_api_server):
-    from pathlib_next.utils.sync import PathSyncer
+    from pathlib_next.sync import PathSyncer
 
     path, _ = gs_server
     state = gcs_api_server.state
