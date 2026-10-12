@@ -16,10 +16,8 @@ from .... import utils as _utils
 from ... import Source
 from . import _checkfile, _errors
 
-# The sentinel + path normalization are paramiko-free and now live in
-# ``_sshconfig`` so the asyncssh backend and the scheme ``__init__`` can use them
-# without importing paramiko. Re-exported here for backward compatibility (older
-# code did ``from ._paramiko import _DEFAULT_SSH_CONFIG``).
+# The sentinel and path normalization are paramiko-free and live in `_sshconfig`;
+# re-exported here so `from ._paramiko import _DEFAULT_SSH_CONFIG` keeps working.
 from ._sshconfig import (
     _DEFAULT_SSH_CONFIG,
     _Sentinel,
@@ -356,13 +354,9 @@ def _client_is_alive(client) -> bool:
     return transport is not None and bool(transport.is_active())
 
 
-# Thread-keyed: paramiko's client is bound to the thread that owns its
-# socket-reading loop, so the cache key includes thread_id (unlike
-# asyncssh's single-shared-loop backend, which doesn't need that
-# dimension). Module-level (not per-backend-instance) so every SftpBackend
-# instance shares the same cache, keyed by (backend, source, thread_id) --
-# matches this module's pre-package-split behavior exactly. Evicted and
-# invalidated clients have their transport closed (`_close_sftpclient`).
+# Thread-keyed (paramiko's client is bound to the thread owning its socket loop)
+# and module-level, so every SftpBackend shares it, keyed (backend, source,
+# thread_id). Evicted and invalidated clients have their transport closed.
 _CACHED_CLIENTS = _utils.LRU(
     _create_sftpclient, maxsize=128, on_evict=_close_sftpclient
 )
@@ -421,10 +415,8 @@ class SftpBackend(_checkfile.CheckFileSftpBackend):
     DEFAULT_TIMEOUT = 30.0
 
     def _wire_open_mode(self, mode: str) -> str:
-        # paramiko derives SFTP_FLAG_WRITE (and the file object's
-        # writability) from "w"/"a"/"+" only, so a bare "x" created a file
-        # that could not be written. "w" adds CREATE|TRUNC, which EXCL makes
-        # moot: the file must not exist yet.
+        # paramiko derives SFTP_FLAG_WRITE only from "w"/"a"/"+", so a bare "x" created a
+        # file that could not be written. "w" adds CREATE|TRUNC, moot under EXCL.
         if "x" in mode and "w" not in mode:
             return "w" + mode
         return mode
@@ -552,19 +544,16 @@ class SftpBackend(_checkfile.CheckFileSftpBackend):
                 _CACHED_CLIENTS.discard(*key)
 
     def _check_file_request(self, client, file, algorithm: str) -> bytes:
-        # Not part of paramiko's public API -- the same low-level
-        # `_request(CMD_EXTENDED, ...)` primitive paramiko itself uses for
-        # `posix-rename@openssh.com`. SSH_FX_OP_UNSUPPORTED arrives as
-        # NotImplementedError, any other failure status as OSError.
+        # Not paramiko public API: the `_request(CMD_EXTENDED, ...)` primitive it uses for
+        # `posix-rename@openssh.com`. SSH_FX_OP_UNSUPPORTED arrives as NotImplementedError,
+        # any other failure status as OSError.
         msg_type, msg = client._request(
             _paramiko_sftp.CMD_EXTENDED,
             _checkfile.EXTENSION,
             file.handle,
             algorithm,  # hash-algorithm-list: just the one wanted
-            # int64(...): a plain `int` would be packed as a 32-bit int by
-            # Message.add() (see paramiko's _async_request arg-type
-            # dispatch) -- the wire format requires uint64 for
-            # start-offset/length.
+            # int64(...): a plain `int` is packed as 32 bits by Message.add(), and the wire
+            # format wants uint64 for start-offset and length.
             _paramiko_sftp.int64(_checkfile.START_OFFSET),
             _paramiko_sftp.int64(_checkfile.LENGTH),
             _checkfile.BLOCK_SIZE,

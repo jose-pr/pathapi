@@ -48,14 +48,9 @@ START_OFFSET = 0
 LENGTH = 0
 BLOCK_SIZE = 0
 
-# What one connection has shown about the extension, keyed by the backend's
-# client object itself (WeakKeyDictionary, not id(): a plain dict keyed by
-# id() risks a stale hit if a client is GC'd and a new, unrelated object gets
-# the same id(), a real risk since both backends' connection caches evict and
-# replace clients over a long-running process). A reconnect (a new client
-# object) starts with a clean slate. Neither library exposes the extension
-# list the server sent during version negotiation, so an actual attempt
-# against a real file is the only source of truth.
+# What one connection has shown about the extension, keyed by the client object in
+# a WeakKeyDictionary (an id() could hit a stale entry once a client is collected).
+# A reconnect starts clean: only an attempt on a real file shows what the server has.
 _SUPPORT_CACHE: "_weakref.WeakKeyDictionary" = _weakref.WeakKeyDictionary()
 _SUPPORT_LOCK = _thread.Lock()
 
