@@ -66,6 +66,9 @@ class LoopbackFtp:
         self.sock = socket.socket()
         self.sock.bind(("127.0.0.1", 0))
         self.sock.listen(64)
+        # accept() polls the stop flag: closing the socket from another thread
+        # does not wake it on Linux, and close() would wait out its join.
+        self.sock.settimeout(0.05)
         self.port = self.sock.getsockname()[1]
         self._thread = threading.Thread(target=self._accept, daemon=True)
         self._thread.start()
@@ -84,11 +87,11 @@ class LoopbackFtp:
 
     def close(self):
         self._stop = True
+        self._thread.join(timeout=10)
         try:
             self.sock.close()
         except OSError:
             pass
-        self._thread.join(timeout=5)
 
     def __enter__(self):
         return self
@@ -101,8 +104,11 @@ class LoopbackFtp:
         while not self._stop:
             try:
                 conn, _ = self.sock.accept()
+            except socket.timeout:
+                continue
             except OSError:
                 return
+            conn.settimeout(None)
             cid += 1
             with self._lock:
                 self.total += 1
