@@ -3,13 +3,91 @@ http_server fixture) serving fixture_tree's directory listing. Skipped
 entirely if the http extra isn't installed.
 """
 
+import http.server
 import io
+import typing
 
 import pytest
 
 pytest.importorskip("requests")
 
 from pathlib_next.uri import UriPath
+
+
+class _Request(typing.NamedTuple):
+    method: str
+    path: str
+    headers: dict
+    body: bytes
+
+
+class _Site:
+    """A loopback site that logs every request in `seen`. `serve()` puts a
+    resource at a path: GET and HEAD answer it, DELETE removes it and every
+    other method is accepted. A path that is not served is a 404."""
+
+    def __init__(self):
+        self.seen: "list[_Request]" = []
+        self.resources: "dict[str, tuple[int, str, bytes]]" = {}
+        self.base = ""
+
+    def serve(self, path, body=b"", content_type="text/plain", status=200):
+        self.resources[path] = (status, content_type, body)
+
+    def index(self, path, *rows):
+        """A directory index of `rows` (the text between `<pre>` tags)."""
+        html = f"<html><body><pre>{''.join(rows)}</pre></body></html>"
+        self.serve(path, html.encode(), "text/html; charset=utf-8")
+
+    def sent(self, *methods):
+        return [r for r in self.seen if r.method in methods]
+
+    def url(self, path):
+        return self.base + path
+
+
+def _site_handler(site):
+    class Handler(http.server.BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def log_message(self, format, *args):
+            pass
+
+        def _serve(self):
+            length = int(self.headers.get("Content-Length") or 0)
+            body = self.rfile.read(length) if length else b""
+            site.seen.append(
+                _Request(self.command, self.path, dict(self.headers.items()), body)
+            )
+            payload, content_type = b"", None
+            if self.command in ("GET", "HEAD"):
+                status, content_type, payload = site.resources.get(
+                    self.path, (404, "text/plain", b"")
+                )
+            elif self.command == "DELETE":
+                status = 204 if site.resources.pop(self.path, None) else 404
+            else:
+                status = 204
+            self.send_response(status)
+            if content_type:
+                self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(payload)
+
+        do_GET = do_HEAD = do_DELETE = do_PUT = do_PATCH = do_POST = _serve
+
+    return Handler
+
+
+@pytest.fixture
+def site(serve_http):
+    """A `_Site` served on the loopback interface."""
+    site = _Site()
+    with serve_http(_site_handler(site)) as base:
+        site.base = base
+        yield site
 
 
 def test_iterdir_lists_files_and_dirs(http_server):
@@ -138,138 +216,83 @@ def test_http_write_post_configured(monkeypatch):
     assert recorded[0] == ("POST", "http://example.com/file.txt", b"world")
 
 
-def test_http_unlink(monkeypatch):
-    recorded = []
+def test_http_unlink(site):
+    site.serve("/file.txt", b"hello")
 
-    class MockResponse:
-        status_code = 200
-        content = b""
-        reason = "OK"
+    UriPath(site.url("/file.txt")).unlink()
 
-        def raise_for_status(self):
-            pass
-
-    def mock_request(self, method, url, **kwargs):
-        recorded.append((method, url))
-        return MockResponse()
-
-    import requests
-
-    monkeypatch.setattr(requests.Session, "request", mock_request)
-    from pathlib_next.uri.schemes.http import HttpPath
-
-    # unlink() first asks is_dir() (it refuses a directory); stub it so
-    # only the DELETE is recorded.
-    monkeypatch.setattr(HttpPath, "is_dir", lambda self: False)
-
-    p = UriPath("http://example.com/file.txt")
-    p.unlink()
-
-    assert len(recorded) == 1
-    assert recorded[0] == ("DELETE", "http://example.com/file.txt")
+    assert [(r.method, r.path) for r in site.sent("DELETE")] == [
+        ("DELETE", "/file.txt")
+    ]
 
 
-def test_http_rmdir_empty(monkeypatch):
-    recorded = []
-    from pathlib_next.uri.schemes.http import HttpPath
-
-    class MockResponse:
-        status_code = 200
-        content = b""
-        text = ""
-        reason = "OK"
-
-        def raise_for_status(self):
-            pass
-
-    def mock_request(self, method, url, **kwargs):
-        recorded.append((method, url))
-        return MockResponse()
-
-    import requests
-
-    monkeypatch.setattr(requests.Session, "request", mock_request)
-    monkeypatch.setattr(HttpPath, "_listdir", lambda self: [])
-    monkeypatch.setattr(HttpPath, "is_dir", lambda self: True)
-
-    p = UriPath("http://example.com/dir/")
-    p.rmdir()
-
-    assert len(recorded) == 1
-    assert recorded[0] == ("DELETE", "http://example.com/dir/")
+def test_http_unlink_of_a_missing_path_raises(site):
+    with pytest.raises(FileNotFoundError):
+        UriPath(site.url("/gone.txt")).unlink()
+    assert [r.path for r in site.sent("DELETE")] == ["/gone.txt"]
 
 
-def test_http_rmdir_not_empty(monkeypatch):
+def test_http_unlink_missing_ok_accepts_a_delete_answered_404(site):
+    UriPath(site.url("/gone.txt")).unlink(missing_ok=True)
+    assert [r.path for r in site.sent("DELETE")] == ["/gone.txt"]
+
+
+def test_http_rmdir_empty(site):
+    site.index("/dir/")
+
+    UriPath(site.url("/dir/")).rmdir()
+
+    assert [r.path for r in site.sent("DELETE")] == ["/dir/"]
+    # The listing was read before the directory was removed.
+    methods = [r.method for r in site.seen]
+    assert methods.index("GET") < methods.index("DELETE")
+
+
+def test_http_rmdir_not_empty(site):
     import errno
-    from pathlib_next.uri.schemes.http import HttpPath, _FileEntry
 
-    monkeypatch.setattr(
-        HttpPath, "_listdir", lambda self: [_FileEntry("a.txt", None, None, None)]
-    )
-    monkeypatch.setattr(HttpPath, "is_dir", lambda self: True)
+    site.index("/dir/", '<a href="a.txt">a.txt</a>\n')
 
-    p = UriPath("http://example.com/dir/")
     with pytest.raises(OSError) as excinfo:
-        p.rmdir()
+        UriPath(site.url("/dir/")).rmdir()
+
     assert excinfo.value.errno == errno.ENOTEMPTY
+    assert site.sent("DELETE") == []
 
 
-def test_http_unlink_on_directory_sends_no_delete(monkeypatch):
+def test_http_unlink_on_directory_sends_no_delete(site):
     import errno
-    import requests
-    from pathlib_next.uri.schemes.http import HttpPath
 
-    recorded = []
-    monkeypatch.setattr(
-        requests.Session,
-        "request",
-        lambda self, method, url, **kw: recorded.append((method, url)),
-    )
-    monkeypatch.setattr(HttpPath, "is_dir", lambda self: True)
+    site.index("/dir/", '<a href="a.txt">a.txt</a>\n')
 
-    p = UriPath("http://example.com/dir/")
     with pytest.raises(IsADirectoryError) as excinfo:
-        p.unlink()
+        UriPath(site.url("/dir/")).unlink()
+
     assert excinfo.value.errno == errno.EISDIR
-    assert recorded == []
+    assert site.sent("DELETE") == []
 
 
-def test_http_rmdir_ignores_dot_entries_in_listing(monkeypatch):
+def test_http_rmdir_ignores_dot_entries_in_listing(site):
     # An empty directory whose listing carries its own "."/".." rows is
     # still empty -- rmdir() must DELETE it, not raise ENOTEMPTY.
-    from pathlib_next.uri.schemes.http import HttpPath, _FileEntry
+    site.index("/dir/", '<a href="..">..</a>\n', '<a href="./">./</a>\n')
 
-    deleted = []
-    monkeypatch.setattr(
-        HttpPath,
-        "_listdir",
-        lambda self: [
-            _FileEntry("..", None, None, None),
-            _FileEntry("./", None, None, None),
-        ],
-    )
-    monkeypatch.setattr(HttpPath, "is_dir", lambda self: True)
-    monkeypatch.setattr(
-        HttpPath, "_delete", lambda self, missing_ok=False: deleted.append(self)
-    )
+    UriPath(site.url("/dir/")).rmdir()
 
-    p = UriPath("http://example.com/dir/")
-    p.rmdir()
-    assert deleted == [p]
+    assert [r.path for r in site.sent("DELETE")] == ["/dir/"]
 
 
-def test_http_rmdir_on_file_raises_notadirectoryerror(monkeypatch):
+def test_http_rmdir_on_file_raises_notadirectoryerror(site):
     # rmdir() on a *file* must raise NotADirectoryError (matching
     # os.rmdir()'s ENOTDIR contract), not silently DELETE it -- an empty
     # directory's listing and a file whose body parses to zero entries are
-    # indistinguishable from _listdir() alone.
-    from pathlib_next.uri.schemes.http import HttpPath
+    # indistinguishable from the listing alone.
+    site.serve("/file.txt", b"")
 
-    monkeypatch.setattr(HttpPath, "is_dir", lambda self: False)
-
-    p = UriPath("http://example.com/file.txt")
     with pytest.raises(NotADirectoryError):
-        p.rmdir()
+        UriPath(site.url("/file.txt")).rmdir()
+
+    assert site.sent("DELETE") == []
 
 
 def test_http_write_stream_marks_closed_on_upload_failure(monkeypatch):
@@ -609,20 +632,13 @@ def test_listing_without_sizes_gives_no_fabricated_stat(http_server, fixture_tre
     assert sub.is_dir()
 
 
-def test_approximate_listing_size_is_not_a_stat_hint(monkeypatch):
-    import time
-
-    from pathlib_next.uri.schemes.http import HttpPath, _FileEntry
-
-    monkeypatch.setattr(
-        HttpPath,
-        "_listdir",
-        lambda self: [
-            _FileEntry("f.txt", time.gmtime(0), 1228, None, False),
-            _FileEntry("g.txt", time.gmtime(0), 7, None, True),
-        ],
+def test_approximate_listing_size_is_not_a_stat_hint(site):
+    site.index(
+        "/d/",
+        '<a href="f.txt">f.txt</a>   01-Jan-1970 00:00  1.2K\n',
+        '<a href="g.txt">g.txt</a>   01-Jan-1970 00:00  7\n',
     )
-    entries = dict(HttpPath("http://example.com/d/")._scandir())
+    entries = dict(UriPath(site.url("/d/"))._scandir())
     assert entries["f.txt"].is_file() and not entries["f.txt"].size_known
     assert entries["g.txt"].st_size == 7 and entries["g.txt"].size_known
 
@@ -643,38 +659,22 @@ def test_listing_parser_marks_human_readable_sizes_approximate():
     assert listing["b.txt"].size_exact is True
 
 
-def test_patch_append_offset_ignores_listing_hint(monkeypatch):
-    import time
-
+def test_patch_append_offset_ignores_listing_hint(site):
     import requests
 
-    from pathlib_next.uri.schemes.http import HttpPath, _FileEntry
-
-    recorded = []
-
-    def mock_request(self, method, url, **kwargs):
-        recorded.append((method, kwargs.get("headers") or {}))
-        if method == "HEAD":
-            return _MockHttpResponse(200, headers={"Content-Length": "1000"}, url=url)
-        return _MockHttpResponse(204, url=url)
-
-    monkeypatch.setattr(requests.Session, "request", mock_request)
-    monkeypatch.setattr(
-        HttpPath,
-        "_listdir",
-        lambda self: [_FileEntry("f.txt", time.gmtime(0), 1228, None, True)],
-    )
-    root = UriPath("http://example.com/d/").with_session(
+    site.index("/d/", '<a href="f.txt">f.txt</a>   01-Jan-1970 00:00  1228\n')
+    site.serve("/d/f.txt", b"x" * 1000)
+    root = UriPath(site.url("/d/")).with_session(
         requests.Session(), append_mode="patch"
     )
     child = next(root.iterdir())
     with child.open("ab") as f:
         f.write(b"hello!")
-    patches = [headers for method, headers in recorded if method == "PATCH"]
-    assert patches == [{"Content-Range": "bytes 1000-1005/*"}]
+    patches = [r.headers["Content-Range"] for r in site.sent("PATCH")]
+    assert patches == ["bytes 1000-1005/*"]
 
     # An empty append to an existing file sends no (invalid) range.
-    recorded.clear()
+    site.seen.clear()
     with child.open("ab"):
         pass
-    assert [method for method, _headers in recorded] == ["HEAD"]
+    assert [r.method for r in site.seen] == ["HEAD"]

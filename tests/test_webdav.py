@@ -30,7 +30,7 @@ class _FakeResponse:
 
     def raise_for_status(self):
         if self.status_code >= 400:
-            raise requests.HTTPError(str(self.status_code))
+            raise requests.HTTPError(str(self.status_code), response=self)
 
     def close(self):
         pass
@@ -245,18 +245,39 @@ def test_unlink_sends_delete():
     assert session.calls[-1][:2] == ("DELETE", "http://host/docs/readme.txt")
 
 
-def test_unlink_missing_ok():
+def test_unlink_of_a_missing_path_with_missing_ok_sends_no_delete():
     session = _FakeSession()
-    session.responses[("DELETE", "http://host/missing.txt")] = _FakeResponse(404)
     _dav("dav://host/missing.txt", session).unlink(missing_ok=True)
+    assert [method for method, _url, _kwargs in session.calls] == ["PROPFIND"]
 
 
-def test_unlink_missing_without_missing_ok_raises():
+def test_unlink_of_a_missing_path_without_missing_ok_raises_and_sends_no_delete():
     session = _FakeSession()
-    session.responses[("DELETE", "http://host/missing.txt")] = _FakeResponse(404)
-    p = _dav("dav://host/missing.txt", session)
     with pytest.raises(FileNotFoundError):
-        p.unlink()
+        _dav("dav://host/missing.txt", session).unlink()
+    assert [method for method, _url, _kwargs in session.calls] == ["PROPFIND"]
+
+
+def _vanishing_file(session):
+    """A file that the PROPFIND finds and the DELETE then does not."""
+    session.responses[("PROPFIND", "http://host/docs/readme.txt", "0")] = _FakeResponse(
+        207, _MULTISTATUS_FILE
+    )
+    session.responses[("DELETE", "http://host/docs/readme.txt")] = _FakeResponse(404)
+    return _dav("dav://host/docs/readme.txt", session)
+
+
+def test_unlink_with_missing_ok_accepts_a_delete_answered_404():
+    session = _FakeSession()
+    _vanishing_file(session).unlink(missing_ok=True)
+    assert session.calls[-1][:2] == ("DELETE", "http://host/docs/readme.txt")
+
+
+def test_unlink_without_missing_ok_raises_for_a_delete_answered_404():
+    session = _FakeSession()
+    with pytest.raises(FileNotFoundError):
+        _vanishing_file(session).unlink()
+    assert session.calls[-1][:2] == ("DELETE", "http://host/docs/readme.txt")
 
 
 def test_unlink_collection_raises_without_delete():
