@@ -178,7 +178,7 @@ mutant(
 
 mutant(
     "copy-link-onto-itself",
-    "path.py",
+    "path/_path.py",
     "        if _same_file(self, target):\n",
     "        if False:\n",
     "tests/test_copy_move_fidelity.py::test_copying_a_link_onto_itself_is_refused_and_keeps_the_link",
@@ -186,7 +186,7 @@ mutant(
 )
 mutant(
     "copy-link-replaces-existing-link",
-    "path.py",
+    "path/_path.py",
     "            target.unlink(missing_ok=True)\n        target.symlink_to(link,",
     "            pass\n        target.symlink_to(link,",
     "tests/test_copy_move_fidelity.py::test_copying_a_link_replaces_a_link_at_the_target_when_asked_to",
@@ -194,7 +194,7 @@ mutant(
 )
 mutant(
     "copy-link-onto-directory",
-    "path.py",
+    "path/_path.py",
     "            if target_stat.is_dir() and not target_stat.is_symlink():\n                raise IsADirectoryError(target)\n            if not overwrite:",
     "            if False:\n                raise IsADirectoryError(target)\n            if not overwrite:",
     "tests/test_copy_move_fidelity.py::test_copying_a_link_never_removes_a_directory_at_the_target",
@@ -202,7 +202,7 @@ mutant(
 )
 mutant(
     "copy-link-without-readlink",
-    "path.py",
+    "path/_path.py",
     "        if not callable(readlink):\n            raise NotImplementedError(",
     "        if False:\n            raise NotImplementedError(",
     "tests/test_copy_move_fidelity.py::test_a_link_of_a_backend_that_cannot_read_links_is_not_copied_as_content",
@@ -263,7 +263,7 @@ mutant(
 )
 mutant(
     "rm-follows-a-directory-symlink",
-    "path.py",
+    "path/_path.py",
     '                        if policy == "follow" and child.is_dir():\n',
     "                        if child.is_dir():\n",
     "tests/test_destructive_safety.py::test_file_uri_rm_recursive_does_not_follow_directory_symlink",
@@ -327,7 +327,7 @@ mutant(
 )
 mutant(
     "copy-replaces-an-existing-target-by-default",
-    "path.py",
+    "path/_path.py",
     "            if not overwrite:\n                raise FileExistsError(target)\n\n        # Open the source",
     "            if False:\n                raise FileExistsError(target)\n\n        # Open the source",
     "tests/test_parity_io.py::test_copy_overwrite",
@@ -335,7 +335,7 @@ mutant(
 )
 mutant(
     "path-same-filesystem-always-true",
-    "path.py",
+    "path/_path.py",
     '        return getattr(self, "_backend", None) is getattr(other, "_backend", None)\n',
     "        return True\n",
     "tests/test_same_filesystem.py::test_the_default_tells_two_stores_apart_and_one_store_together",
@@ -423,7 +423,7 @@ mutant(
 )
 mutant(
     "copy-leaves-a-half-written-target",
-    "path.py",
+    "path/_path.py",
     "                if created:\n",
     "                if False:\n",
     "tests/test_destructive_safety.py::test_copy_failing_mid_stream_removes_partial_target",
@@ -431,7 +431,7 @@ mutant(
 )
 mutant(
     "copy-recursive-accepts-unsafe-child-names",
-    "path.py",
+    "path/_path.py",
     "                    if not _names.is_safe_child_name(\n",
     "                    if False and not _names.is_safe_child_name(\n",
     "tests/test_destructive_safety.py::test_copy_recursive_never_merges_names_windows_rewrites",
@@ -455,7 +455,7 @@ mutant(
 )
 mutant(
     "symlink-to-force-swallows-unlink-errors-of-files",
-    "path.py",
+    "path/_path.py",
     "                if not self.is_dir():\n                    raise error\n",
     "                if False:\n                    raise error\n",
     "tests/test_path_gaps.py::test_symlink_to_force_reports_a_failed_unlink_of_a_file_and_makes_no_link",
@@ -463,7 +463,7 @@ mutant(
 )
 mutant(
     "move-directory-over-file-removes-the-directory",
-    "path.py",
+    "path/_path.py",
     "                    if not src_stat.is_dir():\n                        raise IsADirectoryError(target)\n",
     "                    if False:\n                        raise IsADirectoryError(target)\n",
     "tests/test_destructive_safety.py::test_move_file_onto_directory_refuses_and_keeps_both",
@@ -479,7 +479,7 @@ mutant(
 )
 mutant(
     "rm-follow-none-removes-the-entry",
-    "path.py",
+    "path/_removal.py",
     '    if policy is None:\n        return "ignore"\n',
     '    if policy is None:\n        return "rm"\n',
     "tests/test_destructive_safety.py::test_rm_ignore_leaves_them_in_place",
@@ -583,7 +583,7 @@ mutant(
 )
 mutant(
     "rm-missing-ok-is-ignored",
-    "path.py",
+    "path/_path.py",
     "        if stat is None:\n            if not missing_ok:\n",
     "        if stat is None:\n            if True:\n",
     "tests/test_parity_io.py::test_rm_missing_ok",
@@ -591,7 +591,7 @@ mutant(
 )
 mutant(
     "is-dir-binding-never-reports-a-binding",
-    "path.py",
+    "path/_path.py",
     "                if test():\n                    return True\n",
     "                if test():\n                    return False\n",
     "tests/test_destructive_safety.py::test_rm_recursive_does_not_descend_into_junction",
@@ -600,7 +600,7 @@ mutant(
 )
 mutant(
     "copy-onto-itself",
-    "path.py",
+    "path/_path.py",
     "        if _same_file(src, target, identity=False):\n",
     "        if False:\n",
     "tests/test_destructive_safety.py::test_copy_onto_itself_raises_and_keeps_content",
@@ -608,7 +608,7 @@ mutant(
 )
 mutant(
     "copy-into-itself",
-    "path.py",
+    "path/_path.py",
     "            if contains(src, target):\n",
     "            if False:\n",
     "tests/test_destructive_safety.py::test_mem_copy_directory_into_a_relative_spelling_of_itself_refuses",
@@ -616,7 +616,7 @@ mutant(
 )
 mutant(
     "copy-opens-the-source-after-removing-the-target",
-    "path.py",
+    "path/_path.py",
     '        with src.open("rb") as input:\n',
     '        with (target.unlink(missing_ok=True) if target_exists else None, src.open("rb"))[1] as input:\n',
     "tests/test_destructive_safety.py::test_copy_missing_source_leaves_existing_target_intact",
@@ -624,7 +624,7 @@ mutant(
 )
 mutant(
     "copy-applies-a-placeholder-mode",
-    "path.py",
+    "path/_transfer.py",
     '        if getattr(stat, "mode_known", True) and stat.st_mode:\n',
     "        if stat.st_mode:\n",
     "tests/test_io_parity.py::test_copy_from_synthetic_mode_backend_leaves_target_writable",
@@ -632,7 +632,7 @@ mutant(
 )
 mutant(
     "move-replaces-an-existing-target-by-default",
-    "path.py",
+    "path/_path.py",
     "            if target_stat is not None and not overwrite:\n                raise FileExistsError(target)\n            if relation == _INNER:",
     "            if False:\n                raise FileExistsError(target)\n            if relation == _INNER:",
     "tests/test_destructive_safety.py::test_move_directory_onto_its_ancestor_without_overwrite_raises_file_exists",
@@ -640,7 +640,7 @@ mutant(
 )
 mutant(
     "move-onto-itself",
-    "path.py",
+    "path/_path.py",
     "        target_stat = None\n        if relation != _SAME:\n",
     "        target_stat = None\n        if True:\n",
     "tests/test_destructive_safety.py::test_move_directory_onto_itself_keeps_the_tree",
@@ -648,7 +648,7 @@ mutant(
 )
 mutant(
     "rm-descends-into-a-junction-or-mount",
-    "path.py",
+    "path/_path.py",
     "                        if child.is_dir_binding():\n",
     "                        if False:\n",
     "tests/test_destructive_safety.py::test_rm_recursive_does_not_descend_into_junction",
@@ -657,7 +657,7 @@ mutant(
 )
 mutant(
     "rm-root-junction-or-mount-is-emptied",
-    "path.py",
+    "path/_path.py",
     '            binding = self.is_dir_binding()\n            policy = _follow_policy(follow_binds, self) if binding else "follow"\n',
     '            binding = False\n            policy = _follow_policy(follow_binds, self) if binding else "follow"\n',
     "tests/test_destructive_safety.py::test_rm_recursive_on_junction_itself_removes_only_the_link",
@@ -666,7 +666,7 @@ mutant(
 )
 mutant(
     "rm-builds-a-child-from-an-unsafe-listed-name",
-    "path.py",
+    "path/_path.py",
     '                    if not _names.is_safe_child_name(name):\n                        raise ValueError(\n                            f"refusing unsafe child name {name!r} under {path}"\n                        )\n                    child = _entries._child(path, name)',
     '                    if False:\n                        raise ValueError(\n                            f"refusing unsafe child name {name!r} under {path}"\n                        )\n                    child = _entries._child(path, name)',
     "tests/test_listing_names.py::test_rm_recursive_offers_each_unsafe_name_to_ignore_error",
@@ -674,7 +674,7 @@ mutant(
 )
 mutant(
     "walk-yields-an-unsafe-listed-name",
-    "path.py",
+    "path/_path.py",
     "                if not _names.is_safe_child_name(name):\n                    # A listing is untrusted input",
     "                if False:\n                    # A listing is untrusted input",
     "tests/test_listing_names.py::test_walk_omits_unsafe_names_and_reports_them_to_on_error",

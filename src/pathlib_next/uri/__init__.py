@@ -23,7 +23,8 @@ else:
     TypeAlias = _ty.Any
 
 from .. import providers as _providers
-from ..path import Path, Pathname, _name_stem, _name_suffix
+from ..path import Path, Pathname
+from ..path._pure import _name_stem, _name_suffix
 from .. import FileStat
 from .query import Query
 from .source import (

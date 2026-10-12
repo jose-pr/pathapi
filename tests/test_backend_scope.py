@@ -16,7 +16,7 @@ import threading
 
 import pytest
 
-from pathlib_next.path import _same_file
+from pathlib_next.path._relation import _same_file
 from pathlib_next.uri import Uri, UriPath
 
 requests = pytest.importorskip("requests")

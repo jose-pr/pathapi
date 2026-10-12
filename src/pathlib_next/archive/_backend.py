@@ -8,7 +8,8 @@ import tempfile as _tempfile
 import threading as _threading
 import weakref as _weakref
 
-from ..path import Path, _local_file
+from ..path import Path
+from ..path._relation import _local_file
 from .._filestat import FileStat
 from ._snapshot import _Snapshot
 

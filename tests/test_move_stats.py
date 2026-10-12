@@ -7,7 +7,7 @@ import collections
 
 import pytest
 
-from pathlib_next import path as _path
+from pathlib_next.path import _transfer
 from pathlib_next.mempath import MemPath
 
 
@@ -106,7 +106,7 @@ def test_nothing_handed_on_outlives_the_call(overwrite):
     except FileExistsError:
         pass
 
-    assert _path._HANDED.get() is None
+    assert _transfer._HANDED.get() is None
 
 
 def test_a_refused_move_hands_nothing_on():
@@ -115,17 +115,17 @@ def test_a_refused_move_hands_nothing_on():
     with pytest.raises(OSError):
         src.move(src / "sub")
 
-    assert _path._HANDED.get() is None
+    assert _transfer._HANDED.get() is None
 
 
 def test_the_stats_are_given_to_the_copy_of_exactly_that_pair():
     src, dst = _tree()
     other = src.with_segments("/other")
 
-    with _path._handing(src, dst, src.stat(), True):
-        other_pair = _path._take_handed(src, other)
-        taken = _path._take_handed(src, dst)
-        again = _path._take_handed(src, dst)
+    with _transfer._handing(src, dst, src.stat(), True):
+        other_pair = _transfer._take_handed(src, other)
+        taken = _transfer._take_handed(src, dst)
+        again = _transfer._take_handed(src, dst)
 
     assert other_pair is None
     assert taken is not None and taken.target_absent

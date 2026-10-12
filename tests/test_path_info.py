@@ -13,7 +13,7 @@ import pytest
 
 from pathlib_next import LocalPath
 from pathlib_next.mempath import MemPath
-from pathlib_next.path import _PathInfo
+from pathlib_next.path._info import _PathInfo
 from pathlib_next import FileStat
 
 OLD = 1_000_000_000

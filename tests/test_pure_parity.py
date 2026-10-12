@@ -776,7 +776,7 @@ def test_generic_match_follows_312_semantics(cls, path, pattern, expected, monke
     change what only the 3.12 CI job would catch."""
     import types
 
-    from pathlib_next import path as path_module
+    from pathlib_next.path import _pure as path_module
 
     monkeypatch.setattr(
         path_module, "_sys", types.SimpleNamespace(version_info=(3, 12, 7))

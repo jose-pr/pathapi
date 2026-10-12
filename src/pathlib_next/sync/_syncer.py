@@ -9,7 +9,8 @@ import time as _time
 import typing as _ty
 
 from .. import _errorpolicy, _names
-from ..path import Path, _listing, _write_batch_of
+from ..path import Path
+from ..path._removal import _listing, _write_batch_of
 from .._filestat import FileStat
 from ..glob import _entries
 from ._compare import (

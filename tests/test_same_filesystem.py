@@ -10,7 +10,7 @@ import pytest
 
 from pathlib_next import Path
 from pathlib_next.mempath import MemPath
-from pathlib_next.path import _same_file
+from pathlib_next.path._relation import _same_file
 from pathlib_next.providers import contains
 from pathlib_next.sync import PathSyncer
 from pathlib_next.sync._paths import _paths_overlap

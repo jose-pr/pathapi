@@ -9,7 +9,7 @@ import io
 
 import pytest
 
-from pathlib_next.path import _same_file
+from pathlib_next.path._relation import _same_file
 from pathlib_next.providers import contains
 from pathlib_next.uri import UriPath, _DerivedBackend
 from pathlib_next import FileStat

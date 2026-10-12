@@ -1,20 +1,11 @@
-"""Object-oriented filesystem paths.
-
-This module provides classes to represent abstract paths and concrete
-paths with operations that have semantics appropriate for different
-operating systems.
-"""
+"""`Path`: a pathname with I/O, built from the protocols."""
 
 from __future__ import annotations
 
-import abc as _abc
 import contextlib as _contextlib
-import contextvars as _contextvars
 import errno as _errno
-import operator as _operator
 import os as _os
 import pathlib as _pathlib
-import re as _re
 import shutil as _shutil
 import stat as _stat
 import sys as _sys
@@ -22,39 +13,34 @@ import time as _time
 import types as _types
 import typing as _ty
 
-from . import _errorpolicy, _names, _stubs
-from ._errorpolicy import check_follow, copy_error_predicate
-from .protocols import BinaryOpen, Chmod, Stat
-from .protocols.io import _ASK_STAT
-from . import glob as _glob
-from .glob import _entries
-from ._filestat import FileStat
-from .exceptions import NonRelativePatternError
-
-__all__ = [
-    "FsPathLike",
-    "Path",
-    "PathLike",
-    "Pathname",
-    "PurePathLike",
-]
-
-P = _ty.TypeVar("P", bound="Path")
-PN = _ty.TypeVar("PN", bound="Pathname")
-
-_P = _ty.TypeVar("_P")
-_F = _ty.TypeVar("_F", bound=_ty.Callable[..., _ty.Any])
-
-if _ty.TYPE_CHECKING:
-
-    def _abstract(method: _F) -> _F:
-        # `Path(...)` builds a LocalPath, so type checkers must read the bare
-        # class as instantiable; at run time ABCMeta still refuses a subclass
-        # that leaves one of these out.
-        return method
-
-else:
-    _abstract = _abc.abstractmethod
+from .. import _errorpolicy, _names, _stubs
+from .._errorpolicy import check_follow, copy_error_predicate
+from ..protocols import BinaryOpen, Chmod, Stat
+from ..protocols.io import _ASK_STAT
+from .. import glob as _glob
+from ..glob import _entries
+from .._filestat import FileStat
+from ..exceptions import NonRelativePatternError
+from ._info import _PathInfo
+from ._pure import Pathname
+from ._relation import (
+    _INNER,
+    _OTHER,
+    _OUTER,
+    _SAME,
+    _drop_second_name,
+    _relation,
+    _same_file,
+    contains,
+)
+from ._removal import (
+    _InvalidPolicy,
+    _follow_policy,
+    _is_junction,
+    _listing,
+    _write_batch_of,
+)
+from ._transfer import _copy_mode, _handing, _same_identity, _stat_or_none, _take_handed
 
 
 def _os_error(exc_type: type, code: int, path: object) -> OSError:
@@ -62,439 +48,6 @@ def _os_error(exc_type: type, code: int, path: object) -> OSError:
     ones `os` raises. `FileNotFoundError(path)` left `errno` and `filename`
     as None, so `e.errno == errno.ENOENT` never matched."""
     return exc_type(code, _os.strerror(code), str(path))
-
-
-# 3.13 refuses an empty stem on a name that has a suffix (`with_stem("")`).
-_STEM_KEEPS_SUFFIX = _sys.version_info >= (3, 13)
-
-# A final component's suffix split, following the running interpreter's
-# pathlib: 3.14 treats a trailing "." as a suffix ("a." -> ".") and ignores
-# leading dots; earlier versions do neither.
-if _sys.version_info >= (3, 14):
-
-    def _name_suffix(name: str) -> str:
-        name = name.lstrip(".")
-        i = name.rfind(".")
-        return name[i:] if i != -1 else ""
-
-    def _name_stem(name: str) -> str:
-        i = name.rfind(".")
-        if i != -1:
-            stem = name[:i]
-            # The stem must contain at least one non-dot character.
-            if stem.lstrip("."):
-                return stem
-        return name
-
-    def _name_suffixes(name: str) -> "list[str]":
-        return ["." + ext for ext in name.lstrip(".").split(".")[1:]]
-
-else:
-
-    def _name_suffix(name: str) -> str:
-        i = name.rfind(".")
-        return name[i:] if 0 < i < len(name) - 1 else ""
-
-    def _name_stem(name: str) -> str:
-        i = name.rfind(".")
-        return name[:i] if 0 < i < len(name) - 1 else name
-
-    def _name_suffixes(name: str) -> "list[str]":
-        if name.endswith("."):
-            return []
-        return ["." + suffix for suffix in name.lstrip(".").split(".")[1:]]
-
-
-class FsPathLike(_ty.Protocol):
-    """Anything implementing `__fspath__` -- registered with `os.PathLike`
-    so `os.fspath()` and friends accept it."""
-
-    __slots__ = ()
-
-    def __fspath__(self) -> str:
-        return _stubs._unimplemented("__fspath__")
-
-
-_os.PathLike.register(FsPathLike)
-
-
-class _PathnameParents(_ty.Sequence[PN]):
-    """This object provides sequence-like access to the logical ancestors
-    of a path.  Don't try to construct it yourself."""
-
-    __slots__ = ("_path", "_anchor", "_segments")
-
-    def __init__(self, path: PN):
-        self._path = path
-        segments = tuple(path.segments)
-        # The anchor (a leading "" for the root) is no ancestor of its own: counting
-        # it adds an entry and spells the root as the relative empty path.
-        self._anchor = path._anchor_segments()
-        segments = segments[len(self._anchor) :]
-        while segments and not segments[-1]:
-            segments = segments[:-1]
-        self._segments = segments
-
-    def __len__(self):
-        return len(self._segments)
-
-    @_ty.overload
-    def __getitem__(self, idx: slice) -> tuple[PN]: ...
-    @_ty.overload
-    def __getitem__(self, idx: int) -> PN: ...
-    def __getitem__(self, idx: int | slice) -> tuple[PN] | PN:
-        if isinstance(idx, slice):
-            return tuple(self[i] for i in range(*idx.indices(len(self))))
-
-        if idx >= len(self) or idx < -len(self):
-            raise IndexError(idx)
-        if idx < 0:
-            idx += len(self)
-        kept = self._segments[: -idx - 1]
-        if not self._anchor:
-            return self._path.with_segments(*kept)
-        # ("", "") is the root in with_segments' "/"-joined spelling.
-        return self._path.with_segments(*self._anchor, *(kept or ("",)))
-
-    def __repr__(self):
-        return "<{}.parents>".format(type(self._path).__name__)
-
-
-class Pathname(FsPathLike, _ty.Generic[_P]):
-    """Base class for manipulating paths without I/O."""
-
-    __slots__ = ()
-
-    @property
-    def _is_case_sensitive(self) -> bool:
-        return True
-
-    @_abstract
-    def as_uri(self) -> str:
-        """Return the path as a URI string."""
-        ...
-
-    @property
-    def name(self) -> str:
-        """The final path component, if any."""
-        segments = self.segments
-        return "" if not segments else segments[-1]
-
-    @property
-    def suffix(self) -> str:
-        """
-        The final component's last suffix, if any.
-
-        This includes the leading period. For example: '.txt'
-        """
-        return _name_suffix(self.name)
-
-    @property
-    def suffixes(self):
-        """
-        A list of the final component's suffixes, if any.
-
-        These include the leading periods. For example: ['.tar', '.gz']
-        """
-        return _name_suffixes(self.name)
-
-    @property
-    def stem(self):
-        """The final path component, minus its last suffix."""
-        return _name_stem(self.name)
-
-    @property
-    @_abstract
-    def segments(self) -> _ty.Sequence[str]:
-        """The sequence of path component strings."""
-        ...
-
-    @property
-    @_abstract
-    def parts(self) -> _P:
-        """The individual components/parts of the path."""
-        ...
-
-    @_abstract
-    def with_segments(self, *segments: str) -> _ty.Self:
-        """Construct a same-type path instance from new segments."""
-        ...
-
-    def with_name(self, name: str) -> _ty.Self:
-        """Return a new path with the name changed.
-
-        Raises ValueError for an empty name, ".", or a name containing "/",
-        as pathlib does. Without the check a name such as "../../etc/passwd"
-        or "x/y" was spliced in verbatim, so a caller relying on pathlib's
-        validation of an untrusted file name got a path outside the
-        directory. A bare ".." is accepted, also as pathlib does; use
-        `providers.is_safe_child_name()` to reject it. `with_stem()`/
-        `with_suffix()` validate their result through here.
-        """
-        if not name or "/" in name or name == ".":
-            raise ValueError("Invalid name %r" % (name,))
-        if not self.name:
-            raise ValueError("%r has an empty name" % (self,))
-        return self.with_segments(*self.segments[:-1], name)
-
-    def with_stem(self, stem: str) -> _ty.Self:
-        """Return a new path with the stem changed (validated like
-        `with_name()`). From 3.13 on an empty stem is refused when the name
-        has a suffix, as `pathlib` does: it would leave a name made of the
-        suffix alone."""
-        suffix = self.suffix
-        if _STEM_KEEPS_SUFFIX and suffix and not stem:
-            raise ValueError("%r has a non-empty suffix" % (self,))
-        return self.with_name(stem + suffix)
-
-    def with_suffix(self, suffix: str) -> _ty.Self:
-        """Return a new path with the suffix changed or added."""
-        name = self.name
-        if (
-            suffix
-            and not suffix.startswith(".")
-            or (suffix == "." and _sys.version_info < (3, 14))
-        ):
-            raise ValueError("Invalid suffix %r" % (suffix))
-        if not name:
-            raise ValueError("%r has an empty name" % (self,))
-        old_suffix = self.suffix
-        if not old_suffix:
-            name = name + suffix
-        else:
-            name = name[: -len(old_suffix)] + suffix
-        return self.with_name(name)
-
-    @_abstract
-    def relative_to(self, other: _ty.Self | str) -> _ty.Self:
-        """Return the relative path to another path identified by the passed
-        arguments.  If the operation is not possible (because this is not
-        related to the other path), raise ValueError.
-        """
-        ...
-
-    def is_relative_to(self, other: _ty.Self | str):
-        """Return True if the path is relative to another path or False."""
-        cls = type(self)
-        # `other` is parsed standalone, as CPython does, not joined under `self`;
-        # `with_segments()` rather than the constructor keeps per-instance state
-        # such as MemPath's backend.
-        other = other if isinstance(other, cls) else self.with_segments(other)
-        return other == self or other in self.parents
-
-    def __eq__(self, other: object) -> bool:
-        """Compare by (exact type, segments).
-
-        Identity equality would make `is_relative_to()` (which decides via
-        `==`) return False for every subclass and break paths as dict keys
-        or set members, so a pure subclass that defines none gets this one.
-        `_BaseFSPathname`/`LocalPath` are unaffected: `pathlib.PurePath`
-        precedes `Pathname` in their MRO and keeps its own `__eq__`, as
-        does `Uri`, which defines one.
-        """
-        if type(self) is not type(other):
-            return NotImplemented
-        return tuple(self.segments) == tuple(other.segments)
-
-    def __hash__(self) -> int:
-        return hash((type(self), tuple(self.segments)))
-
-    def _order_key(self) -> _ty.Any:
-        """What `<`, `<=`, `>` and `>=` compare, between two paths of one
-        exact type: the segments, as `__eq__` does. A type whose `__eq__`
-        compares something else overrides it with that."""
-        return tuple(self.segments)
-
-    def _compare(
-        self, other: Pathname, compare: _ty.Callable[[_ty.Any, _ty.Any], bool]
-    ):
-        if type(self) is not type(other):
-            return NotImplemented
-        return compare(self._order_key(), other._order_key())
-
-    def __lt__(self, other: Pathname) -> bool:
-        return self._compare(other, _operator.lt)
-
-    def __le__(self, other: Pathname) -> bool:
-        return self._compare(other, _operator.le)
-
-    def __gt__(self, other: Pathname) -> bool:
-        return self._compare(other, _operator.gt)
-
-    def __ge__(self, other: Pathname) -> bool:
-        return self._compare(other, _operator.ge)
-
-    def __truediv__(self, key: _ty.Self | str) -> _ty.Self:
-        try:
-            return type(self)(self, key)
-        except (TypeError, NotImplementedError):
-            return NotImplemented
-
-    def __rtruediv__(self, key: str) -> _ty.Self:
-        """`"prefix" / path`, as pathlib supports. `self` is passed as an
-        object, so per-instance state it carries (a `MemPath` backend)
-        survives, and an absolute `self` restarts the join."""
-        if not isinstance(key, str):
-            return NotImplemented
-        try:
-            return type(self)(key, self)
-        except (TypeError, NotImplementedError):
-            return NotImplemented
-
-    def joinpath(self, *args: str | _ty.Self) -> _ty.Self:
-        """Combine this path with one or more paths/segments."""
-        return type(self)(self, *args)
-
-    @property
-    def root(self) -> str:
-        """The root of the path, if any (e.g. "/"). See `docs/divergences.md`
-        for how this is derived generically vs. LocalPath's real one."""
-        segments = self.segments
-        return "/" if segments and not segments[0] else ""
-
-    @property
-    def drive(self) -> str:
-        """No generic concept of a drive; always "". LocalPath gets a real
-        one from pathlib on Windows."""
-        return ""
-
-    @property
-    def anchor(self) -> str:
-        """`drive + root`."""
-        return self.drive + self.root
-
-    @property
-    @_abstract
-    def parent(self) -> _ty.Self:
-        """The logical parent of the path."""
-
-    @property
-    def parents(self) -> _ty.Sequence[_ty.Self]:
-        """An immutable sequence providing access to the logical ancestors of the path."""
-        return _PathnameParents(self)
-
-    def _anchor_segments(self) -> tuple[str, ...]:
-        """The leading entries of `segments` that anchor the path rather than
-        name a directory, for `parents`: `("",)` for a rooted path, else
-        `()`. A subclass that spells its root differently overrides it."""
-        segments = self.segments
-        return ("",) if segments and segments[0] == "" else ()
-
-    def is_absolute(self) -> bool:
-        """True if the path is absolute: it has a root. A class whose paths
-        can be rooted without being absolute overrides it."""
-        return bool(self.root)
-
-    def _match_parts(self) -> tuple[bool, list[str]]:
-        """`(anchored, names)`: the path as `match()` sees it -- whether it
-        is rooted, and its names with empty and "." segments dropped, the
-        way `PurePosixPath` parses a string."""
-        segments = self.segments
-        anchored = bool(segments) and segments[0] == ""
-        return anchored, [s for s in segments if s and s != "."]
-
-    def match(self, path_pattern: str | _re.Pattern, *, case_sensitive=None):
-        """
-        Return True if this path matches the given glob-style pattern.
-
-        pathlib's semantics on the running interpreter: a relative pattern
-        matches the last N segments (from the right), an absolute pattern
-        must match the whole path, and each segment is matched on its own,
-        so `*` never crosses a "/". "**" acts like "*" (use `full_match()`
-        for recursive matching). An empty pattern raises ValueError.
-
-        A compiled `re.Pattern` cannot be split into segments; it is matched
-        against the whole path string instead ("/"-joined segments, so a
-        `Uri`'s scheme and host are never part of it).
-        """
-        import fnmatch as _fnmatch
-
-        if case_sensitive is None:
-            case_sensitive = self._is_case_sensitive
-        anchored, names = self._match_parts()
-        if isinstance(path_pattern, _re.Pattern):
-            path = ("/" if anchored else "") + "/".join(names)
-            return path_pattern.match(path) is not None
-        if isinstance(path_pattern, Pathname):
-            path_pattern = "/".join(path_pattern.segments)
-        elif not isinstance(path_pattern, str):
-            path_pattern = _os.fspath(path_pattern)
-        pattern_anchored = path_pattern.startswith("/")
-        pattern_names = [s for s in path_pattern.split("/") if s and s != "."]
-        if not pattern_names and not pattern_anchored:
-            raise ValueError("empty pattern")
-        if _sys.version_info[:2] == (3, 12):
-            # 3.12 matches the whole path as one string with its separators swapped for
-            # newlines, which differs at the edges: see `_match_lines_312`.
-            return _match_lines_312(
-                anchored, names, pattern_anchored, pattern_names, case_sensitive
-            )
-        flags = 0 if case_sensitive else _re.IGNORECASE
-        if pattern_anchored and not (anchored and len(names) == len(pattern_names)):
-            return False
-        # The root counts as one more part a relative pattern can reach.
-        path_parts = len(names) + anchored
-        if len(pattern_names) > path_parts:
-            return False
-        for index, pattern in enumerate(reversed(pattern_names)):
-            if index == len(names):
-                # A relative pattern as long as the path reaches its root. 3.13+ compiles the
-                # root like any part (a bracket expression matches "/", "*" and "?" do not);
-                # 3.9-3.11 fnmatch the root string, so "*" and "?" match it too.
-                if _sys.version_info >= (3, 13):
-                    from .fspath import _translate_segment
-
-                    regex = f"(?s:{_translate_segment(pattern, '[^/]')})\\Z"
-                    return _re.match(regex, "/", flags) is not None
-                return _re.match(_fnmatch.translate(pattern), "/", flags) is not None
-            name = names[len(names) - 1 - index]
-            if _re.match(_fnmatch.translate(pattern), name, flags) is None:
-                return False
-        return True
-
-    def full_match(
-        self, pattern: str | _os.PathLike, *, case_sensitive: bool | None = None
-    ) -> bool:
-        """Return True if this path matches the glob-style `pattern`
-        against the whole path (3.13 parity). Unlike match(), this isn't a
-        right-anchored partial match, and "**" matches any number of path
-        segments (including zero). The root is a component of its own: a
-        rooted path needs a rooted pattern, or a leading "**" that reaches
-        past it (see `glob.full_match`). Empty and "." components of
-        the pattern are ignored, as `pathlib` parses its pattern as a path.
-        """
-        if case_sensitive is None:
-            case_sensitive = self._is_case_sensitive
-        if isinstance(pattern, Pathname):
-            pattern = "/".join(pattern.segments)
-        elif not isinstance(pattern, str):
-            pattern = _os.fspath(pattern)
-        return _glob.full_match(self.segments, pattern, case_sensitive)
-
-    def as_posix(self) -> str:
-        """Return the string representation of the path with forward slashes."""
-        return "/".join(self.segments)
-
-    def has_glob_pattern(self):
-        """Return True if any of the path segments contain glob wildcards.
-
-        The anchor is not one of them: a Windows extended-length path
-        (`\\\\?\\C:\\data`, and the `\\\\?\\UNC\\server\\share` form) carries a
-        literal `?` in its drive, which is a prefix, not a wildcard -- so a
-        caller asking "is this a pattern or a plain path?" got `True` for
-        every such path.
-        """
-        segments = list(self.segments)
-        anchor = getattr(self, "anchor", "")
-        if anchor and segments and segments[0] == anchor:
-            segments = segments[1:]
-        for segment in segments:
-            if _glob.WILDCARD_PATTERN.search(segment) is not None:
-                return True
-        return False
-
-
-PurePathLike = _ty.Union[str, Pathname]
 
 
 # Operations that must come from pathlib_next even when a concrete `pathlib`
@@ -513,64 +66,6 @@ _OPERATION_NAMES = (
 )
 
 
-#: `fnmatch.translate()` wraps its output in "(?s:...)\\Z"; 3.12 strips that
-#: to splice parts together, which is what drops the DOTALL flag and lets a
-#: bracket expression -- but not "." -- match the newline separator.
-_FNMATCH_SLICE = slice(len("(?s:"), -len(")\\Z"))
-
-
-#: 3.12 swaps in both directions, so a newline inside a name becomes a "/" and
-#: can never act as a separator.
-_SWAP_SEP_AND_NEWLINE = str.maketrans({"/": "\n", "\n": "/"})
-
-
-def _match_lines_312(
-    anchored: bool,
-    names: "_ty.Sequence[str]",
-    pattern_anchored: bool,
-    pattern_names: "_ty.Sequence[str]",
-    case_sensitive: bool,
-) -> bool:
-    """`match()` as Python 3.12 implements it, for 3.12 only.
-
-    3.12 swaps separators for newlines and matches the resulting strings
-    with one regex (`_compile_pattern_lines` in its `pathlib`), instead of
-    comparing parts pairwise the way every other version does. The
-    difference shows at the edges: the root is "\n", a single line that a
-    part matching the empty string ("**", but not "*", which 3.12 compiles
-    as ".+") reaches from either side, and a bracket expression such as
-    "[!a]" can consume the newline itself. Porting the algorithm keeps those
-    edges right without enumerating them.
-    """
-    import fnmatch as _fnmatch
-
-    # pathlib spells an empty path "." and gives it no lines at all.
-    path_lines = (("/" if anchored else "") + "/".join(names)).translate(
-        _SWAP_SEP_AND_NEWLINE
-    )
-    pattern_lines = (
-        ("/" if pattern_anchored else "") + "/".join(pattern_names)
-    ).translate(_SWAP_SEP_AND_NEWLINE)
-    parts = ["^"]
-    for part in pattern_lines.splitlines(keepends=True):
-        if part == "*\n":
-            part = r".+\n"
-        elif part == "*":
-            part = r".+"
-        else:
-            part = _fnmatch.translate(part)[_FNMATCH_SLICE]
-        parts.append(part)
-    parts.append(r"\Z")
-    flags = _re.MULTILINE
-    if not case_sensitive:
-        flags |= _re.IGNORECASE
-    regex = _re.compile("".join(parts), flags=flags)
-    # An anchored pattern must match the whole path, a relative one its tail.
-    if pattern_anchored:
-        return regex.match(path_lines) is not None
-    return regex.search(path_lines) is not None
-
-
 def _local_primitives() -> "dict[str, _ty.Callable]":
     """The functions `LocalPath` defines, by name: what a class that mixes a
     concrete stdlib path with `Path` but not `LocalPath` is given for its
@@ -578,7 +73,7 @@ def _local_primitives() -> "dict[str, _ty.Callable]":
     `walk`, `_scandir`, `_symlink_to`, `_chown`, ...). Taken from the class
     itself so the list cannot fall behind it. Empty while `LocalPath` is
     still being created."""
-    module = _sys.modules.get(__name__.rpartition(".")[0] + ".fspath")
+    module = _sys.modules.get(__name__.partition(".")[0] + ".fspath")
     local = getattr(module, "LocalPath", None)
     if local is None:
         return {}
@@ -600,11 +95,12 @@ def _inherits_foreign_default(cls: type, name: str) -> bool:
     if owner is None:
         return True
     module = getattr(owner, "__module__", "") or ""
-    package = __name__.rpartition(".")[0]
+    package = __name__.partition(".")[0]
     return (
         module == "pathlib"
         or module.startswith("pathlib.")
-        or module == __name__
+        or module == package + ".path"
+        or module.startswith(package + ".path.")
         or module == package + ".protocols"
         or module.startswith(package + ".protocols.")
     )
@@ -659,7 +155,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         super().__init_subclass__(**kwargs)
         primitives = _local_primitives() if issubclass(cls, _pathlib.Path) else {}
         if primitives:
-            from .fspath import _BaseFSPathname
+            from ..fspath import _BaseFSPathname
 
             for name, ours in primitives.items():
                 if name == "glob" and not issubclass(cls, _BaseFSPathname):
@@ -691,7 +187,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
 
     def __new__(cls, *args: _ty.Any, **kwargs: _ty.Any) -> _ty.Self:
         if cls is Path:
-            from .fspath import LocalPath
+            from ..fspath import LocalPath
 
             # `LocalPath.__new__` is `pathlib.Path.__new__`, which parses `args` into
             # `_drv/_root/_parts` before 3.12 (3.12+ does it in `PurePath.__init__`);
@@ -1889,129 +1385,6 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
             src.unlink()
 
 
-def _write_batch_of(path) -> "_ty.ContextManager[object]":
-    """`path._write_batch()`, where a path without the hook (a stdlib path)
-    gets a block that does nothing."""
-    hook = getattr(path, "_write_batch", None)
-    return hook() if callable(hook) else _contextlib.nullcontext()
-
-
-def _is_junction(path: "Path") -> bool:
-    """`path.is_junction()`, where a class that cannot answer says no."""
-    try:
-        return bool(path.is_junction())
-    except (NotImplementedError, OSError, ValueError):
-        return False
-
-
-def _follow_policy(policy, path: "Path") -> str:
-    """Resolve a `follow_symlinks=`/`follow_binds=` value for `path`.
-
-    `False` (the default) means "remove the entry itself, never what is
-    behind it" -- `rm -r` semantics; `True` means "remove what is behind
-    it"; `None` means "leave it alone entirely". A callable is asked per
-    entry (`policy(path)`) and returns one of those three, so one tree can
-    keep one mount and follow another.
-
-    Returns the internal name: "rm", "follow" or "ignore". An answer that is
-    none of the three raises `_InvalidPolicy`, which `rm()` never hands to
-    its `ignore_error`.
-    """
-    if callable(policy):
-        policy = policy(path)
-    if policy is None:
-        return "ignore"
-    if policy is True:
-        return "follow"
-    if policy is False:
-        return "rm"
-    raise _InvalidPolicy(f"expected True, False, None or a callable, got {policy!r}")
-
-
-class _InvalidPolicy(ValueError):
-    """A follow policy that is not `True`, `False` or `None`."""
-
-
-def _listing(path: Path) -> "_ty.Iterator[_ty.Tuple[str, _ty.Optional[FileStat]]]":
-    """`path._scandir()` as `(name, non-following stat or None)` pairs. An
-    entry that has `name` and `stat()`, as `os.scandir()` yields, is adapted;
-    `_scandir()` is documented to yield pairs."""
-    for entry in path._scandir():
-        if isinstance(entry, tuple) and len(entry) == 2:
-            yield entry
-            continue
-        try:
-            stat = FileStat.from_stat(entry.stat(follow_symlinks=False))
-        except OSError:
-            stat = None
-        yield entry.name, stat
-
-
-class _PathInfo:
-    """`Path.info`: the file type of one path, from at most one stat that
-    follows links and one that does not, both kept on this object only."""
-
-    __slots__ = ("_path", "_followed", "_unfollowed")
-
-    def __init__(self, path: Path) -> None:
-        self._path = path
-        self._followed = self._unfollowed = _UNSET
-
-    def _stat(self, follow_symlinks: bool):
-        """The stat, or None where there is no such entry."""
-        if follow_symlinks:
-            if self._followed is _UNSET:
-                # An entry that is missing or is not a link is the same stat
-                # either way.
-                plain = self._unfollowed
-                if plain is _UNSET or (
-                    plain is not None and _stat.S_ISLNK(plain.st_mode)
-                ):
-                    self._followed = self._ask(True)
-                else:
-                    self._followed = plain
-            return self._followed
-        if self._unfollowed is _UNSET:
-            self._unfollowed = self._ask(False)
-        return self._unfollowed
-
-    def _ask(self, follow_symlinks: bool):
-        try:
-            return self._path.stat(follow_symlinks=follow_symlinks)
-        except (OSError, ValueError):
-            return None
-
-    def exists(self, *, follow_symlinks: bool = True) -> bool:
-        return self._stat(follow_symlinks) is not None
-
-    def is_dir(self, *, follow_symlinks: bool = True) -> bool:
-        stat = self._stat(follow_symlinks)
-        return stat is not None and _stat.S_ISDIR(stat.st_mode)
-
-    def is_file(self, *, follow_symlinks: bool = True) -> bool:
-        stat = self._stat(follow_symlinks)
-        return stat is not None and _stat.S_ISREG(stat.st_mode)
-
-    def is_symlink(self) -> bool:
-        stat = self._stat(False)
-        return stat is not None and _stat.S_ISLNK(stat.st_mode)
-
-    def __repr__(self) -> str:
-        return f"<{type(self._path).__name__}.info>"
-
-
-_UNSET = object()
-
-
-def _stat_or_none(path: Path, follow_symlinks: bool):
-    """`path.stat()`, or None where there is none to have: a missing path, a
-    backend without `stat()`. The callers then do what they did without it."""
-    try:
-        return path.stat(follow_symlinks=follow_symlinks)
-    except (OSError, ValueError, NotImplementedError):
-        return None
-
-
 class _Held:
     """The non-following stats `move()` takes of its source and its target,
     each at most once, for `move()` and `_relation()` to share. It lives for
@@ -2059,254 +1432,6 @@ class _Held:
         return _same_identity(self.source_raw, self._target_raw)
 
 
-class _Handed:
-    """What `move()` found out about the two roots, for the one `copy()` it
-    calls on exactly this source and target. `source_stat` is the source's
-    own stat (None: not known to be a plain entry), `target_absent` that
-    nothing was at the target, with nothing written or removed there since."""
-
-    __slots__ = ("source", "target", "source_stat", "target_absent", "taken")
-
-    def __init__(self, source, target, source_stat, target_absent):
-        self.source, self.target = source, target
-        self.source_stat, self.target_absent = source_stat, target_absent
-        self.taken = False
-
-
-_HANDED: "_contextvars.ContextVar[_Handed | None]" = _contextvars.ContextVar(
-    "pathlib_next_handed_stats", default=None
-)
-
-
-@_contextlib.contextmanager
-def _handing(source, target, source_stat, target_absent):
-    """Make `source_stat` and `target_absent` available to the `copy()` of
-    `source` onto `target` made inside the block, once, and to nothing else
-    (`ObjectStorePath.copy()` and the like pass the very same objects on to
-    `Path.copy()`)."""
-    token = _HANDED.set(_Handed(source, target, source_stat, target_absent))
-    try:
-        yield
-    finally:
-        _HANDED.reset(token)
-
-
-def _take_handed(source, target) -> "_Handed | None":
-    """What `move()` handed to the copy of exactly `source` onto `target`, the
-    first time it is asked; None for any other copy."""
-    handed = _HANDED.get()
-    if (
-        handed is None
-        or handed.taken
-        or handed.source is not source
-        or handed.target is not target
-    ):
-        return None
-    handed.taken = True
-    return handed
-
-
-def _same_identity(first, second) -> bool:
-    """Whether two stats carry the same `(st_dev, st_ino)`. A stat without
-    them (a `FileStat`, an SFTP attribute set) says nothing."""
-    one = (getattr(first, "st_dev", None), getattr(first, "st_ino", None))
-    other = (getattr(second, "st_dev", None), getattr(second, "st_ino", None))
-    return None not in one and None not in other and one == other
-
-
-def _copy_mode(
-    src: Path, target: Path, follow_symlinks: bool, stat: "_ty.Any" = None
-) -> None:
-    """Give `target` the permission bits `src` reports, when it reports any.
-
-    Only a mode the source backend actually reported is metadata:
-    `FileStat`'s placeholder (0o444 for a file) is not, and applying it made
-    every copy from MemPath/HTTP/S3/... a read-only file that a re-copy or
-    re-sync could not replace. Permission bits only: the file-type bits of
-    `st_mode` are not a mode, and a backend such as FTP's SITE CHMOD sends
-    them verbatim. Between two classes the setuid, setgid and sticky bits are
-    dropped: a mode read from another backend (a tar member, a remote
-    server) must not make a privileged file here."""
-    try:
-        if stat is None:
-            stat = src.stat(follow_symlinks=follow_symlinks)
-        if getattr(stat, "mode_known", True) and stat.st_mode:
-            mode = _stat.S_IMODE(stat.st_mode)
-            if type(src) is not type(target):
-                mode &= ~(_stat.S_ISUID | _stat.S_ISGID | _stat.S_ISVTX)
-            target.chmod(mode)
-    except NotImplementedError:
-        pass
-
-
-# How `move()` and `copy()` find a target standing to the source (`_relation`).
-_SAME = "same"  # one directory entry, spelled differently
-_OTHER = "other"  # another name of the same file (a hard link, a link to it)
-_OUTER = "outer"  # the target is a directory that holds the source
-_INNER = "inner"  # the target lies inside the source
-
-
-def _local_file(path) -> "_pathlib.Path | None":
-    """The `pathlib.Path` through which `path` is a file of this machine, or
-    None: a `LocalPath`, a stdlib path, or a path holding one as `filepath`
-    (a `file:` URI)."""
-    if isinstance(path, _pathlib.Path):
-        return path
-    try:
-        local = getattr(path, "filepath", None)
-    except Exception:
-        return None
-    return local if isinstance(local, _pathlib.Path) else None
-
-
-def _location(path: "_pathlib.Path", follow: bool) -> str:
-    """Where `path` points: absolute, with every symlink of its directory part
-    resolved and, when `follow`, the final component's too."""
-    text = _os.path.join(_os.getcwd(), _os.fspath(path))
-    head, tail = _os.path.split(text)
-    if follow or tail in ("", ".", ".."):
-        return _os.path.realpath(text)
-    return _os.path.join(_os.path.realpath(head), tail)
-
-
-def _inside(outer: str, inner: str) -> bool:
-    """Whether `inner` lies strictly below `outer` (both `normcase`d)."""
-    if outer == inner:
-        return False
-    try:
-        return _os.path.commonpath([outer, inner]) == outer
-    except ValueError:
-        return False
-
-
-def _is_one_entry(mine: str, theirs: str) -> bool:
-    """Whether two locations of one file are a single directory entry under
-    two spellings (a case or short-name alias) rather than two names of it
-    (hard links, which a directory lists both). Unsure counts as one entry:
-    that removes nothing."""
-    (head, name), (other_head, other_name) = (
-        _os.path.split(mine),
-        _os.path.split(theirs),
-    )
-    try:
-        if not _os.path.samefile(head, other_head):
-            return False
-        listed = set(_os.listdir(head))
-    except OSError:
-        return True
-    return not (name != other_name and name in listed and other_name in listed)
-
-
-def _local_relation(mine, theirs, follow: bool) -> "str | None":
-    """`_relation()` for two files of this machine, decided by where each
-    really is and, failing that, by their identity (`os.path.samefile`)."""
-    try:
-        at, there = _location(mine, follow), _location(theirs, follow)
-        normal, other = _os.path.normcase(at), _os.path.normcase(there)
-        if normal == other:
-            return _SAME
-        if _inside(other, normal):
-            return _OUTER
-        if _inside(normal, other):
-            return _INNER
-        if not _os.path.samefile(mine, theirs):
-            return None
-    except (OSError, ValueError):
-        return None
-    return _SAME if _is_one_entry(at, there) else _OTHER
-
-
-def _relation(
-    src: Path,
-    target: Path,
-    *,
-    follow: bool,
-    identity: bool = True,
-    held: "_Held | None" = None,
-) -> "str | None":
-    """How `target` stands to `src`: `_SAME`, `_OTHER`, `_OUTER`, `_INNER`,
-    or None when they are unrelated or this cannot tell.
-
-    Two files of this machine are compared by where they really are, whatever
-    their classes; a type that answers `_node_key()` is compared by that;
-    anything else only between two paths of one type that
-    `_same_filesystem()` places together, by `samefile()` where `stat()`
-    carries `st_dev`/`st_ino` (when `identity`; it costs a stat of each) and
-    by `==` otherwise. `follow` says whether a final symlink is looked
-    through (a copy reads it) or is the entry itself (a move renames it).
-    `held` is the stats of `src` and `target` the caller already took, so
-    `samefile()` does not take them again."""
-    mine, theirs = _local_file(src), _local_file(target)
-    if mine is not None and theirs is not None:
-        return _local_relation(mine, theirs, follow)
-    try:
-        keys = (src._node_key(), target._node_key())
-    except Exception:
-        keys = (None, None)
-    if None not in keys:
-        (space, names), (other_space, other_names) = keys
-        if space is not other_space:
-            return None
-        if names == other_names:
-            return _SAME
-        if names[: len(other_names)] == other_names:
-            return _OUTER
-        if other_names[: len(names)] == names:
-            return _INNER
-        return None
-    if type(src) is not type(target):
-        return None
-    if identity:
-        try:
-            if src.samefile(target) if held is None else held.same_file(src, target):
-                return _SAME
-        except (NotImplementedError, OSError, TypeError, ValueError):
-            pass
-    if not src._same_filesystem(target):
-        return None
-    try:
-        if src == target:
-            return _SAME
-        if target.is_relative_to(src):
-            return _INNER
-        if src.is_relative_to(target):
-            return _OUTER
-    except Exception:
-        pass
-    return None
-
-
-def contains(src: Path, target: Path) -> bool:
-    """Whether `target` is `src` or lies inside it (pathlib 3.14's copy()
-    refuses both), looking through symlinks. Paths `_same_filesystem()`
-    reports in different namespaces are never nested."""
-    return _relation(src, target, follow=True, identity=False) in (
-        _SAME,
-        _OTHER,
-        _INNER,
-    )
-
-
-def _same_file(src: Path, target: Path, *, identity: bool = True) -> bool:
-    """Whether `src` and `target` name the same file, looking through
-    symlinks (see `_relation`, and its `identity`)."""
-    mine, theirs = _local_file(src), _local_file(target)
-    if mine is not None and theirs is not None:
-        # The cheap form of `_local_relation()`: copy() asks this once per
-        # file, and only identity matters to it.
-        try:
-            return _os.path.samefile(mine, theirs)
-        except (OSError, ValueError):
-            pass
-        try:
-            return _os.path.normcase(_os.path.abspath(mine)) == _os.path.normcase(
-                _os.path.abspath(theirs)
-            )
-        except (OSError, ValueError):
-            return False
-    return _relation(src, target, follow=True, identity=identity) in (_SAME, _OTHER)
-
-
 def _holds_links(src: Path, target: Path) -> bool:
     """Whether a symlink of `src` can be recreated at `target`: `src` reads
     links and the class of `target` implements `_symlink_to()`."""
@@ -2314,17 +1439,6 @@ def _holds_links(src: Path, target: Path) -> bool:
         callable(getattr(src, "readlink", None))
         and getattr(type(target), "_symlink_to", None) is not Path._symlink_to
     )
-
-
-def _drop_second_name(src: Path, src_stat, target: Path, target_stat) -> Path:
-    """`move()` between two names of one file: the target name already holds
-    the content, so only the source name goes. A link to the file, or a
-    directory reachable twice, is refused: removing either name would leave
-    the other pointing at nothing."""
-    if src_stat.is_symlink() or target_stat.is_symlink() or src_stat.is_dir():
-        raise OSError(_errno.EINVAL, "Source and target are the same file", str(target))
-    src.unlink()
-    return target
 
 
 PathLike = _ty.Union[str, Path]

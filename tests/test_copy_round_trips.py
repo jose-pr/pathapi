@@ -154,7 +154,7 @@ def test_an_unknown_source_stat_falls_back_to_the_old_flow():
 
 
 def test_filestat_has_no_identity_to_compare():
-    from pathlib_next.path import _same_identity
+    from pathlib_next.path._transfer import _same_identity
 
     assert _same_identity(FileStat(), FileStat()) is False
 

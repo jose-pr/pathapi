@@ -12,7 +12,7 @@ import types
 
 import pytest
 
-from pathlib_next import path as path_module
+from pathlib_next.path import _pure as path_module
 from pathlib_next.mempath import MemPath
 from pathlib_next.uri import Uri
 

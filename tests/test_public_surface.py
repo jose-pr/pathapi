@@ -306,7 +306,7 @@ def _is_trivial_body(function: ast.FunctionDef) -> bool:
 
 def _protocol_stubs():
     for relative in (
-        "path.py",
+        "path/_pure.py",
         "protocols/fs.py",
         "protocols/io.py",
         "protocols/checksum.py",

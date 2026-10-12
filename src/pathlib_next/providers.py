@@ -16,7 +16,7 @@ from ._lru import LRU
 from ._names import is_safe_child_name, is_windows_flavoured
 from ._permissions import UNCHANGED, parse_mode, parse_owner
 from ._stubs import notimplemented
-from .path import contains
+from .path._relation import contains
 
 __all__ = [
     "CommitOnClose",
