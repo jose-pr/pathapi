@@ -2266,6 +2266,14 @@ write method raise `NotImplementedError`.
   1,000-entry cap is re-read through the Git Trees API); file bodies use
   the raw media type; symlink/submodule entries read as files;
   `st_mtime` is `0`.
+- `stat()`, `exists()` and `is_file()` of a file are one `HEAD` of the
+  contents URL asked for the raw media type and unencoded: the size is its
+  `Content-Length`, and a `404` there is `FileNotFoundError`. A directory
+  answers with a JSON type and is then listed with a `GET` (two requests;
+  the root of the repository is listed directly). A `HEAD` reply without
+  `X-GitHub-Media-Type` (a proxy's, a server that refuses `HEAD`), with an
+  encoding, or without a plain `Content-Length` is not used: the `GET` of
+  the contents object answers, as it did.
 - Rate limits (403/429 with limit headers, any 429) → `OSError(EAGAIN)`.
 - A JSON reply that is not the documented shape (HTML from a proxy, `null`,
   a truncated body, an array where an object is expected, an entry without

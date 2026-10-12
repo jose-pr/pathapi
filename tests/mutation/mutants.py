@@ -877,6 +877,14 @@ mutant(
     "a server without the extension is asked again for every file",
 )
 mutant(
+    "github-head-believes-a-reply-that-is-not-the-api-s",
+    "uri/schemes/github.py",
+    '            if "X-GitHub-Media-Type" not in resp.headers:\n                return None\n            resp.raise_for_status()',
+    "            resp.raise_for_status()",
+    "tests/test_github_stat.py::test_a_reply_that_is_not_the_api_s_own_is_not_believed",
+    "a proxy's reply to a HEAD is read as the size of the file, or as its absence",
+)
+mutant(
     "sftp-check-file-leaks-its-handle",
     "uri/schemes/sftp/_checkfile.py",
     "        finally:\n            file.close()\n        digest = parse_reply(payload, algorithm)",

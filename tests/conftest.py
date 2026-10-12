@@ -873,7 +873,8 @@ def github_api_server(fixture_tree):
     API (`GET /repos/{owner}/{repo}/contents/{path}`) that `GitHubPath`
     actually calls: directory listing (JSON array), file metadata
     (JSON object, base64 `content`), and raw file bodies (`Accept:
-    .../vnd.github.raw+json`). Two refs are served (`main` the default,
+    .../vnd.github.raw+json`). A `HEAD` gets the headers of the `GET`, and
+    every reply names its media type in `X-GitHub-Media-Type`. Two refs are served (`main` the default,
     `other-branch` with a divergent `a.txt`) so ref plumbing is verified
     end-to-end, not just default-branch reads. Like the real API, a
     contents listing stops at 1,000 entries with no truncation signal; the
@@ -899,6 +900,16 @@ def github_api_server(fixture_tree):
         return hashlib.sha1(f"{ref}:{path}".encode()).hexdigest()
 
     class _GitHubApiHandler(http.server.BaseHTTPRequestHandler):
+        def do_HEAD(self):
+            # The headers of the GET and no body, as the API answers.
+            self.do_GET()
+
+        def _media_type(self):
+            raw = "raw" in self.headers.get("Accept", "")
+            return (
+                "github.v3; param=raw; format=json" if raw else "github.v3; format=json"
+            )
+
         def do_GET(self):
             split = urllib.parse.urlsplit(self.path)
             qs = urllib.parse.parse_qs(split.query)
@@ -982,10 +993,14 @@ def github_api_server(fixture_tree):
             accept = self.headers.get("Accept", "")
             if "raw" in accept:
                 self.send_response(200)
-                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header(
+                    "Content-Type", "application/vnd.github.raw+json; charset=utf-8"
+                )
                 self.send_header("Content-Length", str(len(content)))
+                self.send_header("X-GitHub-Media-Type", self._media_type())
                 self.end_headers()
-                self.wfile.write(content)
+                if self.command != "HEAD":
+                    self.wfile.write(content)
                 return
             self._send_json(
                 200,
@@ -1002,10 +1017,12 @@ def github_api_server(fixture_tree):
         def _send_json(self, status, payload):
             body = json.dumps(payload).encode()
             self.send_response(status)
-            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
+            self.send_header("X-GitHub-Media-Type", self._media_type())
             self.end_headers()
-            self.wfile.write(body)
+            if self.command != "HEAD":
+                self.wfile.write(body)
 
         def log_message(self, format, *args):
             pass

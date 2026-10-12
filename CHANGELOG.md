@@ -245,6 +245,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   without the extension, or one that refuses it with a bare failure, gets
   the removal and rename as before; a directory at the target is checked by
   `Path.replace()` first, as before. Nothing to change in a caller.
+- **`stat()` of a `github:` file asks with `HEAD`.** It was a `GET` of the
+  contents object, which carries the file base64-encoded, so every `stat()`,
+  `exists()` and `is_file()` of a file downloaded it. The size now comes from
+  the `Content-Length` of a `HEAD` asked for the raw media type, and a path
+  that does not exist is answered by that request too. A directory other
+  than the root of the repository now costs two requests (the `HEAD`, then
+  the listing as before), which counts against the API's rate limit; a reply
+  that is not the API's own, or a server that refuses `HEAD`, is followed by
+  the `GET` as before. Nothing to change in a caller.
 - **The dates of an HTML index are documented as UTC.** An index page
   prints them with no zone; `http:` has always read them as UTC, so the
   `st_mtime` of a listed entry can be off by the server's offset. The

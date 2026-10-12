@@ -11,6 +11,7 @@ from ._gitrepo import (  # noqa: F401  (re-exported)
     _RepoApiPath,
     _translate_repo_errors,
 )
+from .http import _server_size
 
 
 class GitHubPath(_RepoApiPath):
@@ -85,10 +86,42 @@ class GitHubPath(_RepoApiPath):
         self._size_of(item)
         return item
 
+    def _head_size(self) -> "int | None":
+        """The size of the file here from a request without a body, or `None`
+        when the reply does not settle it. Asked for the raw media type, the
+        API answers a file with that type and the file's length and a
+        directory with a JSON type; a reply without `X-GitHub-Media-Type` is
+        not the API's own (a proxy, a server without `HEAD`)."""
+        with _translate_repo_errors(self):
+            resp = self.backend.request(
+                "HEAD",
+                self._contents_url(),
+                params=self._params(),
+                # A compressed reply would state the compressed length.
+                headers={"Accept": self._RAW_ACCEPT, "Accept-Encoding": "identity"},
+            )
+            if "X-GitHub-Media-Type" not in resp.headers:
+                return None
+            resp.raise_for_status()
+        headers = resp.headers
+        media_type = headers.get("Content-Type", "").partition(";")[0].strip().lower()
+        if (
+            resp.status_code != 200
+            or not media_type.startswith("application/vnd.github")
+            or "raw" not in media_type
+            or headers.get("Content-Encoding", "identity").strip().lower() != "identity"
+        ):
+            return None
+        return _server_size(headers.get("Content-Length"))
+
     def stat(self, *, follow_symlinks=True):
         hint = self._pop_stat_hint()
         if hint is not None:
             return hint
+        # The root of a repository is never a file.
+        size = self._head_size() if self.repo_path else None
+        if size is not None:
+            return FileStat(st_size=size, is_dir=False)
         data = self._decode(self._request(), list, dict)
         if isinstance(data, list):
             return FileStat(is_dir=True)
