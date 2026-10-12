@@ -1,29 +1,36 @@
 # pathlib_next — contributor orientation
 
-Orientation for working in a checkout of this repository: layout, environments,
-commands, CI and release. It is not the API reference and it does not ship.
+Orientation for working in a checkout of this repository: layout, environment,
+checks, conventions and release. It is not the API reference and it does not
+ship.
 
-- **Public API contract** (every export, signature and gotcha):
-  [`src/pathlib_next/AGENTS.md`](src/pathlib_next/AGENTS.md). That file ships in
-  the wheel, so it must stay self-contained (no repo-relative links) and must be
-  updated in the same commit as any public API change.
-- **Deliberate differences from `pathlib.Path`**:
-  [`docs/divergences.md`](docs/divergences.md). `pathlib.Path` parity is the
-  contract; a behavioral divergence that is not recorded there is a bug.
+| Shipped header | Covers |
+| --- | --- |
+| [`src/pathlib_next/AGENTS.md`](src/pathlib_next/AGENTS.md) | The public API contract: every export, signature and gotcha, for the core and the URI layer. It ships in the wheel, so it must stay self-contained (no repo-relative links) and must be updated in the same commit as any public API change. |
+
+Deliberate differences from `pathlib.Path` are in
+[`docs/divergences.md`](docs/divergences.md). `pathlib.Path` parity is the
+contract; a behavioral divergence that is not recorded there is a bug.
 
 ## Layout
 
 | Path | Contents |
 | --- | --- |
-| `src/pathlib_next/` | The package (`src/` layout). `py.typed` and the API header ship with it. |
+| `src/pathlib_next/` | The package (`src/` layout). `py.typed` and the API header ship with it. A module whose name has no leading underscore is public and declares `__all__`; every other module is private. |
+| `src/pathlib_next/{path,sync,glob,testing}/` | Packages of private modules; each `__init__` re-exports the public names. |
+| `src/pathlib_next/{ftp,archive}/` | The standard-library providers: `FTPPath` and `FTPBackend`; `ZipPath`, `TarPath` and `ArchivePath`. |
+| `src/pathlib_next/providers.py` | What a class built on `Path` calls, defined in private modules beside it; `exceptions.py` holds `PathError` and `NonRelativePatternError`. |
+| `src/pathlib_next/uri/` | The URI layer: `Uri`, `UriPath`, `Source`, `Query`. |
 | `src/pathlib_next/uri/schemes/` | One module per URI scheme; registered through the `pathlib_next.schemes` entry points in `pyproject.toml`. |
+| `src/pathlib_next/tools/` | The `uripath` command. |
 | `tests/` | The pytest suite. |
+| `tests/mutation/` | The mutation list; see Checks. Ships in the sdist with `tests/`. |
 | `benchmarks/` | `bench.py` and committed JSON results; see [`benchmarks/README.md`](benchmarks/README.md). Not shipped. |
 | `examples/` | Runnable scripts. Networked ones skip (exit 0) unless their environment variables are set. |
 | `docs/`, `mkdocs.yml` | MkDocs site: hand-written pages plus a `mkdocstrings` API reference. |
 | `CHANGELOG.md` | Keep a Changelog. Released sections are frozen records. |
 
-## Environments
+## Environment
 
 Python 3.9 is the floor (`requires-python = ">=3.9"`) and 3.14 is the latest
 supported. Test on both ends before claiming a change works.
@@ -44,7 +51,7 @@ its tests are skipped instead, so check `pytest -rs` before trusting a green run
 The `gs`/`az` SDKs are the ones most likely to be unavailable for an older
 interpreter or a less common platform; without them their contract suites skip.
 
-## Everyday commands
+## Checks
 
 ```bash
 python -m pytest -q                                  # full suite (pythonpath=src is configured)
@@ -60,18 +67,9 @@ python tests/mutation/run.py --jobs 4                # every guard's tests must 
   it fail. Run it on demand, never in CI, after writing or changing a safety
   test; a mutant whose line has moved is `STALE` and fails the run. Its
   `README.md` says how to add one. It ships in the sdist with `tests/`.
-- **Formatting is black**, pinned to `target-version = ["py39"]` so it never
-  emits syntax the floor cannot parse. No linter or type checker is enforced.
-- **Every file is LF** (`.gitattributes` sets `* text=auto eol=lf`). On Windows,
-  black writes CRLF: convert the files back to LF after formatting and check
-  `git diff --stat` for whitespace-only churn.
-- **3.9 compatibility**: any module using `X | Y` in a runtime-evaluated
-  annotation needs `from __future__ import annotations`.
-- **`*.local.*` files** are per-machine overrides: gitignored and excluded from
-  both build targets. Keep hostnames and credentials in those, never in tracked
-  files.
+- No linter or type checker is enforced; formatting is black (see Conventions).
 
-## Benchmarks
+### Benchmarks
 
 `python benchmarks/bench.py --help` lists the suites. `--save` writes a JSON
 result per (version, interpreter, platform) into `benchmarks/results/`; the
@@ -79,7 +77,7 @@ schema and the reproduce command are in
 [`benchmarks/README.md`](benchmarks/README.md). A local run is a sanity check;
 performance claims in the changelog or release notes come from CI runs.
 
-## CI
+### CI
 
 Workflows live in `.github/workflows/`:
 
@@ -98,6 +96,27 @@ Workflows live in `.github/workflows/`:
 - `docs.yml` owns every GitHub Pages deploy: on a push to `main` that touches the
   docs sources and on `workflow_dispatch`, which `release.yml` fires for a final
   tag.
+
+## Conventions
+
+- **Formatting is black**, pinned to `target-version = ["py39"]` so it never
+  emits syntax the floor cannot parse.
+- **Every file is LF** (`.gitattributes` sets `* text=auto eol=lf`). On Windows,
+  black writes CRLF: convert the files back to LF after formatting and check
+  `git diff --stat` for whitespace-only churn.
+- **3.9 compatibility**: any module using `X | Y` in a runtime-evaluated
+  annotation needs `from __future__ import annotations`.
+- **`*.local.*` files** are per-machine overrides: gitignored and excluded from
+  both build targets. Keep hostnames and credentials in those, never in tracked
+  files.
+
+### Commits
+
+- Logical commits in `type: description` form (`feat:`, `fix:`, `docs:`,
+  `chore:`); keep code with its tests, and docs/config/CI in separate commits.
+- No agent attribution in commit messages: no `Co-Authored-By:` naming a model
+  or assistant, no `*-Session:` trailers, no session URLs, no "generated with"
+  footers.
 
 ## Releasing
 
@@ -121,11 +140,3 @@ Workflows live in `.github/workflows/`:
 
 Changelog entries say what changed and what a user must do about it. They do
 not describe how the work was done.
-
-## Commits
-
-- Logical commits in `type: description` form (`feat:`, `fix:`, `docs:`,
-  `chore:`); keep code with its tests, and docs/config/CI in separate commits.
-- No agent attribution in commit messages: no `Co-Authored-By:` naming a model
-  or assistant, no `*-Session:` trailers, no session URLs, no "generated with"
-  footers.
