@@ -213,7 +213,9 @@ jobs:
             tests/test_pathname.py \
             tests/test_glob.py \
             tests/test_glob_parity.py \
-            tests/test_utils.py \
+            tests/test_providers.py \
+            tests/test_filestat.py \
+            tests/test_http_date.py \
             tests/test_mempath.py
       - name: A pure-path join needs no scheme client
         # The specific shape the suite cannot assert from an all-extras
