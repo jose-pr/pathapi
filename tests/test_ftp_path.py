@@ -19,7 +19,7 @@ from ftp_loopback import LoopbackFtp
 from waits import wait_until
 
 import pathlib_next
-from pathlib_next.ftp import BaseFTPBackend, Endpoint, FTPBackend, FTPPath
+from pathlib_next.ftp import BaseFTPBackend, FTPBackend, FTPEndpoint, FTPPath
 from pathlib_next.ftp import _backend as ftp_backend
 from pathlib_next.testing import PathContract
 
@@ -80,7 +80,7 @@ def test_the_endpoint_keywords_are_held_by_the_backend():
     assert (backend.host, backend.port, backend.user) == ("h", 2121, "u")
     assert (backend.password, backend.tls, backend.timeout) == ("p", True, 3)
     assert backend.verify is False
-    assert backend.endpoint == Endpoint("h", 2121, "u", True)
+    assert backend.endpoint == FTPEndpoint("h", 2121, "u", True)
 
 
 def test_the_default_port_is_21_whatever_tls_says():

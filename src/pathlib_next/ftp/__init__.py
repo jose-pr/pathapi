@@ -11,8 +11,8 @@ from ._backend import (
     DEFAULT_TIMEOUT,
     IDLE_PROBE_SECONDS,
     BaseFTPBackend,
-    Endpoint,
     FTPBackend,
+    FTPEndpoint,
 )
 from ._path import FTPPath
 
@@ -20,8 +20,8 @@ __all__ = [
     "BaseFTPBackend",
     "DEFAULT_PORT",
     "DEFAULT_TIMEOUT",
-    "Endpoint",
     "FTPBackend",
+    "FTPEndpoint",
     "FTPPath",
     "IDLE_PROBE_SECONDS",
 ]

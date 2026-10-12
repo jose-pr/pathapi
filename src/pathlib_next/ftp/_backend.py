@@ -29,7 +29,7 @@ Servers close idle sessions after tens of seconds at the least, so a run of
 operations pays no probe and a pause long enough to lose the session pays one."""
 
 
-class Endpoint(_ty.NamedTuple):
+class FTPEndpoint(_ty.NamedTuple):
     """The server and account a backend connects to: what two backends must
     share for their paths to name the same files. The password is not part of
     it."""
@@ -136,8 +136,8 @@ class FTPBackend(BaseFTPBackend):
         self.verify = verify
 
     @property
-    def endpoint(self) -> Endpoint:
-        return Endpoint(self.host, self.port, self.user, self.tls)
+    def endpoint(self) -> FTPEndpoint:
+        return FTPEndpoint(self.host, self.port, self.user, self.tls)
 
     def __repr__(self) -> str:
         shown = [repr(self.host), str(self.port)]

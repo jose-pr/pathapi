@@ -773,7 +773,7 @@ DEFAULT_PORT = 21
 DEFAULT_TIMEOUT = 30.0
 IDLE_PROBE_SECONDS = 1.0
 
-class Endpoint(NamedTuple):
+class FTPEndpoint(NamedTuple):
     host: str
     port: int
     user: str | None
@@ -821,7 +821,7 @@ class FTPBackend(BaseFTPBackend):
   afresh. Leaving a `with` block calls it. A `ValueError` for an empty `host`.
 - `BaseFTPBackend.client()` is what to override to supply connections: a new
   connected, logged-in `ftplib.FTP`. `endpoint`, when set, is a hashable value
-  naming the server and account (`FTPBackend`'s is an `Endpoint`, which holds
+  naming the server and account (`FTPBackend`'s is an `FTPEndpoint`, which holds
   no password); without one only the same backend object is the same tree.
 
 ### What a path does
