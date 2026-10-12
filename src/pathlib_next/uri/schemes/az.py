@@ -364,10 +364,9 @@ class AzPath(_store.ObjectStorePath):
 
     @property
     def key(self) -> str:
-        # Everything after the container, minus exactly one trailing "/":
-        # `az://acct/cont/dir/` is the directory `dir`, as on s3:/gs:.
-        # Interior empty segments (`a//b`) are literal blob-name bytes and
-        # stay, so `a//b` is addressable.
+        # Everything after the container, minus exactly one trailing "/" (`az://acct/cont/dir/`
+        # is the directory `dir`, as on s3:/gs:); interior empty segments (`a//b`) are
+        # literal blob-name bytes.
         _container, _, key = self.path.lstrip("/").partition("/")
         return key[:-1] if key.endswith("/") else key
 
@@ -419,9 +418,8 @@ class AzPath(_store.ObjectStorePath):
             # pathlib's iterdir() refuses. Only an empty listing pays this.
             if not self.stat().is_dir():
                 raise NotADirectoryError(_errno.ENOTDIR, "Not a directory", str(self))
-        # A key that is both a blob and a prefix (`x` and `x/y`) lists as the
-        # blob, agreeing with stat()'s exact-blob precedence; the subtree
-        # under it is not listed. The SDK returns every prefix of a page
+        # A key that is both a blob and a prefix (`x` and `x/y`) lists as the blob,
+        # agreeing with stat()'s exact-blob precedence. The SDK returns a page's prefixes
         # before its blobs, so the blobs are collected first.
         blobs = {
             item.name[len(prefix) :]
@@ -540,10 +538,9 @@ class AzPath(_store.ObjectStorePath):
                 pass
 
     def _stat_root(self) -> FileStat:
-        # A container root (or `az://account`, which holds containers): ask
-        # the server, as s3: does with HeadBucket, so a mistyped name does
-        # not read as an existing directory. A one-item listing needs only
-        # the permission the rest of the path uses.
+        # A container root (or `az://account`): ask the server, as s3: does with
+        # HeadBucket, so a mistyped name does not read as an existing directory. A
+        # one-item listing needs only the permission the rest of the path uses.
         with _translate_errors(self):
             if self.container:
                 listing = self._container.list_blobs(
@@ -629,11 +626,9 @@ class AzPath(_store.ObjectStorePath):
                 try:
                     delete_blobs(*batch)
                 except Exception:
-                    # A partial failure has already deleted the other keys;
-                    # a rejected batch (auth on the batch endpoint, an
-                    # emulator without batch support) has deleted none.
-                    # Either way every key is retried on its own, so one
-                    # failing blob does not leave the rest behind.
+                    # A partial failure has already deleted some keys, a rejected batch (auth on the
+                    # batch endpoint, an emulator without batch support) none: either way every key is
+                    # retried on its own, so one failing blob does not leave the rest behind.
                     self._delete_each(batch, on_error, ignore_missing=True)
             return
 

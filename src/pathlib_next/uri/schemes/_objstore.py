@@ -26,10 +26,9 @@ from .. import UriPath as _UriPath
 
 _state = _threading.local()
 
-#: What a failure of the connection to the store is, as `transport_error()`
-#: raises it: the request ran out of time, the endpoint could not be reached,
-#: the connection broke after the store had begun to answer, or anything else
-#: the HTTP client reported.
+#: What a failure of the connection to the store is, as `transport_error()` raises
+#: it: the request ran out of time, the endpoint was unreachable, the connection
+#: broke after the store began to answer, or anything else the HTTP client reported.
 TIMEOUT, UNREACHABLE, INTERRUPTED, FAILED = (
     "timeout",
     "unreachable",

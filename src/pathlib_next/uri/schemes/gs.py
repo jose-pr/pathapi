@@ -465,10 +465,9 @@ class GsPath(_store.ObjectStorePath):
             ]
 
     def _stat_root(self) -> FileStat:
-        # The bucket root: ask the server, as s3: does with HeadBucket, so a
-        # mistyped bucket does not read as an existing directory. A one-item
-        # listing (NotFound for a missing bucket) needs only the object-list
-        # permission the rest of the path uses.
+        # The bucket root: ask the server, as s3: does with HeadBucket, so a mistyped bucket
+        # does not read as an existing directory. A one-item listing needs only the
+        # object-list permission the rest of the path uses.
         with _translate_errors(self):
             for _ in self._bucket.list_blobs(max_results=1, **self._options):
                 break
