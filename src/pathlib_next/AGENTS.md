@@ -2099,7 +2099,8 @@ class HTTPResponse:
   certifi); `verify=False` is the one way to turn verification off, and
   `ssl_context` wins over it. Each thread keeps one idle connection per
   server (at most 8, closed when the thread ends or on `close()`), reused for
-  its next request. A request that fails before any byte of a reply on a
+  its next request unless the server has closed it or sent bytes on it since
+  (checked before anything is sent). A request that fails before any byte of a reply on a
   reused connection that the server had closed is sent once more on a new
   connection **only** if it is `GET`, `HEAD`, `OPTIONS`, `PUT`, `DELETE` or
   `PROPFIND` and its body is `None` or in memory; any other request uses an
@@ -2113,9 +2114,18 @@ class HTTPResponse:
   when a connection cannot be made (`None` in the order is a direct
   attempt); `KeyError` means direct and the environment is not read; `{}`
   sends everything direct. A proxy is a `str` URL or any object with a `url`
-  attribute, so a `proxylib` map works as it is:
-  `HTTPTransport(proxies=proxylib.ProxyMap("http://proxy:3128"))` (the library
-  does not import `proxylib`). A plain `dict` may use the keys `requests`
+  attribute, so a proxy resolver from another library works as it is, with
+  none imported here:
+
+  ```
+  class Resolver:  # tries the first proxy, then connects directly
+      def __getitem__(self, url):
+          return ["http://user:secret@proxy.example:3128", None]
+
+  transport = HTTPTransport(proxies=Resolver())
+  ```
+
+  A plain `dict` may use the keys `requests`
   does (`"http"`, `"https"`, `"all"`, `"scheme://host"`). Only `http://`
   proxies work: absolute-form requests for `http:` and `CONNECT` for
   `https:`, with `Proxy-Authorization: Basic` from the proxy URL's userinfo

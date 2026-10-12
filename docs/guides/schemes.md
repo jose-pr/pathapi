@@ -24,15 +24,15 @@ install it too.
 | `tar:` (`TarUri`) | Yes | No | No | Yes | No | No | No | No | `uri` |
 | `archive:` / `archive+zip:` / `archive+tar:` | As `zip:` or `tar:` for the detected or pinned format | | | | | | | | `uri` |
 | `ftp:` / `ftps:` (`FtpPath`) | Yes | Yes | Yes (`APPE`) | Yes | Yes | Yes | Yes | `SITE CHMOD`, if the server has it | `uri` |
-| `http:` / `https:` (`HttpPath`) | Yes | Yes (`PUT`) | Yes (rewrite or `PATCH`) | Yes (HTML index) | No | Yes (`DELETE`) | No | No | `http` |
-| `dav:` / `davs:` (`DavPath`) | Yes | Yes | No | Yes (`PROPFIND`) | Yes (`MKCOL`) | Yes | Yes (`MOVE`) | No | `http` |
+| `http:` / `https:` (`HttpPath`) | Yes | Yes (`PUT`) | Yes (rewrite or `PATCH`) | Yes (HTML index) | No | Yes (`DELETE`) | No | No | `uri` |
+| `dav:` / `davs:` (`DavPath`) | Yes | Yes | No | Yes (`PROPFIND`) | Yes (`MKCOL`) | Yes | Yes (`MOVE`) | No | `uri` |
 | `sftp:` (`SftpPath`) | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | `sftp` or `sftp-async` |
 | `s3:` (`S3Path`) | Yes | Yes | No | Yes (prefixes) | Yes (marker) | Yes | Same bucket | No | `s3` |
 | `gs:` (`GsPath`) | Yes | Yes | No | Yes (prefixes) | Yes (marker) | Yes | Same bucket | No | `gs` |
 | `az:` (`AzPath`) | Yes | Yes | No | Yes (prefixes) | Yes (marker) | Yes | Same container | No | `az` |
-| `github:` (`GitHubPath`) | Yes | No | No | Yes | No | No | No | No | `http` |
-| `gitlab:` (`GitLabPath`) | Yes | No | No | Yes | No | No | No | No | `http` |
-| `git:` / `git+github:` / `git+gitlab:` | As `github:`/`gitlab:` | | | | | | | | `http` |
+| `github:` (`GitHubPath`) | Yes | No | No | Yes | No | No | No | No | `uri` |
+| `gitlab:` (`GitLabPath`) | Yes | No | No | Yes | No | No | No | No | `uri` |
+| `git:` / `git+github:` / `git+gitlab:` | As `github:`/`gitlab:` | | | | | | | | `uri` |
 
 `stat()` works everywhere. `st_mtime` is real on every implementation except
 `data:` and `github:`/`gitlab:`, where it is `0`. `symlink_to()` is
@@ -85,9 +85,11 @@ implemented by `LocalPath` and `sftp:` only; `readlink()` by `LocalPath` and
   stalls raises (`OSError` or `TimeoutError`) instead of listing part of it,
   and one larger than `pathlib_next.uri.schemes.http.MAX_LISTING_BYTES` (8 MiB)
   raises `OSError` (`EFBIG`); assign a larger number to list it. Configure it with
+  `path.with_transport(transport, headers=None, timeout=(10, 60),
+  write_method="PUT", append_mode="rewrite")`; the default transport is the
+  built-in one (see "Transports" below), and
   `path.with_session(session, write_method="PUT", append_mode="rewrite",
-  **requests_args)`: `requests_args` (`headers=`, `auth=`, `verify=`,
-  `timeout=`, ...) go to every request.
+  **requests_args)` sends through a `requests.Session` instead.
   - Writes send `write_method` with the whole body on close. `open("x")`
     calls `stat()` first: a file that exists raises `FileExistsError`, and so
     does any failure of that check other than not-found (nothing is sent).
@@ -104,28 +106,30 @@ implemented by `LocalPath` and `sftp:` only; `readlink()` by `LocalPath` and
   - `unlink()` refuses a directory; `rmdir()` requires an empty one.
   - Requests time out after `(10, 60)` seconds (connect, read) unless a
     `timeout` is given; `timeout=None` waits forever.
-  - Redirects are followed as `requests` follows them for `GET`, `HEAD` and
+  - The library follows redirects itself, up to 30, for `GET`, `HEAD` and
     `OPTIONS`, but not for `PROPFIND` or the writes: `PROPFIND`, `PUT`,
-    `PATCH`, `DELETE`, `MKCOL`, `MOVE` and a custom `write_method` are sent
-    with `allow_redirects=False` (an `allow_redirects` in `with_session()`
-    does not apply to them). A 307 or 308 (for `PROPFIND` also a 301, 302 or
+    `PATCH`, `DELETE`, `MKCOL`, `MOVE` and a custom `write_method` are never
+    followed (an `allow_redirects` in `with_session()` does not apply to
+    them). A 307 or 308 (for `PROPFIND` also a 301, 302 or
     303) to the same scheme, host and port is sent once more with the same
     method, headers and body; any other 3xx, a redirect to another origin and
     a second redirect raise `OSError` (`EIO`) naming the status and the
     `Location`. Point the path at the final URL if the server redirects.
-  - Credentials in the URL (`https://user:pw@host/`) are sent as Basic
-    `auth=`, never inside the request URL, and take priority over `~/.netrc`;
-    the octets of the percent-escapes are the credential (`caf%C3%A9` goes out
-    as UTF-8 bytes).
-  - When a `GET` or `HEAD` is redirected to another host, `requests` drops
-    `Authorization` and nothing else: headers other than `Authorization` from
-    `with_session(headers=...)` (`X-Api-Key`, a vendor token header) go to the
-    new host too. Keep a secret in `Authorization` or `auth=`, or point the
-    path at the final URL.
+  - Credentials in the URL (`https://user:pw@host/`) are sent as an
+    `Authorization: Basic` header, never inside the request URL; the octets of
+    the percent-escapes are the credential (`caf%C3%A9` goes out as UTF-8
+    bytes). The default transport never reads `~/.netrc`.
+  - When a `GET` or `HEAD` is redirected to a different scheme, host or port,
+    the library drops `Authorization` and nothing else: headers
+    other than `Authorization` from `with_transport(headers=...)` (`X-Api-Key`,
+    a vendor token header) go to the new host too. Keep a secret in
+    `Authorization`, or point the path at the final URL.
+  - A header or URL with a line break or other control character is a
+    `ValueError`, raised before anything is sent.
   - The mode of `open()` is matched exactly: `"r+"`, `"w+"` and `"a+"` raise
     `NotImplementedError`.
 - **`dav(s):`** (`DavPath`) is WebDAV (RFC 4918) over the equivalent
-  `http(s):` URL, with the same `with_session()`. `PROPFIND` gives real
+  `http(s):` URL, with the same `with_transport()` and `with_session()`. `PROPFIND` gives real
   directory metadata, `MKCOL`/`PUT`/`DELETE`/`MOVE` full writes. A reply that
   is not a `multistatus` document, or that names neither the collection nor
   any member of it, raises `OSError` (`EIO`), and a listing keeps only the
@@ -133,8 +137,35 @@ implemented by `LocalPath` and `sftp:` only; `readlink()` by `LocalPath` and
   refuses a collection and `rmdir()` checks that it is empty (WebDAV
   `DELETE` is recursive); `rm(recursive=True)` is a single `DELETE`.
   `rename()` does not overwrite an existing target (`FileExistsError`).
-  Uploads use `write_method` (default `PUT`) from `with_session()`; append
+  Uploads use `write_method` (default `PUT`) from `with_transport()`; append
   mode is not supported, so `append_mode` has no effect.
+
+### Transports
+
+`http:`, `dav:`, `github:`, `gitlab:` and `git:` send through a **transport**:
+any object with `send(method, url, *, headers, body=None, timeout,
+stream=False)` returning an `HTTPResponse`, and `close()`. The library, not the
+transport, follows redirects, adds credentials and maps a status to an
+exception, so every transport behaves alike.
+
+- **`HTTPTransport`** (the default) is standard library only (`http.client`,
+  `ssl`). `HTTPTransport(ssl_context=None, verify=True, proxies=None)`: `https:`
+  is verified against the system trust store, or `ssl_context`;
+  `verify=False` is the one switch that turns it off. It keeps one idle
+  connection per thread and server, and sends a repeatable request again once
+  when the server had closed that connection.
+- **Proxies**: without `proxies=` the environment (`HTTP_PROXY`, `HTTPS_PROXY`,
+  `ALL_PROXY`, `NO_PROXY`) decides. `proxies=` is an object indexed with the
+  request URL that returns `None` (direct), a proxy, or an order of them to try
+  when one cannot be reached; `KeyError` means direct. A proxy is a URL or an
+  object with a `url`, so a proxy resolver of that shape works as it is. Only `http://`
+  proxies are supported (`CONNECT` for `https:`); for SOCKS or an `https://`
+  proxy use `RequestsTransport`.
+- **`RequestsTransport(session=None, **requests_args)`** needs the `http` extra
+  and keeps what `requests` does: `~/.netrc`, `REQUESTS_CA_BUNDLE` and certifi,
+  SOCKS proxies, digest and NTLM authentication, cookies, mounted adapters.
+- `PATHLIB_NEXT_HTTP_TRANSPORT=requests` makes `RequestsTransport` the default
+  of a process.
 
 ## FTP
 
@@ -340,8 +371,8 @@ need no URI: `ZipPath("index.html", archive="/backups/site.zip")`.
 ## Git hosting
 
 **`github:`/`gitlab:`** (`<scheme>://host/owner/repo/path/in/repo?ref=<ref>`)
-are read-only views of a repository over the REST APIs, using plain
-`requests`.
+are read-only views of a repository over the REST APIs, sent through the
+HTTP transport.
 
 - `ref` (branch, tag or SHA) is optional and carried to every child path.
   Without it, `github:` uses the default branch server-side; `gitlab:` looks

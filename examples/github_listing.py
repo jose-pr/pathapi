@@ -1,6 +1,6 @@
 """List files in a GitHub repository using GitHubPath.
-Requires the `http` extra (`pip install pathlib_next[http]`) -- plain
-`requests`, no PyGithub SDK. Works unauthenticated for public repos
+Requires the `uri` extra (`pip install pathlib_next[uri]`) -- the
+standard library sends the requests, no PyGithub SDK. Works unauthenticated for public repos
 (subject to GitHub's 60 req/h anonymous rate limit); set GITHUB_TOKEN for
 a higher limit or a private repo -- guarded under `if __name__ == "__main__"`
 so importing this module is always safe, and skipped (prints setup

@@ -1,6 +1,7 @@
 # `http:` and `dav:`
 
-Both need the `http` extra.
+Both run on the standard library, through a transport that can be replaced
+(`HTTPTransport` by default, `RequestsTransport` with the `http` extra).
 
 ::: pathlib_next.uri.schemes.http
     options:
@@ -8,6 +9,9 @@ Both need the `http` extra.
         - DEFAULT_TIMEOUT
         - MAX_LISTING_BYTES
         - HttpBackend
+        - HTTPResponse
+        - HTTPTransport
+        - RequestsTransport
         - HttpPath
         - HttpWriteStream
         - HttpAppendStream

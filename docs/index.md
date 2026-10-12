@@ -18,8 +18,8 @@ pip install pathlib-next
 
 | Extra | Adds | Needed for |
 | --- | --- | --- |
-| `uri` | `uritools`, `netimps` | `pathlib_next.uri` and every URI scheme (`file:`, `data:`, `ftp(s):`, archives included) |
-| `http` | `requests` | `http(s):`, `dav(s):`, `github:`, `gitlab:`, `git:` |
+| `uri` | `uritools`, `netimps` | `pathlib_next.uri` and every URI scheme that needs no client library (`file:`, `data:`, `ftp(s):`, archives, `http(s):`, `dav(s):`, `github:`, `gitlab:`, `git:`; HTTP runs on the standard library) |
+| `http` | `requests` | `RequestsTransport` for the HTTP schemes (`~/.netrc`, certifi, SOCKS proxies, digest/NTLM auth, cookies) |
 | `sftp` | `paramiko` | `sftp:` with the paramiko backend |
 | `sftp-async` | `asyncssh` | `sftp:` with the asyncssh backend |
 | `s3` | `boto3` | `s3:` |

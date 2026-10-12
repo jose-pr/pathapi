@@ -8,6 +8,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **`http:`, `https:`, `dav:`, `davs:`, `github:`, `gitlab:` and `git:` run on
+  the standard library, through a transport you can replace.** Nothing else
+  needs installing: `pip install "pathlib-next[uri]"` is enough, and
+  `import pathlib_next.uri.schemes.http` imports no third-party library. A
+  transport is any object with `send(method, url, *, headers, body=None,
+  timeout, stream=False)` that returns an `HTTPResponse` and a `close()`.
+  Three names are new in `pathlib_next.uri.schemes.http`:
+  `HTTPTransport(*, ssl_context=None, verify=True, proxies=None)`, the
+  built-in transport on `http.client`; `RequestsTransport(session=None,
+  **requests_args)`, which sends with a `requests.Session`; and
+  `HTTPResponse` (`status`, `reason`, `headers`, `url`, `read()`,
+  `iter_bytes()`, `close()`). `path.with_transport(transport, headers=None,
+  timeout=(10, 60), write_method="PUT", append_mode="rewrite")` installs a
+  backend over any transport, and `HttpBackend` and `RepoBackend` take
+  `transport=`. `HTTPTransport` verifies `https:` against `ssl_context`, else
+  the system trust store; `verify=False` is the one way to turn that off. It
+  keeps one idle connection per thread and server (at most 8; one the server
+  closed is replaced before anything is sent on it, and only a repeatable
+  request is sent again after a connection drops mid-request), decodes `gzip`
+  and `deflate` bodies in bounded steps, and takes `proxies=` as an object
+  indexed with the request URL that returns a proxy, an order of proxies or
+  `None`, with `KeyError` for no opinion (a proxy resolver of that shape
+  works as it is, and none is imported). Without `proxies=` it reads `HTTP_PROXY`,
+  `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY`. `PATHLIB_NEXT_HTTP_TRANSPORT`
+  (`builtin` or `requests`) names the transport a backend builds when it is
+  not given one.
 - **`pathlib_next.ftp`: `FTPPath` and `FTPBackend`, an FTP tree that needs no
   URI and no extra.** `FTPPath("/pub/x", host="h", user="u", tls=True)` builds
   the path's own `FTPBackend`; `FTPPath("/pub/x", backend=backend)` shares one
@@ -59,6 +85,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   checker reads those names as the module's exports.
 
 ### Changed
+- **HTTP is sent by the standard library by default, not by `requests`
+  (takes effect in 0.10.0).** `http:`, `dav:`, `github:`, `gitlab:` and `git:`
+  no longer need the `http` extra, which now installs `requests` only for
+  `RequestsTransport`. To keep `requests` for a path, use
+  `path.with_session(requests.Session(), ...)`, or set
+  `PATHLIB_NEXT_HTTP_TRANSPORT=requests` for the process. What `requests` did
+  and the default transport does not, and what to do about it:
+
+  | Was (from `requests`) | Now | Do |
+  | --- | --- | --- |
+  | `~/.netrc` credentials | not read | put the credentials in the URL, or send `headers={"Authorization": ...}`, or use `with_session()` |
+  | `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, the certifi bundle | the system trust store | `HTTPTransport(ssl_context=ssl.create_default_context(cafile=...))`, or `with_session(session, verify=...)` |
+  | SOCKS and `https:` proxies | `OSError(EPROTONOSUPPORT)` naming the scheme | `with_session()` |
+  | proxies from `requests` settings | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` through `urllib.request` | `HTTPTransport(proxies=...)` |
+  | `session.auth` objects (digest, NTLM), mounted adapters, cookies | not available | `with_session(session)` |
+  | `requests_args` of `with_session()` | unchanged there; `headers` and `timeout` belong to the backend | `with_transport(transport, headers=, timeout=)` |
+  | `User-Agent: python-requests/x` | `User-Agent: pathlib-next` | pass `headers={"User-Agent": ...}` |
+  | a TLS failure was a `ConnectionError` | it is an `ssl.SSLError` (an `OSError`) | catch `ssl.SSLError` |
+  | `Authorization` kept on an `http:` to `https:` redirect of the same host | dropped, as for any change of scheme, host or port | none |
+
+  A redirect of a `GET`, `HEAD` or `OPTIONS` is followed by the backend (up to
+  30), whichever transport sends: `Authorization`, and only it, is dropped
+  when the scheme, host or port changes.
+- **`HttpBackend` is a class, not a named tuple, and `RepoBackend` and
+  `BaseRepoBackend` return an `HTTPResponse` (takes effect in 0.10.0).**
+  `HttpBackend(session, requests_args, write_method, append_mode)` becomes
+  `HttpBackend(transport=None, *, headers=None, timeout=(10, 60),
+  write_method="PUT", append_mode="rewrite")`; its `session` and
+  `requests_args` fields are gone (it has `transport`, `headers`, `timeout`,
+  `write_method` and `append_mode`), and it no longer compares or unpacks as a
+  tuple. `HttpBackend.request()` and `BaseRepoBackend.request()` return an
+  `HTTPResponse`, not a `requests.Response`: `status` for `status_code`,
+  `read()` for `content`, `json.loads(response.read())` for `json()`; a
+  `BaseRepoBackend` of your own must return one, and `request()` of
+  `HttpBackend` takes `data=`, `headers=`, `stream=`, `allow_redirects=` and
+  `timeout=` as keywords only. `RepoBackend(token, session, api_base,
+  **requests_args)` keeps `session=` as the requests form and gains
+  `transport=`, `headers=` and `timeout=`; its `session` and `requests_args`
+  attributes are gone.
+- **A request whose header or URL has a line break or another control
+  character is a `ValueError`, raised before anything is sent (takes effect
+  in 0.10.0).** A `requests` header error used to surface as `OSError(EIO)`.
+  A path still accepts a URL with `user:password@` (it is sent as an
+  `Authorization: Basic` header); a transport itself refuses one.
 - **The `pathlib_next.utils` package is gone, and the modules that replace it
   are named for what they hold (takes effect in 0.10.0).** There is no alias:
   the old import raises `ModuleNotFoundError`. Change each import as the table

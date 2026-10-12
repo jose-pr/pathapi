@@ -278,7 +278,7 @@ The built-in schemes are worked examples of increasing size:
 [`FileUri`](../api/schemes/local.md) delegates to `LocalPath`,
 [`S3Path`](../api/schemes/objstore.md) emulates directories over key
 prefixes, [`HttpPath`](../api/schemes/http.md) scrapes HTML listings behind a
-`requests` session, and [`SftpPath`](../api/schemes/sftp.md) caches
+replaceable transport, and [`SftpPath`](../api/schemes/sftp.md) caches
 connections behind two interchangeable backends.
 
 ## Testing your implementation

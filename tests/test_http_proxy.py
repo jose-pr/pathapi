@@ -23,7 +23,7 @@ def basic(user, password):
 
 
 class Provider:
-    """What a `proxylib` map looks like to the transport: indexed with a URL,
+    """A proxy resolver as the transport sees it: indexed with a URL,
     it returns one proxy, a sequence of them, `None`, or raises `KeyError`."""
 
     def __init__(self, answer):
@@ -38,7 +38,7 @@ class Provider:
 
 
 class Proxied:
-    """An object with a `url`, as a `proxylib.Proxy` has."""
+    """An object with a `url`, as a proxy resolver's proxies have."""
 
     def __init__(self, url, username=None, password=None):
         self.url = url
@@ -333,7 +333,10 @@ def test_proxy_credentials_are_in_no_repr(transport_for):
 
     address = _address("http://carol:PROXYSECRET@proxy.example:3128")
     assert isinstance(address, ProxyAddress)
-    assert "PROXYSECRET" not in repr(address) + str(address)
+    shown = repr(address) + str(address)
+    # The password, and the Proxy-Authorization value that encodes it.
+    assert "PROXYSECRET" not in shown and basic("carol", "PROXYSECRET") not in shown
+    assert "Basic" not in shown
 
 
 @pytest.mark.parametrize("bad", ["http://", "", 42])

@@ -1,6 +1,6 @@
 # `github:`, `gitlab:` and `git:`
 
-All need the `http` extra.
+None needs a client library: they send through the same transport as `http:`.
 
 ::: pathlib_next.uri.schemes._gitrepo
     options:

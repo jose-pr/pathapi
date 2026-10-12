@@ -1,6 +1,6 @@
 """List files in a GitLab project using GitLabPath.
-Requires the `http` extra (`pip install pathlib_next[http]`) -- plain
-`requests`, no python-gitlab SDK. Works unauthenticated for public
+Requires the `uri` extra (`pip install pathlib_next[uri]`) -- the
+standard library sends the requests, no python-gitlab SDK. Works unauthenticated for public
 projects; set GITLAB_TOKEN for a private one -- guarded under
 `if __name__ == "__main__"` so importing this module is always safe, and
 skipped (prints setup instructions, exit 0) unless GITLAB_EXAMPLE_PROJECT
