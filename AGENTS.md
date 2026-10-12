@@ -52,8 +52,14 @@ python -m pytest -q --cov=pathlib_next --cov-report=term-missing
 python -m black src/ tests/ benchmarks/ examples/    # formatting; --check to verify
 mkdocs build --strict                                # docs must build with no warnings
 python -m build                                      # sdist + wheel into dist/
+python tests/mutation/run.py --jobs 4                # every guard's tests must fail on a broken copy
 ```
 
+- **The mutation list** (`tests/mutation/`) applies one single-line change to a guard
+  of a temporary copy of `src/pathlib_next` and checks that the tests named for
+  it fail. Run it on demand, never in CI, after writing or changing a safety
+  test; a mutant whose line has moved is `STALE` and fails the run. Its
+  `README.md` says how to add one. It ships in the sdist with `tests/`.
 - **Formatting is black**, pinned to `target-version = ["py39"]` so it never
   emits syntax the floor cannot parse. No linter or type checker is enforced.
 - **Every file is LF** (`.gitattributes` sets `* text=auto eol=lf`). On Windows,
