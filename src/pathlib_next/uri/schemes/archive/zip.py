@@ -59,8 +59,9 @@ def _copy_zipinfo(info: _zipfile.ZipInfo, name: str) -> _zipfile.ZipInfo:
 def _member_mode(info: _zipfile.ZipInfo) -> "int | None":
     """The Unix mode stored for `info`, or None when there is none: only a
     Unix-made entry (`create_system == 3`) carries one, in the high 16 bits
-    of `external_attr`. A symlink or other special type is not modelled by
-    the archive schemes and reports no mode either."""
+    of `external_attr`. A special type other than a symlink (which
+    `_ZipBackend._stat_of` reports as one) is not modelled and reports no
+    mode either."""
     mode = info.external_attr >> 16 if info.create_system == 3 else 0
     if not _stat.S_IMODE(mode):
         return None
@@ -72,6 +73,21 @@ def _member_mode(info: _zipfile.ZipInfo) -> "int | None":
     if kind not in (_stat.S_IFREG, _stat.S_IFDIR):
         return None
     return kind | _stat.S_IMODE(mode)
+
+
+_MAX_LINK_TEXT = 4096
+"""The longest text a zip link member may store (`PATH_MAX`); a longer one is
+a link whose text cannot be read."""
+
+
+def _is_link(info: _zipfile.ZipInfo) -> bool:
+    """Whether `info` is a symbolic link: an entry made on Unix whose mode
+    says so. Its data is the text of the link."""
+    return (
+        info.create_system == 3
+        and not info.filename.endswith("/")
+        and _stat.S_ISLNK(info.external_attr >> 16)
+    )
 
 
 _COPY_CHUNK = 1024 * 1024
@@ -233,17 +249,23 @@ class _Scratch:
         self._file.close()
 
 
+_NO_LINK = object()
+
+
 class _Pending:
     """One member of a batch: the `ZipInfo` a listing reports for it, the
     entry of the archive file whose stored bytes it is (`origin`, None for a
-    member written in the batch) and where the written bytes are (`data`)."""
+    member written in the batch) and where the written bytes are (`data`).
+    `link` is the text of a link member (None when unreadable), else
+    `_NO_LINK`."""
 
-    __slots__ = ("info", "origin", "data")
+    __slots__ = ("info", "origin", "data", "link")
 
-    def __init__(self, info, origin, data):
+    def __init__(self, info, origin, data, link=_NO_LINK):
         self.info = info
         self.origin = origin
         self.data = data
+        self.link = link
 
 
 class _Batch:
@@ -337,9 +359,34 @@ class _ZipBackend(_ArchiveBackend):
     def _is_directory(info):
         return info.filename.endswith("/")
 
+    def _link_texts(self, entries):
+        links = {}
+        for raw, info in entries:
+            if _is_link(info):
+                links[raw] = self._read_link(info)
+        return links
+
+    def _read_link(self, info) -> "str | None":
+        if info.file_size > _MAX_LINK_TEXT:
+            return None
+        try:
+            with self._reading() as handle:
+                with handle.open(info) as source:
+                    data = source.read(_MAX_LINK_TEXT + 1)
+        except Exception:
+            return None
+        if len(data) > _MAX_LINK_TEXT:
+            return None
+        return data.decode("utf-8", "surrogateescape")
+
     @staticmethod
     def _stat_of(info, snapshot):
         mtime = int(_time.mktime((*info.date_time, 0, 0, -1))) if info.date_time else 0
+        if _is_link(info):
+            mode = _stat.S_IMODE(info.external_attr >> 16) or 0o777
+            return FileStat(
+                st_mode=_stat.S_IFLNK | mode, st_size=info.file_size, st_mtime=mtime
+            )
         return FileStat(
             st_mode=_member_mode(info),
             st_size=info.file_size,
@@ -355,7 +402,13 @@ class _ZipBackend(_ArchiveBackend):
             if batch.snapshot is None:
                 table = self._table()
                 batch.snapshot = _Snapshot(
-                    type(self), [(name, entry.info) for name, entry in table.items()]
+                    type(self),
+                    [(name, entry.info) for name, entry in table.items()],
+                    {
+                        name: entry.link
+                        for name, entry in table.items()
+                        if entry.link is not _NO_LINK
+                    },
                 )
             return batch.snapshot
 
@@ -414,10 +467,14 @@ class _ZipBackend(_ArchiveBackend):
         outer_path = str(self.outer.filepath)
         try:
             with self._reading() as handle:
-                for info in handle.infolist():
-                    # The last of several entries of one name is the live one.
-                    table.pop(info.filename, None)
-                    table[info.filename] = _Pending(info, info, None)
+                infos = handle.infolist()
+            links = self._link_texts([(info.filename, info) for info in infos])
+            for info in infos:
+                # The last of several entries of one name is the live one.
+                table.pop(info.filename, None)
+                table[info.filename] = _Pending(
+                    info, info, None, links.get(info.filename, _NO_LINK)
+                )
             signature = self._signature
         except FileNotFoundError:
             if _os.path.lexists(outer_path):
@@ -624,7 +681,10 @@ class _ZipBackend(_ArchiveBackend):
         ):
             if name != entry.info.filename:
                 entry = _Pending(
-                    _renamed_info(entry.info, name), entry.origin, entry.data
+                    _renamed_info(entry.info, name),
+                    entry.origin,
+                    entry.data,
+                    entry.link,
                 )
             renamed[name] = entry
         batch.table = renamed

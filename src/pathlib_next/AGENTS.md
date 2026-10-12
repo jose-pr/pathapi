@@ -2309,10 +2309,14 @@ class GitLabGitPath(GitLabPath): ...
 
 ```python
 MEMBER_SPOOL_BYTES = 16777216
+MAX_LINKS = 40
 
 class ArchiveUri(UriPath):
     def refresh(self) -> None: ...
     def batch(self) -> ContextManager[None]: ...
+    def readlink(self) -> LinkTarget: ...
+class LinkTarget(PurePosixPath):
+    path: str
 class ZipUri(ArchiveUri): ...
 class TarUri(ArchiveUri): ...
 ArchiveZipUri = ZipUri
@@ -2396,6 +2400,34 @@ with the scheme it was written with.
   `RuntimeError`, and one stored with a compression method `zipfile` lacks
   `NotImplementedError`, as `zipfile` raises them. A member another thread's
   rewrite removed between the lookup and its stat is `FileNotFoundError`.
+- **Links.** A tar `SYMTYPE` member and a zip entry made on Unix whose mode
+  says link (`S_IFLNK`; its data is the text) are symbolic links.
+  `is_symlink()` is True and `stat(follow_symlinks=False)` / `lstat()`, in a
+  listing too, is a link (`S_IFLNK`, `st_size` the length of the text).
+  `readlink()` is the text as a `LinkTarget`: a `PurePosixPath`, so spelled
+  normalized, whose `path` is the text exactly as stored (what `copy()` and
+  `PathSyncer` recreate a link from); `OSError(EINVAL)` for a member that is
+  not a link, `OSError(EIO)` when the text cannot be read (a zip link over
+  4096 bytes, or damaged data). `stat()`, `exists()`, `is_dir()`, `is_file()`,
+  `open()` and `iterdir()` follow links inside the archive, on the way
+  (`ln/x` is the member `x` of what `ln` points at) and at the end; a relative
+  text is read from the directory that holds the link. A link that is
+  absolute, goes above the root, has no readable text or points at nothing
+  resolves to nothing: `FileNotFoundError` whose `filename` names the link,
+  never a path outside the archive. A loop, or more than `MAX_LINKS` (40)
+  links followed by one lookup, is `OSError(ELOOP)`. `walk()` and `glob()`
+  list a link once and by default do not enter it; `rm(recursive=True)`
+  removes the entry, never what it points at; `copy(follow_symlinks=False)`
+  and a `PathSyncer(follow_symlinks=False)` recreate it with `symlink_to()`
+  where the target can hold one. With `follow_symlinks=True` (`copy()`'s
+  default) they descend through links and stop at the bound, so a link to an
+  ancestor ends in `OSError(ELOOP)` at the 41st level. Nothing is written
+  through a link (`NotImplementedError`: a write, `mkdir()`, `unlink()` or
+  `rename()` whose path passes through one, or a write that names one);
+  `unlink()`, `rename()` and `rm()` of the link itself act on its entry, and
+  no link can be created in an archive. A tar hard link is a second name for
+  a member, not a symlink: it reads and stats as that member and
+  `is_symlink()` is False.
 - A file has no children: with a file `y` and a member `y/z`, `y/z` does
   not exist for `exists()`, `stat()`, `open()`, `unlink()` and `rename()`
   (`FileNotFoundError`; writing or `mkdir()` below `y` is
@@ -2438,7 +2470,8 @@ with the scheme it was written with.
   through its members, the directory's own entry (`name/`) is written in
   the same rewrite. `rmdir()` of the root succeeds on an empty archive
   (`OSError(ENOTEMPTY)` otherwise) and removes nothing.
-  `rm(recursive=True)` of a directory is ONE rewrite, and raises
+  `rm(recursive=True)` of a directory is ONE rewrite (unless a policy other
+  than `follow_symlinks=False` has to meet each link under it), and raises
   `OSError(ENOTEMPTY)` removing nothing when the tree holds a member under
   a file.
 - A member the archive spells several ways (`norm` and `./norm`) is one

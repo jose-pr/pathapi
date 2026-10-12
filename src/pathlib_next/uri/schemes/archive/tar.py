@@ -79,6 +79,9 @@ class _TarBackend(_ArchiveBackend):
     def _entries(self):
         return list(self._members.items())
 
+    def _link_texts(self, entries):
+        return {raw: info.linkname for raw, info in entries if info.issym()}
+
     @staticmethod
     def _is_directory(info):
         return info.isdir()
@@ -95,10 +98,15 @@ class _TarBackend(_ArchiveBackend):
                 target = _normalize_member_name(info.linkname)
                 raw = snapshot.index.get(target) if target else None
                 size = snapshot.infos[raw].size if raw is not None else 0
+        elif info.issym():
+            kind = _stat.S_IFLNK
+            size = len(info.linkname.encode("utf-8", "surrogateescape"))
         else:
-            # Symlinks and special files are not modelled: no mode.
+            # Special files are not modelled: no mode.
             kind = 0
         perms = _stat.S_IMODE(info.mode)
+        if kind == _stat.S_IFLNK:
+            perms = perms or 0o777
         return FileStat(
             st_mode=kind | perms if kind and perms else None,
             st_size=size,

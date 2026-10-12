@@ -4,6 +4,7 @@ import contextlib as _contextlib
 import errno as _errno
 import io as _io
 import os as _os
+import pathlib as _pathlib
 import re as _re
 import shutil as _shutil
 import tempfile as _tempfile
@@ -83,6 +84,38 @@ def _normalize_member_name(name: str) -> "str | None":
     if not _is_safe_member_name(normalized):
         return None
     return normalized + "/" if directory else normalized
+
+
+MAX_LINKS = 40
+"""The most link members one lookup follows before it is a loop
+(`OSError(ELOOP)`)."""
+
+
+class LinkTarget(_pathlib.PurePosixPath):
+    """What `readlink()` of a link member returns: the stored text as a
+    `PurePosixPath`, which spells it normalized (`./a//b` is `a/b`), and as
+    `path`, which is the text exactly as stored. `PathSyncer` and `copy()`
+    recreate a link from `path`."""
+
+    __slots__ = ("_text",)
+
+    @property
+    def path(self) -> str:
+        try:
+            return self._text
+        except AttributeError:
+            return self.as_posix()
+
+
+class _Unresolved(Exception):
+    """A lookup that cannot get through the link members on its way: the one
+    named `link` leaves the archive, is absolute or has no readable text
+    (`loop` False), or the lookup followed `MAX_LINKS` links (`loop` True)."""
+
+    def __init__(self, link: str, loop: bool):
+        super().__init__(link)
+        self.link = link
+        self.loop = loop
 
 
 def _nesting_depth(archive_uri: str) -> int:
@@ -295,10 +328,11 @@ class _Snapshot:
         "files",
         "implicit",
         "children",
+        "links",
         "_format",
     )
 
-    def __init__(self, format: "type[_ArchiveBackend]", entries):
+    def __init__(self, format: "type[_ArchiveBackend]", entries, links=None):
         # The backend class, not the backend: a snapshot that held its backend
         # would keep it alive in a reference cycle.
         self._format = format
@@ -319,11 +353,21 @@ class _Snapshot:
         self.index = index
         self.spellings = spellings
         self.infos = infos
-        # Members that are files: nothing lies below one.
+        # The link members, by normalized name: the text they store, or None
+        # when it cannot be read. `links` maps raw names.
+        self.links = (
+            {name: links[raw] for name, raw in index.items() if raw in links}
+            if links
+            else {}
+        )
+        # Members that are files: nothing lies below one. A link is not one:
+        # what lies below it lies below what it points at.
         self.files = {
             name
             for name, raw in index.items()
-            if not name.endswith("/") and not format._is_directory(infos[raw])
+            if not name.endswith("/")
+            and not format._is_directory(infos[raw])
+            and name not in self.links
         }
         # Every proper prefix of a name is a directory, and `children` holds
         # the first component below each directory, in archive order.
@@ -371,6 +415,43 @@ class _Snapshot:
         if directory:
             self.children.setdefault(directory_path, {})
         return True
+
+    def resolve(self, member: str, *, follow: bool = True) -> str:
+        """`member` with every link member on its way replaced by what it
+        stores, as a normalized name that is not a link: a relative text is
+        read from the directory that holds the link, an absolute one or one
+        that leaves the root names nothing. The last component is left alone
+        unless `follow`. Raises `_Unresolved`. Costs nothing when the archive
+        holds no link."""
+        links = self.links
+        if not links:
+            return member
+        done: "list[str]" = []
+        todo = member.split("/")[::-1] if member else []
+        followed = 0
+        last = member
+        while todo:
+            part = todo.pop()
+            if part in ("", "."):
+                continue
+            if part == "..":
+                if not done:
+                    raise _Unresolved(last, False)
+                done.pop()
+                continue
+            name = "/".join((*done, part))
+            if name in links and (todo or follow):
+                followed += 1
+                last = name
+                if followed > MAX_LINKS:
+                    raise _Unresolved(name, True)
+                text = links[name]
+                if not text or text.startswith("/"):
+                    raise _Unresolved(name, False)
+                todo.extend(text.split("/")[::-1])
+                continue
+            done.append(part)
+        return "/".join(done)
 
     def hidden(self, member: str) -> bool:
         """Whether a file member sits above `member`. A file has no children:
@@ -547,7 +628,10 @@ class _ArchiveBackend:
         with self._lock:
             self.handle  # revalidates, and clears the snapshot if it reopened
             if self._snapshot is None:
-                self._snapshot = _Snapshot(type(self), self._entries())
+                entries = self._entries()
+                self._snapshot = _Snapshot(
+                    type(self), entries, self._link_texts(entries)
+                )
             return self._snapshot
 
     def member_index(self) -> "dict[str, str]":
@@ -561,6 +645,11 @@ class _ArchiveBackend:
         """`(key, info)` for every entry of the open handle, in archive
         order; reads nothing from the archive."""
         raise NotImplementedError
+
+    def _link_texts(self, entries) -> "dict[str, str | None]":
+        """`{key: stored text}` for the entries that are symbolic links (the
+        text is None when it cannot be read); empty for a format without."""
+        return {}
 
     @staticmethod
     def _is_directory(info) -> bool:
@@ -800,11 +889,63 @@ class ArchiveUri(UriPath):
             raise ValueError(f"member name escapes the archive root: {self.path!r}")
         return member
 
+    def _resolve(self, snapshot: _Snapshot, member: str, follow: bool = True) -> str:
+        """`member` with the link members on its way followed (the last
+        component only when `follow`), or the error a lookup of it raises:
+        `FileNotFoundError` naming the link that leaves the archive, is
+        absolute or has no text, `OSError(ELOOP)` after `MAX_LINKS` links."""
+        try:
+            return snapshot.resolve(member, follow=follow)
+        except _Unresolved as error:
+            link = self._from_parsed_parts(self.source, error.link, "", "")
+            if error.loop:
+                raise OSError(
+                    _errno.ELOOP, "Too many levels of symbolic links", str(link)
+                ) from None
+            raise FileNotFoundError(
+                _errno.ENOENT,
+                "A link does not resolve inside the archive",
+                str(link),
+            ) from None
+
+    def _check_no_link(self, snapshot: _Snapshot, member: str, *, last: bool) -> None:
+        """Writes go to the member named, never through a link: the member
+        would land beside the link and no listing would show it."""
+        if not snapshot.links:
+            return
+        parts = member.split("/")
+        for count in range(1, len(parts) + (1 if last else 0)):
+            if "/".join(parts[:count]) in snapshot.links:
+                raise NotImplementedError(
+                    f"{self.source.scheme}: writing through a link member is not "
+                    f"supported: {self}"
+                )
+
+    def readlink(self) -> LinkTarget:
+        """The text a link member stores, as a `LinkTarget` (`OSError(EINVAL)`
+        when this member is not a link). Links on the way to it are followed."""
+        member = self._member
+        if member is None:
+            raise FileNotFoundError(self)
+        snapshot = self._snapshot()
+        member = self._resolve(snapshot, member, follow=False)
+        if snapshot.stat(member) is None:
+            raise FileNotFoundError(self)
+        if member not in snapshot.links:
+            raise OSError(_errno.EINVAL, "Invalid argument", str(self))
+        text = snapshot.links[member]
+        if text is None:
+            raise OSError(_errno.EIO, "The link's text cannot be read", str(self))
+        target = LinkTarget(text)
+        target._text = text
+        return target
+
     def _directory_children(self) -> "tuple[_Snapshot, str, list[str]]":
         member = self._member
         if member is None:
             raise FileNotFoundError(self)
         snapshot = self._snapshot()
+        member = self._resolve(snapshot, member)
         found = snapshot.stat(member)
         if found is None:
             raise FileNotFoundError(self)
@@ -849,14 +990,15 @@ class ArchiveUri(UriPath):
 
     def stat(self, *, follow_symlinks=True):
         hint = self._pop_stat_hint()
-        if hint is not None:
+        if hint is not None and not (follow_symlinks and hint.is_symlink()):
             return hint
         member = self._member
         if member is None:
             raise FileNotFoundError(self)
         # The root too: a missing or unreadable archive is not a directory
         # that exists, and a listing of it fails the same way.
-        found = self._snapshot().stat(member)
+        snapshot = self._snapshot()
+        found = snapshot.stat(self._resolve(snapshot, member, follow_symlinks))
         if found is None:
             raise FileNotFoundError(self)
         return found
@@ -928,6 +1070,7 @@ class ArchiveUri(UriPath):
             raise FileNotFoundError(self)
         try:
             snapshot = self._snapshot()
+            member = self._resolve(snapshot, member)
             if snapshot.hidden(member):
                 raise KeyError(member)
             return self.backend.read_member(self._raw_name(member))
@@ -942,6 +1085,9 @@ class ArchiveUri(UriPath):
         if "r" in mode and "+" not in mode:
             return self._read_member()
         self._require_writable()
+        self._check_no_link(
+            self._snapshot_or_empty(), self._member_for_write(), last=True
+        )
         if "r" in mode:
             # Read-modify-write: what is written reaches the archive on close.
             data = self._read_member().read()
@@ -961,6 +1107,14 @@ class ArchiveUri(UriPath):
         # the original).
         return self._write_stream(self._raw_name(self._member_for_write()))
 
+    def _snapshot_or_empty(self) -> _Snapshot:
+        """The snapshot a write checks the member against; an archive that is
+        not there yet holds nothing."""
+        try:
+            return self._snapshot()
+        except FileNotFoundError:
+            return _Snapshot(type(self.backend), [])
+
     def _mkdir(self, mode):
         self._require_writable()
         if not self._member_for_write():
@@ -968,8 +1122,10 @@ class ArchiveUri(UriPath):
             # nothing to create it in.
             self.stat()
             raise FileExistsError(self)
-        if self.exists():
+        snapshot = self._snapshot_or_empty()
+        if self.exists() or self._member_for_write() in snapshot.links:
             raise FileExistsError(self)
+        self._check_no_link(snapshot, self._member_for_write(), last=False)
         self._check_parent()
         marker = f"{self._member_for_write()}/"
         self.backend.write_member(self._raw_name(marker), b"")
@@ -978,6 +1134,7 @@ class ArchiveUri(UriPath):
         self._require_writable()
         path = self._member_for_write()
         snapshot = self._snapshot()
+        self._check_no_link(snapshot, path, last=False)
         index = snapshot.index
         if path not in index or snapshot.hidden(path):
             if self._is_dir_member():
@@ -994,6 +1151,7 @@ class ArchiveUri(UriPath):
         self._require_writable()
         path = self._member_for_write()
         snapshot = self._snapshot()
+        self._check_no_link(snapshot, path, last=False)
         index = snapshot.index
         if not path:
             # The archive root cannot be removed: an empty one is a no-op.
@@ -1024,11 +1182,16 @@ class ArchiveUri(UriPath):
         follow_symlinks=False,
         follow_binds=False,
     ):
-        # An archive holds no symlinks or bindings: the policies are checked
-        # and have nothing to decide.
+        # An archive holds no bindings, and a link member is an entry like
+        # any other for a removal that does not follow it.
         check_follow("follow_symlinks", follow_symlinks)
         check_follow("follow_binds", follow_binds)
-        if not (recursive and self._rm_tree(as_error_handler(ignore_error))):
+        if not (
+            recursive
+            and self._rm_tree(
+                as_error_handler(ignore_error), follows=follow_symlinks is not False
+            )
+        ):
             return super().rm(
                 recursive=recursive,
                 missing_ok=missing_ok,
@@ -1037,10 +1200,11 @@ class ArchiveUri(UriPath):
                 follow_binds=follow_binds,
             )
 
-    def _rm_tree(self, on_error) -> bool:
+    def _rm_tree(self, on_error, follows: bool = False) -> bool:
         """`rm(recursive=True)` of a directory of a writable archive: every
         member under it leaves in ONE rewrite of the archive. False when this
-        is not that case, and the generic removal handles (and reports) it."""
+        is not that case, and the generic removal handles (and reports) it:
+        a policy that follows links, or leaves them, has to meet each one."""
         member = self._member
         if member is None or not getattr(self.backend, "writable", False):
             return False
@@ -1054,6 +1218,8 @@ class ArchiveUri(UriPath):
             return False
         marker = f"{member}/" if member else ""
         under = [name for name in index if name.startswith(marker)]
+        if follows and any(name in snapshot.links for name in under):
+            return False
         try:
             # A member under a file is not listed, so a removal that walked
             # the listing would leave it behind and the directory would
@@ -1122,6 +1288,8 @@ class ArchiveUri(UriPath):
         if not new_path:
             raise ValueError(f"member name escapes the archive root: {target.path!r}")
         snapshot = self._snapshot()
+        self._check_no_link(snapshot, old_path, last=False)
+        self._check_no_link(snapshot, new_path, last=False)
         index = snapshot.index
         names = list(index)
         marker = f"{old_path}/"
