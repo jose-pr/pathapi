@@ -62,6 +62,9 @@ class DelegatingPath(UriPath):
 
     __slots__ = ("_core",)
     _DELEGATED: "_ty.Sequence[str]" = ()
+    #: Whether an `OSError` of the core path is rewritten to name this path; a
+    #: core path that is itself the user's file (`LocalPath`) keeps its own.
+    _RELABEL = True
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -84,10 +87,14 @@ class DelegatingPath(UriPath):
     def _delegated(self, *extra: "tuple[str, str]"):
         """Runs a call of the core path; an `OSError` that names the core path
         (or a pair of `extra` `(core text, this text)`) names this one."""
+        if not self._RELABEL:
+            yield
+            return
         try:
             yield
         except OSError as error:
-            names = {str(self._core_path): str(self), **dict(extra)}
+            core = str(self._core_path)
+            names = {**({core: str(self)} if core else {}), **dict(extra)}
             _relabel(error, names)
             raise
 

@@ -4,22 +4,26 @@ import os as _os
 
 from ...fspath import LocalPath as _Local
 from ...path import FsPathLike
-from .. import Source, UriPath
+from .. import Source
 from ..source import is_drive
+from ._delegate import DelegatingPath
 
 
-class FileUri(UriPath):
+class FileUri(DelegatingPath):
     """`file:` scheme: a `UriPath` wrapping a `LocalPath` (`filepath`),
     delegating all I/O to it."""
 
     __SCHEMES = ("file",)
-    __slots__ = ("_filepath",)
+    __slots__ = ()
+    _DELEGATED = ("_scandir", "_chown", "_utime", "unlink", "rmdir", "chmod")
+    _RELABEL = False
+
+    def _make_core(self):
+        return _Local(self.__fspath__())
 
     @property
     def filepath(self):
-        if self._filepath is None:
-            self._filepath = _Local(self.__fspath__())
-        return self._filepath
+        return self._core_path
 
     def _unc_share(self) -> "str | None":
         """The share of a UNC path ("/share" under a named host), else None.
@@ -135,11 +139,6 @@ class FileUri(UriPath):
     def _listdir(self):
         yield from _os.listdir(self.filepath)
 
-    def _scandir(self):
-        # LocalPath's scandir already carries each entry's lstat (one syscall
-        # per directory, not one per child).
-        yield from self.filepath._scandir()
-
     def is_junction(self) -> bool:
         return self.filepath.is_junction()
 
@@ -164,34 +163,6 @@ class FileUri(UriPath):
         if mode is None:
             return self.filepath.touch(exist_ok=exist_ok)
         return self.filepath.touch(mode, exist_ok)
-
-    def chmod(self, mode: int | str, *, follow_symlinks: bool = True):
-        # LocalPath.chmod() itself shims the 3.10+-only follow_symlinks=
-        # kwarg for pathlib.Path (see fspath.py) and normalizes a string
-        # octal mode, so just delegate.
-        return self.filepath.chmod(mode, follow_symlinks=follow_symlinks)
-
-    def _chown(
-        self,
-        uid: int | str | None,
-        gid: int | str | None,
-        *,
-        follow_symlinks: bool = True,
-    ) -> None:
-        # Delegate to LocalPath's primitive; chown() has already
-        # canonicalized the pair, so pass it through untouched.
-        return self.filepath._chown(uid, gid, follow_symlinks=follow_symlinks)
-
-    def _utime(
-        self, *, atime: "float | None" = None, mtime: "float | None" = None
-    ) -> None:
-        return self.filepath._utime(atime=atime, mtime=mtime)
-
-    def unlink(self, missing_ok=False):
-        return self.filepath.unlink(missing_ok)
-
-    def rmdir(self):
-        return self.filepath.rmdir()
 
     def rename(self, target: FsPathLike | str):
         # Through `_rename_target()` like every scheme: a relative str is a sibling rename
