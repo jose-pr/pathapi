@@ -2080,7 +2080,12 @@ class HTTPResponse:
   `ssl.SSLError`, `ValueError` (before anything is sent, for a header or URL
   with a control character, a URL with credentials, or another scheme) or
   else `OSError(EIO)`; no third-party exception and no URL or header value is
-  in its text.
+  in its text. A reply below 200 is never the one `send()` returns:
+  `HTTPTransport` skips interim (1xx) replies, at most 8, and past that is
+  `OSError(EIO)` with its connection closed; `RequestsTransport` cannot skip
+  them (`urllib3` returns any 1xx but `100` as the reply), so it is
+  `OSError(EIO)` for one and closes the connection, and an endless stream of
+  `100 Continue` is not bounded under it.
 - **`HTTPResponse`**: `status`, `reason`, `headers` (read-only, names compare
   without case, a name sent twice reads as `"a, b"` and `headers.get_all()`
   lists them), `url` (the URL requested, without fragment; an empty path is

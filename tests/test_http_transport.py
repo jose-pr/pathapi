@@ -14,6 +14,7 @@ import zlib
 import pytest
 
 from http_wire import Drop, Hang, Reply, Wire, refusing_port, response
+from waits import wait_until
 from pathlib_next.uri.schemes.http import HTTPResponse, HTTPTransport
 
 TIMEOUT = (5, 5)
@@ -564,3 +565,74 @@ def test_a_response_decodes_only_what_its_headers_say():
         ).read()
         == packed
     )
+
+
+# --- interim (1xx) replies ---------------------------------------------------------
+
+INTERIM = b"HTTP/1.1 103 Early Hints\r\nLink: </style.css>; rel=preload\r\n\r\n"
+
+
+def test_an_interim_reply_is_never_the_previous_answer_of_the_next_request(
+    http_transport,
+):
+    def script(request):
+        if request.target == "/a":
+            return Reply(INTERIM, later=response(body=b"A"), delay=0.3)
+        return response(body=b"B")
+
+    with Wire(script) as wire:
+        try:
+            first = send(http_transport, wire.url + "/a").read()
+        except OSError:
+            first = None  # a transport that cannot skip it says so
+        assert send(http_transport, wire.url + "/b").read() == b"B"
+    assert first in (None, b"A")
+
+
+def test_the_built_in_transport_skips_interim_replies_and_returns_the_final_one():
+    def script(request):
+        return Reply(INTERIM * 2, later=response(body=b"FINAL"), delay=0.2)
+
+    with Wire(script) as wire, HTTPTransport() as transport:
+        reply = send(transport, wire.url + "/")
+        assert (reply.status, reply.read()) == (200, b"FINAL")
+        # The connection is clean for the next request.
+        assert send(transport, wire.url + "/").read() == b"FINAL"
+    assert wire.connections == 1
+
+
+def test_a_bounded_number_of_interim_replies_is_skipped():
+    for count, ok in ((8, True), (9, False)):
+
+        def script(request, count=count):
+            return Reply(
+                b"HTTP/1.1 100 Continue\r\n\r\n" * count + response(body=b"done")
+            )
+
+        with Wire(script) as wire, HTTPTransport() as transport:
+            if ok:
+                assert send(transport, wire.url + "/").read() == b"done"
+            else:
+                with pytest.raises(OSError) as excinfo:
+                    send(transport, wire.url + "/")
+                assert excinfo.value.errno == errno.EIO
+                # The connection was given up, not kept with the rest unread.
+                assert wait_until(lambda: wire.closed == [0])
+
+
+def test_an_endless_stream_of_100_continue_is_given_up_not_waited_out():
+    endless = b"HTTP/1.1 100 Continue\r\n\r\n" * 5000
+
+    with Wire(lambda request: Reply(endless)) as wire, HTTPTransport() as transport:
+        with pytest.raises(OSError) as excinfo:
+            send(transport, wire.url + "/", timeout=(2, 2))
+    # Given up for sending too many, not for the server going quiet.
+    assert excinfo.value.errno == errno.EIO
+    assert not isinstance(excinfo.value, TimeoutError)
+
+
+def test_a_status_below_200_is_never_the_final_reply():
+    with Wire(lambda request: Reply(INTERIM, close=True)) as wire:
+        with HTTPTransport() as transport:
+            with pytest.raises(OSError):
+                send(transport, wire.url + "/")

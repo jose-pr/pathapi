@@ -1204,3 +1204,25 @@ mutant(
     ),
     "http.client reconnects a closed connection by itself, in plain TCP outside the TLS session and the proxy",
 )
+mutant(
+    "http-interim-reply-taken-as-the-final-one",
+    f"{_HTTP_PKG}/_builtin.py",
+    "            if status == _client.CONTINUE:\n                return version, status, reason  # `begin()` skips its headers\n",
+    "            if True:\n                return version, status, reason  # `begin()` skips its headers\n",
+    (
+        "tests/test_http_transport.py::test_the_built_in_transport_skips_interim_replies_and_returns_the_final_one",
+        "tests/test_http_transport.py::test_an_interim_reply_is_never_the_previous_answer_of_the_next_request",
+    ),
+    "a 103 Early Hints is the reply, and the real one is read as the answer to the next request",
+)
+mutant(
+    "http-interim-replies-not-counted",
+    f"{_HTTP_PKG}/_builtin.py",
+    "            if self._interim > MAX_INTERIM_REPLIES:\n",
+    "            if False:\n",
+    (
+        "tests/test_http_transport.py::test_a_bounded_number_of_interim_replies_is_skipped",
+        "tests/test_http_transport.py::test_an_endless_stream_of_100_continue_is_given_up_not_waited_out",
+    ),
+    "a server that answers with endless interim replies is waited on without limit",
+)

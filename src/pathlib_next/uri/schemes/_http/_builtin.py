@@ -118,6 +118,43 @@ def _unusable(sock) -> bool:
         return True
 
 
+MAX_INTERIM_REPLIES = 8
+"""Most interim (1xx) replies the transport skips before the reply it returns;
+a server that sends more is not answering."""
+
+
+def _skip_headers(fp) -> None:
+    """Reads the header lines of an interim reply, up to its blank line."""
+    for _ in range(100):
+        line = fp.readline(65537)
+        if len(line) > 65536:
+            raise _client.LineTooLong("header line")
+        if line in (b"\r\n", b"\n", b""):
+            return
+    raise _client.HTTPException("got more than 100 headers")
+
+
+class _Reply(_client.HTTPResponse):
+    """A response that goes past every interim (1xx) reply, not only `100`
+    (`http.client` takes any other as the final one, and the real reply is then
+    read as the answer to the next request), and at most `MAX_INTERIM_REPLIES`
+    of them."""
+
+    _interim = 0
+
+    def _read_status(self):
+        while True:
+            version, status, reason = super()._read_status()
+            if not 100 <= status < 200:
+                return version, status, reason
+            self._interim += 1
+            if self._interim > MAX_INTERIM_REPLIES:
+                raise _client.HTTPException("too many interim replies")
+            if status == _client.CONTINUE:
+                return version, status, reason  # `begin()` skips its headers
+            _skip_headers(self.fp)
+
+
 class _CannotConnect(Exception):
     """No connection could be made to the server or the proxy: the next proxy
     of the route is tried."""
@@ -493,6 +530,7 @@ class HTTPTransport:
         # otherwise reconnect by itself, in plain TCP, outside the TLS session,
         # the proxy and the timeout this request was given.
         http.auto_open = 0
+        http.response_class = _Reply
         http.sock = sock
         connection = _pool.Connection(http, key, scope, self._pool.generation)
         self._pool.register(connection)

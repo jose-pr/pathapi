@@ -245,8 +245,17 @@ class RequestsTransport:
         except self._requests.exceptions.RequestException as error:
             raise self._failure(error) from None
         status = response.status_code
+        if status < 200:
+            # An interim reply taken as the final one (urllib3 skips only
+            # `100`); the real reply is still to come on that connection.
+            response.close()
+            raise OSError(
+                _errno.EIO,
+                f"the server's reply was an interim one (HTTP {status}); "
+                "the built-in transport skips these",
+            )
         length = response.headers.get("Content-Length", "")
-        if method == "HEAD" or status in (204, 304) or 100 <= status < 200:
+        if method == "HEAD" or status in (204, 304):
             expected = 0
         elif "chunked" in response.headers.get("Transfer-Encoding", "").lower():
             expected = None
