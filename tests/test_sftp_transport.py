@@ -19,7 +19,7 @@ import time
 from types import SimpleNamespace
 
 import pytest
-from server_loops import stop_server
+from sftp_loopback import ANY_PASSWORD
 from waits import wait_until
 
 asyncssh = pytest.importorskip("asyncssh")
@@ -41,96 +41,6 @@ needs_paramiko = pytest.mark.skipif(paramiko is None, reason="paramiko not insta
 _LOOP_THREAD_NAME = "pathlib_next-asyncssh-loop"
 
 
-# --- loopback server ----------------------------------------------------------
-
-
-class _LoopbackServer:
-    """asyncssh SFTP server on 127.0.0.1 that records what clients did:
-    every password offered, connections accepted and still open."""
-
-    def __init__(self, root, *, password=None, sftp_server_cls=None):
-        self.root = root
-        self.password = password
-        self.sftp_server_cls = sftp_server_cls or asyncssh.SFTPServer
-        self.host_key = asyncssh.generate_private_key("ssh-rsa")
-        self.credentials = []
-        self.live = set()
-        self.accepted = 0
-        self.loop = (
-            asyncio.SelectorEventLoop()
-            if sys.platform == "win32"
-            else asyncio.new_event_loop()
-        )
-        self.thread = threading.Thread(target=self.loop.run_forever, daemon=True)
-        self._server = None
-        self.port = None
-
-    def _call(self, coro, timeout=10):
-        return asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout)
-
-    def start(self):
-        state = self
-
-        class _Server(asyncssh.SSHServer):
-            def connection_made(self, conn):
-                self._conn = conn
-                state.live.add(conn)
-                state.accepted += 1
-
-            def connection_lost(self, exc):
-                state.live.discard(self._conn)
-
-            def begin_auth(self, username):
-                return True
-
-            def password_auth_supported(self):
-                return True
-
-            def validate_password(self, username, password):
-                state.credentials.append((username, password))
-                return state.password is None or password == state.password
-
-        root = str(self.root)
-
-        async def _start():
-            return await asyncssh.listen(
-                "127.0.0.1",
-                0,
-                server_factory=_Server,
-                server_host_keys=[self.host_key],
-                sftp_factory=lambda chan: self.sftp_server_cls(chan, chroot=root),
-                process_factory=None,
-                # No GSS: its default asks the resolver for this machine's own name.
-                gss_host=None,
-            )
-
-        self.thread.start()
-        self._server = self._call(_start())
-        self.port = self._server.sockets[0].getsockname()[1]
-        return self
-
-    def stop(self):
-        stop_server(self.loop, self.thread, self._server, self.live)
-
-    def drop_connections(self):
-        async def _drop():
-            for conn in list(self.live):
-                conn.abort()
-
-        self._call(_drop())
-
-    def url(self, path="", user="alice", password="s3cret"):
-        return f"sftp://{user}:{password}@127.0.0.1:{self.port}/{path}"
-
-    def source(self, user="alice", password="s3cret"):
-        return Source("sftp", f"{user}:{password}", "127.0.0.1", self.port)
-
-    def known_hosts_line(self, key=None):
-        key = key or self.host_key
-        kind, blob = key.export_public_key("openssh").decode().split()[:2]
-        return f"[127.0.0.1]:{self.port} {kind} {blob}\n"
-
-
 @pytest.fixture
 def home(tmp_path, monkeypatch):
     home = tmp_path / "home"
@@ -141,20 +51,16 @@ def home(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def server_root(tmp_path):
-    root = tmp_path / "root"
-    root.mkdir()
-    (root / "hello.txt").write_text("hello")
-    return root
+def server_root(sftp_root):
+    (sftp_root / "hello.txt").write_text("hello")
+    return sftp_root
 
 
 @pytest.fixture
-def server(server_root, home):
-    srv = _LoopbackServer(server_root).start()
-    try:
-        yield srv
-    finally:
-        srv.stop()
+def server(server_root, home, sftp_loopbacks):
+    """A login that accepts any password; `server.logins` lists the ones
+    offered."""
+    return sftp_loopbacks(server_root, password=ANY_PASSWORD)
 
 
 @pytest.fixture
@@ -188,13 +94,13 @@ def test_asyncssh_rejects_unknown_host_key_by_default(server, backends):
     with pytest.raises(sftp_pkg.SftpHostKeyError):
         SftpPath(server.url("hello.txt"), backend=backend).read_text()
     # Rejected before authentication: the password never reached the server.
-    assert server.credentials == []
+    assert server.logins == []
 
 
 def test_asyncssh_accepts_unknown_host_key_with_explicit_opt_out(server, backends):
     backend = _asyncssh_backend(backends, connect_opts={"known_hosts": None})
     assert SftpPath(server.url("hello.txt"), backend=backend).read_text() == "hello"
-    assert server.credentials == [("alice", "s3cret")]
+    assert server.logins == [("x", "x")]
 
 
 def test_asyncssh_verifies_against_user_known_hosts(server, home, backends):
@@ -209,7 +115,7 @@ def test_paramiko_rejects_unknown_host_key_by_default(server, backends):
     assert isinstance(backend.hostkeypolicy, paramiko.RejectPolicy)
     with pytest.raises(sftp_pkg.SftpHostKeyError):
         SftpPath(server.url("hello.txt"), backend=backend).read_text()
-    assert server.credentials == []
+    assert server.logins == []
     # The refused connection is closed, not left to a live Transport thread.
     assert wait_until(lambda: not server.live)
 
@@ -229,7 +135,7 @@ def test_paramiko_accepts_unknown_host_key_with_explicit_opt_out(
         backends, None, paramiko.AutoAddPolicy(), known_hosts=None
     )
     assert SftpPath(server.url("hello.txt"), backend=backend).read_text() == "hello"
-    assert server.credentials == [("alice", "s3cret")]
+    assert server.logins == [("x", "x")]
     # Host keys are loaded read-only: nothing was written to the user's files.
     assert not (home / ".ssh" / "known_hosts").exists()
 
@@ -243,7 +149,7 @@ def test_paramiko_changed_host_key_is_rejected_even_with_autoadd(
     backend = _paramiko_backend(backends, None, paramiko.AutoAddPolicy())
     with pytest.raises(sftp_pkg.SftpHostKeyError):
         SftpPath(server.url("hello.txt"), backend=backend).read_text()
-    assert server.credentials == []
+    assert server.logins == []
 
 
 @needs_paramiko
@@ -253,6 +159,44 @@ def test_paramiko_trusts_ssh_config_user_known_hosts_file(server, home, backends
     config.write_text("Host 127.0.0.1\n  UserKnownHostsFile ~/pinned_hosts\n")
     backend = _paramiko_backend(backends, None, None, ssh_config=str(config))
     assert SftpPath(server.url("hello.txt"), backend=backend).read_text() == "hello"
+
+
+def _unrelated_hosts_file(path):
+    """A known_hosts file that names a host this test never connects to."""
+    algorithm, blob = (
+        asyncssh.generate_private_key("ssh-rsa")
+        .export_public_key("openssh")
+        .decode()
+        .split()[:2]
+    )
+    path.write_text(f"unrelated.invalid {algorithm} {blob}\n")
+    return path
+
+
+@needs_paramiko
+@pytest.mark.parametrize("sequence", [list, tuple], ids=["list", "tuple"])
+def test_paramiko_reads_every_known_hosts_file_of_a_sequence(
+    server, tmp_path, backends, sequence
+):
+    first = _unrelated_hosts_file(tmp_path / "first_hosts")
+    second = tmp_path / "second_hosts"
+    second.write_text(server.known_hosts_line())
+    backend = _paramiko_backend(backends, None, known_hosts=sequence([first, second]))
+
+    assert SftpPath(server.url("hello.txt"), backend=backend).read_text() == "hello"
+
+
+@needs_paramiko
+def test_paramiko_rejects_a_host_that_no_known_hosts_file_of_a_list_names(
+    server, tmp_path, backends
+):
+    files = [_unrelated_hosts_file(tmp_path / f"hosts{n}") for n in range(2)]
+    backend = _paramiko_backend(backends, None, known_hosts=files)
+
+    with pytest.raises(sftp_pkg.SftpHostKeyError):
+        SftpPath(server.url("hello.txt"), backend=backend).read_text()
+
+    assert server.logins == []
 
 
 # --- timeouts --------------------------------------------------------------------
@@ -418,30 +362,29 @@ class _LockedRemoveServer(asyncssh.SFTPServer):
 
 
 def test_rm_ignore_error_callback_may_call_sync_path_methods(
-    server_root, home, backends
+    server_root, home, backends, sftp_loopbacks
 ):
     tree = server_root / "tree"
     tree.mkdir()
     (tree / "locked.txt").write_text("keep")
     (tree / "ok.txt").write_text("go")
-    srv = _LoopbackServer(server_root, sftp_server_cls=_LockedRemoveServer).start()
-    try:
-        backend = _asyncssh_backend(backends, connect_opts={"known_hosts": None})
-        seen = []
+    srv = sftp_loopbacks(
+        server_root, password=ANY_PASSWORD, server_class=_LockedRemoveServer
+    )
+    backend = _asyncssh_backend(backends, connect_opts={"known_hosts": None})
+    seen = []
 
-        def _ignore_if_gone(error, path):
-            # A sync Path method: before the fix this ran on the bridge loop
-            # and blocked it until the request timeout.
-            seen.append((path.name, path.exists(), threading.current_thread().name))
-            return True
+    def _ignore_if_gone(error, path):
+        # A sync Path method: before the fix this ran on the bridge loop
+        # and blocked it until the request timeout.
+        seen.append((path.name, path.exists(), threading.current_thread().name))
+        return True
 
-        start = time.monotonic()
-        SftpPath(srv.url("tree"), backend=backend).rm(
-            recursive=True, ignore_error=_ignore_if_gone
-        )
-        assert time.monotonic() - start < 10
-    finally:
-        srv.stop()
+    start = time.monotonic()
+    SftpPath(srv.url("tree"), backend=backend).rm(
+        recursive=True, ignore_error=_ignore_if_gone
+    )
+    assert time.monotonic() - start < 10
     assert (tree / "locked.txt").exists()
     assert not (tree / "ok.txt").exists()
     assert ("locked.txt", True) in [(name, exists) for name, exists, _ in seen]
@@ -588,7 +531,7 @@ def test_paramiko_evicted_connections_are_closed(server, backends, monkeypatch):
         )
         assert SftpPath(server.url("hello.txt"), backend=backend).read_text() == "hello"
 
-    assert server.accepted == 5
+    assert server.connections == 5
     # One cache slot: every evicted client's connection was closed.
     assert wait_until(lambda: len(server.live) <= 1)
     for backend in list(backends):
@@ -616,32 +559,114 @@ def test_paramiko_client_is_reused_by_a_later_thread(server, backends):
 
 
 @needs_paramiko
-def test_paramiko_failed_login_closes_the_connection(server_root, home, backends):
-    srv = _LoopbackServer(server_root, password="right").start()
-    try:
+def test_paramiko_failed_login_closes_the_connection(
+    server_root, home, backends, sftp_loopbacks
+):
+    srv = sftp_loopbacks(server_root, password="right")
 
-        def _transports():
-            # The transport threads themselves, not a count: another test's
-            # connection may still be shutting down, and comparing totals
-            # then fails on whichever side wins the race (measured on the
-            # macOS 3.9 runner, on a commit whose earlier run was green).
-            return {
-                t for t in threading.enumerate() if isinstance(t, paramiko.Transport)
-            }
+    def _transports():
+        # The transport threads themselves, not a count: another test's
+        # connection may still be shutting down, and comparing totals
+        # then fails on whichever side wins the race (measured on the
+        # macOS 3.9 runner, on a commit whose earlier run was green).
+        return {t for t in threading.enumerate() if isinstance(t, paramiko.Transport)}
 
-        before = _transports()
-        backend = _paramiko_backend(
-            backends, None, paramiko.AutoAddPolicy(), known_hosts=None
-        )
-        for _ in range(3):
-            with pytest.raises(sftp_pkg.SftpAuthenticationError):
-                SftpPath(srv.url("hello.txt"), backend=backend).read_text()
-        assert srv.accepted == 3
-        assert wait_until(lambda: not srv.live)
-        # Every transport this test opened is gone; older ones are not ours.
-        assert wait_until(lambda: not (_transports() - before), timeout=30)
-    finally:
-        srv.stop()
+    before = _transports()
+    backend = _paramiko_backend(
+        backends, None, paramiko.AutoAddPolicy(), known_hosts=None
+    )
+    for _ in range(3):
+        with pytest.raises(sftp_pkg.SftpAuthenticationError):
+            SftpPath(srv.url("hello.txt"), backend=backend).read_text()
+    assert srv.connections == 3
+    assert wait_until(lambda: not srv.live)
+    # Every transport this test opened is gone; older ones are not ours.
+    assert wait_until(lambda: not (_transports() - before), timeout=30)
+
+
+class _NoSftpServer(asyncssh.SFTPServer):
+    """A server whose SFTP subsystem fails to start."""
+
+    def __init__(self, *args, **kwargs):
+        raise RuntimeError("no sftp subsystem here")
+
+
+@needs_paramiko
+def test_paramiko_closes_the_connection_when_the_sftp_subsystem_fails(
+    server_root, home, backends, sftp_loopbacks
+):
+    srv = sftp_loopbacks(server_root, password=ANY_PASSWORD, server_class=_NoSftpServer)
+    before = {t for t in threading.enumerate() if isinstance(t, paramiko.Transport)}
+    backend = _paramiko_backend(
+        backends, None, paramiko.AutoAddPolicy(), known_hosts=None
+    )
+
+    # Which error depends on whether the server's refusal or its closing of
+    # the connection reaches the client first.
+    with pytest.raises(OSError):
+        backend.client(srv.source())
+
+    assert srv.connections == 1
+    assert wait_until(lambda: not srv.live)
+    assert wait_until(
+        lambda: not {
+            t for t in threading.enumerate() if isinstance(t, paramiko.Transport)
+        }
+        - before,
+        timeout=30,
+    )
+
+
+class _Proxy:
+    """Stands for `paramiko.ProxyCommand`, which would start a program."""
+
+    started: "list[_Proxy]" = []
+
+    def __init__(self, command_line):
+        self.closed = False
+        self.started.append(self)
+
+    def close(self):
+        self.closed = True
+
+
+@pytest.fixture
+def refused_connect(monkeypatch):
+    """`paramiko.SSHClient.connect` fails after the options are built."""
+    _Proxy.started = []
+    monkeypatch.setattr(paramiko, "ProxyCommand", _Proxy)
+
+    def refuse(self, **options):
+        raise paramiko.SSHException("refused")
+
+    monkeypatch.setattr(paramiko.SSHClient, "connect", refuse)
+
+
+@needs_paramiko
+def test_paramiko_closes_the_proxy_it_started_when_the_connection_fails(
+    tmp_path, home, refused_connect
+):
+    config = tmp_path / "config"
+    config.write_text("Host *\n  ProxyCommand prog %h %p\n")
+    backend = sftp_pkg.SftpBackend(ssh_config=str(config), known_hosts=None)
+
+    with pytest.raises(ConnectionAbortedError):
+        backend.transport(Source("sftp", None, "box", 22))
+
+    assert [proxy.closed for proxy in _Proxy.started] == [True]
+
+
+@needs_paramiko
+def test_paramiko_leaves_a_socket_the_caller_supplied_open_when_the_connection_fails(
+    home, refused_connect
+):
+    mine = _Proxy("supplied")
+    backend = sftp_pkg.SftpBackend({"sock": mine}, ssh_config=None, known_hosts=None)
+
+    with pytest.raises(ConnectionAbortedError):
+        backend.transport(Source("sftp", None, "box", 22))
+
+    assert mine.closed is False
 
 
 def test_asyncssh_aconnect_closes_connection_when_sftp_start_fails(monkeypatch):
@@ -690,7 +715,7 @@ def test_asyncssh_concurrent_first_calls_share_one_connection(server, backends):
 
     assert len(clients) == 8
     assert len({id(client) for client in clients}) == 1
-    assert server.accepted == 1
+    assert server.connections == 1
     assert [key for key in backend_mod._CACHE._entries if key[0] is backend] == [
         (backend, source)
     ]
