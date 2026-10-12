@@ -44,6 +44,10 @@ certificate verification, authentication, limits) are in
 - **One path interface** over local files, in-memory trees, archive members
   and every URI scheme above.
 - **`MemPath`**: a virtual filesystem for tests, mocks and transient data.
+- **`FTPPath`, `ZipPath`, `TarPath`, `ArchivePath`**: an FTP server and the
+  members of a zip or tar file as paths, on the standard library alone: no URI
+  and no extra (the `ftp(s):`, `zip:`, `tar:` and `archive:` schemes run on
+  them).
 - **`PathSyncer`**: one-way, content-compared tree sync between any two
   implementations, with dry runs and event hooks.
 - **`uripath` command**: `read`, `write`, `cp`, `rm` and `sync` across any of
@@ -69,7 +73,8 @@ pip install pathlib-next
 | `az` | `azure-storage-blob`, `azure-identity` (+ `uri`) | `az:` |
 
 With no extras, `pathlib_next.Path`/`LocalPath`, `pathlib_next.mempath.MemPath`,
-the utilities, the test contracts and `uripath` on local paths all work; the
+`pathlib_next.FTPPath` and the archive paths (`ZipPath`, `TarPath`,
+`ArchivePath`), the utilities, the test contracts and `uripath` on local paths all work; the
 `uri` extra is what makes `pathlib_next.uri` importable.
 
 ## Quick start
@@ -185,6 +190,8 @@ flag is described in the
 | `pathlib_next.path` | `Pathname`/`Path` base classes and the derived operations |
 | `pathlib_next.fspath` | `LocalPath`, `PosixPathname`, `WindowsPathname` |
 | `pathlib_next.mempath` | `MemPath` in-memory filesystem |
+| `pathlib_next.ftp` | `FTPPath`, `FTPBackend` (FTP and FTPS on `ftplib`) |
+| `pathlib_next.archive` | `ZipPath`, `TarPath`, `ArchivePath` (members of a zip or tar file) |
 | `pathlib_next.protocols` | `Stat`, `Chmod`, `BinaryOpen`, `NativeChecksum` |
 | `pathlib_next.uri` | `Uri`, `UriPath`, `Source`, `Query` |
 | `pathlib_next.uri.schemes` | Built-in schemes: `file`, `data`, `zip`/`tar`/`archive`, `ftp`, `http`, `dav`, `sftp`, `s3`, `gs`, `az`, `github`, `gitlab`, `git` |

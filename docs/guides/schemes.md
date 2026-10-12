@@ -138,7 +138,9 @@ implemented by `LocalPath` and `sftp:` only; `readlink()` by `LocalPath` and
 
 ## FTP
 
-**`ftp(s):`** (`FtpPath`) uses stdlib `ftplib`.
+**`ftp(s):`** (`FtpPath`) uses stdlib `ftplib`, through
+[`pathlib_next.ftp.FTPPath`](../api/ftp.md), which needs no URI: `FTPPath("/pub/x",
+host="h", user="u", tls=True)` is the same tree without a `ftp://` string.
 
 - `FtpBackend(timeout=30.0, ssl_context=None, verify=True)` configures it.
   Sockets time out after 30 seconds by default (`timeout=None` waits forever).
@@ -278,6 +280,10 @@ The `<archive-uri>` is any absolute URI with an explicit scheme, so
 `zip:file:///backups/site.zip!/index.html` and
 `zip:sftp://host/nightly.zip!/index.html` work the same way. `name`,
 `parent`, `glob()`, ... operate on the inner path.
+
+The members are read and written by [`pathlib_next.archive`](../api/archive.md)
+(`ZipPath`, `TarPath`, `ArchivePath`), which take the archive as any `Path` and
+need no URI: `ZipPath("index.html", archive="/backups/site.zip")`.
 
 - **Writing** (new members, overwriting, `mkdir()`, `unlink()`, `rmdir()`,
   `rename()`) works for zip archives whose outer URI is a local `file:` path.
