@@ -19,6 +19,7 @@ import pathlib_next
 from pathlib_next.mempath import MemPath
 from pathlib_next import NonRelativePatternError
 from pathlib_next import glob as _glob
+from pathlib_next.glob import _recursion, _selection
 from pathlib_next import FileStat
 
 WINDOWS = os.name == "nt"
@@ -564,14 +565,14 @@ def test_a_literal_is_selected_from_the_listing_where_the_version_does_that(
 ):
     # The rule of CPython 3.12, which no other version has: it is switched on
     # here so every interpreter runs the branch.
-    monkeypatch.setattr(_glob, "_LITERALS_ARE_LISTED", True)
+    monkeypatch.setattr(_selection, "_LITERALS_ARE_LISTED", True)
     root = _folding_tree()
 
     assert _found(root, pattern) == stored
 
 
 def test_a_literal_is_joined_as_typed_where_the_version_does_that(monkeypatch):
-    monkeypatch.setattr(_glob, "_LITERALS_ARE_LISTED", False)
+    monkeypatch.setattr(_selection, "_LITERALS_ARE_LISTED", False)
     root = _folding_tree()
 
     assert _found(root, "SUB") == []
@@ -579,7 +580,7 @@ def test_a_literal_is_joined_as_typed_where_the_version_does_that(monkeypatch):
 
 
 def test_native_false_joins_a_literal_as_typed_on_every_version(monkeypatch):
-    monkeypatch.setattr(_glob, "_LITERALS_ARE_LISTED", True)
+    monkeypatch.setattr(_selection, "_LITERALS_ARE_LISTED", True)
     root = _folding_tree()
 
     assert _found(root, "SUB", native=False) == []
@@ -587,7 +588,7 @@ def test_native_false_joins_a_literal_as_typed_on_every_version(monkeypatch):
 
 
 def test_a_literal_listed_by_name_respects_a_case_sensitive_listing(monkeypatch):
-    monkeypatch.setattr(_glob, "_LITERALS_ARE_LISTED", True)
+    monkeypatch.setattr(_selection, "_LITERALS_ARE_LISTED", True)
     root = _mem_twin(None)
 
     assert _found(root, "SUB") == []
@@ -799,7 +800,7 @@ def test_links_with_no_identity_are_followed_at_most_forty_times():
     )
 
     names = [p.as_posix() for p in found]
-    assert len(names) == 1 + _glob._MAX_LINK_TRAVERSALS
+    assert len(names) == 1 + _recursion._MAX_LINK_TRAVERSALS
     assert {"/ring/a.txt", "/ring/loop/a.txt"} <= set(names)
     assert [p.as_posix() for p in top.glob("**/a*.txt")] == ["/ring/a.txt"]
 

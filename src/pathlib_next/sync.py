@@ -18,6 +18,7 @@ from .path import Path, _listing, _relation, _write_batch_of
 from ._filestat import FileStat
 from . import checksum as _checksum
 from . import glob as _glob
+from .glob import _entries
 
 __all__ = ["PathAndStat", "PathSyncer", "SyncEvent"]
 
@@ -816,7 +817,7 @@ class PathSyncer(object):
             follow = self.follow_symlinks
         children: "list[tuple[str, PathAndStat]]" = []
         for name, stat in _listing(entry.path) if listing is None else listing:
-            child = _glob._child(entry.path, name)
+            child = _entries._child(entry.path, name)
             if not _names.is_safe_child_name(name, windows=windows):
                 children.append((name, PathAndStat.from_stat(child, None)))
             elif _is_leftover(name):
@@ -871,7 +872,7 @@ class PathSyncer(object):
         for name, stat in listing:
             if not (_is_leftover(name) and _names.is_safe_child_name(name)):
                 continue
-            child = _glob._child(target_dir, name)
+            child = _entries._child(target_dir, name)
             if stat is None:
                 try:
                     stat = FileStat.from_path(child, follow_symlink=False)
@@ -892,7 +893,7 @@ class PathSyncer(object):
                     _logger.warning("could not remove stale %s: %s", child, error)
                     continue
             self.hook(
-                PathAndStat.from_stat(_glob._child(source_dir, name), None),
+                PathAndStat.from_stat(_entries._child(source_dir, name), None),
                 PathAndStat.from_stat(child, stat),
                 SyncEvent.RemovedMissing,
                 dry_run,
@@ -1355,7 +1356,7 @@ class PathSyncer(object):
                                 # the directory being checked.
                                 self.hook(
                                     PathAndStat.from_stat(
-                                        _glob._child(source.path, name), None
+                                        _entries._child(source.path, name), None
                                     ),
                                     child,
                                     SyncEvent.RemovedMissing,
@@ -1388,7 +1389,7 @@ class PathSyncer(object):
                 # A name the listing did not report is stat'd by `start()`,
                 # not assumed missing: a listing can omit an entry, and a
                 # case-insensitive target answers to another spelling.
-                path = _glob._child(target.path, name)
+                path = _entries._child(target.path, name)
                 if target_absent:
                     return PathAndStat.from_stat(path, None)
                 return listed.get(name, path)

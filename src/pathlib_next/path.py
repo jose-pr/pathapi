@@ -27,6 +27,7 @@ from ._errorpolicy import check_follow, copy_error_predicate
 from .protocols import BinaryOpen, Chmod, Stat
 from .protocols.io import _ASK_STAT
 from . import glob as _glob
+from .glob import _entries
 from ._filestat import FileStat
 from .exceptions import NonRelativePatternError
 
@@ -1022,11 +1023,11 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
                 try:
                     if stat is None or follow_symlinks:
                         stat = FileStat.from_path(
-                            _glob._child(path, name), follow_symlink=follow_symlinks
+                            _entries._child(path, name), follow_symlink=follow_symlinks
                         )
                     is_dir = stat.is_dir() if stat is not None else False
                     if is_dir and not follow_symlinks:
-                        is_dir = not _is_junction(_glob._child(path, name))
+                        is_dir = not _is_junction(_entries._child(path, name))
                 except OSError:
                     # Carried over from os.path.isdir().
                     is_dir = False
@@ -1041,7 +1042,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
             else:
                 paths.append((path, dirnames, filenames))
 
-            paths += [_glob._child(path, d) for d in reversed(dirnames)]
+            paths += [_entries._child(path, d) for d in reversed(dirnames)]
 
     def touch(self, mode=None, exist_ok=True):
         """
@@ -1223,7 +1224,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
                         raise ValueError(
                             f"refusing unsafe child name {name!r} under {path}"
                         )
-                    child = _glob._child(path, name)
+                    child = _entries._child(path, name)
                     if child_stat is None:
                         child_stat = FileStat.from_path(child, follow_symlink=False)
                     if child_stat is not None and child_stat.is_symlink():

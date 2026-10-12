@@ -383,7 +383,7 @@ mutant(
 )
 mutant(
     "glob-wildcard-matches-dotfiles-when-hidden-excluded",
-    "glob.py",
+    "glob/_selection.py",
     '    skip_hidden = not opts.include_hidden and not part.startswith(".")\n',
     "    skip_hidden = False\n",
     "tests/test_parity_io.py::test_glob_hidden_included_by_default_like_pathlib",
@@ -391,7 +391,7 @@ mutant(
 )
 mutant(
     "glob-recursive-wildcard-enters-hidden",
-    "glob.py",
+    "glob/_recursion.py",
     "            if not include_hidden and child.is_hidden():\n",
     "            if False:\n",
     "tests/test_glob_parity.py::test_include_hidden_false_leaves_hidden_entries_out_of_a_final_recursive_wildcard",
@@ -667,8 +667,8 @@ mutant(
 mutant(
     "rm-builds-a-child-from-an-unsafe-listed-name",
     "path.py",
-    '                    if not _names.is_safe_child_name(name):\n                        raise ValueError(\n                            f"refusing unsafe child name {name!r} under {path}"\n                        )\n                    child = _glob._child(path, name)',
-    '                    if False:\n                        raise ValueError(\n                            f"refusing unsafe child name {name!r} under {path}"\n                        )\n                    child = _glob._child(path, name)',
+    '                    if not _names.is_safe_child_name(name):\n                        raise ValueError(\n                            f"refusing unsafe child name {name!r} under {path}"\n                        )\n                    child = _entries._child(path, name)',
+    '                    if False:\n                        raise ValueError(\n                            f"refusing unsafe child name {name!r} under {path}"\n                        )\n                    child = _entries._child(path, name)',
     "tests/test_listing_names.py::test_rm_recursive_offers_each_unsafe_name_to_ignore_error",
     "rm(recursive=True) builds a child from a listed name such as '..'",
 )
@@ -746,7 +746,7 @@ mutant(
 )
 mutant(
     "glob-loop-guard-is-off",
-    "glob.py",
+    "glob/_recursion.py",
     "    if not bound_loops:\n        return True, ancestors\n    key = _identity(child)",
     "    if True:\n        return True, ancestors\n    key = _identity(child)",
     "tests/test_glob_parity.py::test_bound_loops_bounds_a_windows_junction_loop",
