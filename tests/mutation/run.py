@@ -117,7 +117,7 @@ def run_tests(root: Path, tests, work: Path, timeout: float):
 
 def first_failure(output: str) -> str:
     for line in output.splitlines():
-        if line.startswith(("FAILED ", "ERROR ")):
+        if line.startswith(("FAILED tests/", "ERROR tests/")):
             return line[:160]
     return ""
 
