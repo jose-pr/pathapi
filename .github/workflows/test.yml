@@ -163,11 +163,11 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install package without extras
-        # Exactly `pip install pathlib-next` plus the test runner: no uritools,
-        # no netimps, nothing from `dev`.
+        # Exactly `pip install pathlib-next` plus the test runner and the FTP
+        # server the `FTPPath` tests talk to: no uritools, no netimps.
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e . pytest
+          python -m pip install -e . pytest pyftpdlib
       - name: Run the test suite without extras
         # tests/conftest.py leaves out modules that import the `uri` extra at
         # module level; everything else must collect and pass or skip cleanly.
