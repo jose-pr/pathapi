@@ -368,16 +368,16 @@ def test_walk_lists_each_link_once_as_a_file_and_does_not_enter_it(root):
     assert walked["d/sub"] == ([], ["deep.txt", "to_d"])
 
 
-def test_a_walk_that_follows_links_ends_at_the_bound_and_stays_in_the_archive(
-    tmp_path, fmt
-):
+def test_a_walk_that_follows_links_does_not_enter_a_link_to_an_ancestor(tmp_path, fmt):
     root = _root(_archive(tmp_path, fmt, LOOP, "loop"), fmt)
     seen = []
     for top, dirs, files in root.walk(follow_symlinks=True):
-        seen.append(str(top.path))
+        seen.append((str(top.path), sorted(dirs), sorted(files)))
         assert top.as_uri().split("!/")[0] == root.as_uri().split("!/")[0]
-    assert "d/up/d" in seen
-    assert max(path.split("/").count("up") for path in seen) == MAX_LINKS
+    assert seen == [
+        ("", ["d"], ["file.txt"]),
+        ("d", [], ["in.txt", "up"]),
+    ]
 
 
 def test_glob_lists_each_link_once_and_does_not_go_through_one(root):
@@ -389,12 +389,12 @@ def test_glob_lists_each_link_once_and_does_not_go_through_one(root):
     assert "ln_dir" in found and "d/in.txt" in found
 
 
-def test_glob_that_recurses_through_links_ends_at_the_bound(tmp_path, fmt):
+def test_glob_that_recurses_through_links_does_not_enter_a_link_to_an_ancestor(
+    tmp_path, fmt
+):
     root = _root(_archive(tmp_path, fmt, LOOP, "loop"), fmt)
     found = sorted(str(path.path) for path in root.glob("**/*", recurse_symlinks=True))
-    assert "d/up/file.txt" in found
-    # the link that would exceed the bound is listed and not entered
-    assert max(path.split("/").count("up") for path in found) <= MAX_LINKS + 1
+    assert found == ["d", "d/in.txt", "d/up", "file.txt"]
 
 
 # --- copying ------------------------------------------------------------------------------
@@ -430,18 +430,16 @@ def test_a_tree_copied_without_following_links_has_the_links_and_nothing_else(
     assert not (tmp_path / "outside").exists()
 
 
-def test_a_tree_copied_with_following_ends_at_the_bound_and_writes_only_inside(
+def test_a_tree_copied_with_following_leaves_a_link_to_an_ancestor_out_and_reports_it(
     tmp_path, fmt
 ):
     root = _root(_archive(tmp_path, fmt, LOOP, "loop"), fmt)
     out = tmp_path / "out"
     errors = []
     (root / "d").copy(LocalPath(out), recursive=True, ignore_error=errors.append)
-    assert any(getattr(e, "errno", None) == errno.ELOOP for e in errors)
-    levels = max(path.relative_to(out).parts.count("up") for path in out.rglob("*"))
-    assert levels <= MAX_LINKS
+    assert [getattr(e, "errno", None) for e in errors] == [errno.ELOOP]
+    assert sorted(os.listdir(out)) == ["in.txt"]
     assert (out / "in.txt").read_bytes() == b"inner"
-    assert (out / "up" / "file.txt").read_bytes() == b"hello"
     assert sorted(os.listdir(tmp_path)) == [f"loop.{fmt}", "out"]
 
 

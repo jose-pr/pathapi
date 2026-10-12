@@ -300,8 +300,12 @@ The `<archive-uri>` is any absolute URI with an explicit scheme, so
   is `FileNotFoundError`, a loop `OSError(ELOOP)`; at most 40 links are
   followed. `walk()` and `glob()` list a link and do not enter it unless
   asked to, `rm()` removes the link and never its target, and
-  `copy(follow_symlinks=False)` recreates it. Nothing is written through
-  a link, and none can be created.
+  `copy(follow_symlinks=False)` recreates it. A listing that does follow
+  links (`walk(follow_symlinks=True)`, `copy()`'s default, `PathSyncer`)
+  follows one directory link per path and never a link to its own
+  directory or an ancestor, which is an error for that entry: spell the
+  path to go further. Nothing is written through a link, and none can be
+  created.
 - **`tar:`** (also `.tar.gz`/`.tar.bz2`/`.tar.xz`) is read-only.
 - **`archive:`** detects the format from the outer name, then from the file's
   magic bytes, on first use (building or printing a path reads nothing);

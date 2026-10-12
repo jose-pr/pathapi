@@ -172,8 +172,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `ln/x` below a link was not found. A link that is absolute, leaves the
   archive or points at nothing is now `FileNotFoundError` naming the link
   and a loop, or more than 40 links in one lookup, `OSError(ELOOP)`.
-  `walk()` and `glob()` list a link once and do not enter it by default,
-  `rm()` removes the entry and never what it points at, and
+  `walk()` and `glob()` list a link once and do not enter it by default;
+  a listing that does follow links (`walk(follow_symlinks=True)`,
+  `glob(recurse_symlinks=True)`, `copy(recursive=True)`, `PathSyncer`)
+  follows one directory link per path and never a link to the directory
+  that holds it or to one above it, which answers `OSError(ELOOP)` to a
+  following `stat()` and is an error for that entry in a copy or a sync
+  (pass `ignore_error=` or `follow_symlinks=False`), so a few links cannot
+  make a recursive operation visit more entries than the members and
+  links times one more than the directory links. `rm()` removes the entry
+  and never what it points at, and
   `copy(follow_symlinks=False)` and a `PathSyncer` that keeps links
   recreate it. A program that read a zip link's text with `read_bytes()`
   now gets its target's content: use `readlink()` for the text. Writing

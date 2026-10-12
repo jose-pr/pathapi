@@ -998,10 +998,49 @@ class ArchiveUri(UriPath):
         # The root too: a missing or unreadable archive is not a directory
         # that exists, and a listing of it fails the same way.
         snapshot = self._snapshot()
-        found = snapshot.stat(self._resolve(snapshot, member, follow_symlinks))
+        resolved = self._resolve(snapshot, member, follow_symlinks)
+        if follow_symlinks and snapshot.links:
+            self._check_enterable(snapshot, member, resolved)
+        found = snapshot.stat(resolved)
         if found is None:
             raise FileNotFoundError(self)
         return found
+
+    def _check_enterable(self, snapshot: _Snapshot, member: str, resolved: str) -> None:
+        """A walk that follows links asks each listed child for its following
+        stat, so that answer decides whether it descends. A link to a
+        directory that lies beyond another link, or that points at the
+        directory holding it or one of that directory's ancestors, answers
+        `OSError(ELOOP)`: it is a link and not a directory to every walker,
+        and the entries a recursive operation visits stay bounded by the
+        members, the links and the directory links, however the links point.
+        A path spelled through further links is still read, listed and
+        opened."""
+        entry = snapshot.resolve(member, follow=False)
+        if entry not in snapshot.links:
+            return
+        found = snapshot.stat(resolved)
+        if found is None or not found.is_dir():
+            return
+        names = member.split("/")
+        beyond = any(
+            "/".join(names[:count]) in snapshot.links for count in range(1, len(names))
+        )
+        parent = entry.rpartition("/")[0]
+        around = (
+            resolved == "" or resolved == parent or parent.startswith(resolved + "/")
+        )
+        if beyond or around:
+            raise OSError(
+                _errno.ELOOP,
+                "A link to a directory is not entered "
+                + (
+                    "beyond another link"
+                    if beyond
+                    else "when it points at the directory that holds it or above"
+                ),
+                str(self),
+            )
 
     def _is_dir_member(self) -> bool:
         try:
@@ -1070,7 +1109,9 @@ class ArchiveUri(UriPath):
             raise FileNotFoundError(self)
         try:
             snapshot = self._snapshot()
-            member = self._resolve(snapshot, member)
+            spelled, member = member, self._resolve(snapshot, member)
+            if snapshot.links:
+                self._check_enterable(snapshot, spelled, member)
             if snapshot.hidden(member):
                 raise KeyError(member)
             return self.backend.read_member(self._raw_name(member))

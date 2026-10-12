@@ -2420,8 +2420,16 @@ with the scheme it was written with.
   removes the entry, never what it points at; `copy(follow_symlinks=False)`
   and a `PathSyncer(follow_symlinks=False)` recreate it with `symlink_to()`
   where the target can hold one. With `follow_symlinks=True` (`copy()`'s
-  default) they descend through links and stop at the bound, so a link to an
-  ancestor ends in `OSError(ELOOP)` at the 41st level. Nothing is written
+  default) a listing follows one directory link per path and never a link to
+  the directory that holds it or to one above it: such a link, and one met
+  below another link, answers `OSError(ELOOP)` to a following `stat()`,
+  `is_dir()` or read, so `walk()` and `glob()` list it as an entry and
+  `copy()`, `PathSyncer` and `rm()` meet it as one that cannot be entered
+  (an error for that entry offered to `ignore_error`, for `rm()` a link
+  removed as a link). The entries a recursive operation visits are at most
+  `(members + links) * (directory links + 1)` however the links point; spell
+  the path (`root / "l1" / "l2" / "f"`, or start the walk there) to go
+  further. Nothing is written
   through a link (`NotImplementedError`: a write, `mkdir()`, `unlink()` or
   `rename()` whose path passes through one, or a write that names one);
   `unlink()`, `rename()` and `rm()` of the link itself act on its entry, and
