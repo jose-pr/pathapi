@@ -56,10 +56,9 @@ class DataUri(UriPath):
         header, sep, data = text.partition(",")
         if not sep:
             raise FileNotFoundError(self)
-        # `.path` is already percent-decoded exactly once (and, for data:,
-        # not dot-normalized), with any non-UTF-8 byte carried as a
-        # surrogate -- so this re-encodes rather than unquoting a second
-        # time, which turned "100%2525" into b"100%" instead of b"100%25".
+        # `.path` is already percent-decoded exactly once (and, for data:, not
+        # dot-normalized), with any non-UTF-8 byte carried as a surrogate: re-encode, do
+        # not unquote a second time ("100%2525" must give b"100%25").
         payload = data.encode("utf-8", ERRORS)
         if self._is_base64:
             return _b64decode(payload)

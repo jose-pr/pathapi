@@ -52,11 +52,9 @@ class Stat(_ty.Protocol):
             # through the symlink instead of stat'ing it directly.
             return self.stat(follow_symlinks=follow_symlinks).st_mode
         except (OSError, ValueError):
-            # Every OSError (PermissionError included) and ValueError reads
-            # as "no such entry", on every Python version. That is pathlib's
-            # rule from 3.13 on; 3.9-3.12 pathlib re-raises errors outside
-            # ENOENT/ENOTDIR/EBADF/ELOOP (e.g. EACCES), so there the generic
-            # exists() reports False where `pathlib.Path.exists()` raises.
+            # Every OSError (PermissionError included) and ValueError reads as "no such entry"
+            # on every version: pathlib's rule from 3.13; 3.9-3.12 re-raise errors outside
+            # ENOENT/ENOTDIR/EBADF/ELOOP (EACCES say), so there the generic exists() differs.
             return None
 
     # Convenience functions for querying the stat results

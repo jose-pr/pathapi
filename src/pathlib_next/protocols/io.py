@@ -94,10 +94,9 @@ class BinaryOpen(_ty.Protocol):
                     fh, encoding, errors, newline, line_buffering=buffering == 1
                 )
             except BaseException:
-                # An unknown encoding (LookupError) or newline (ValueError)
-                # fails after the backend handle is open; io.open closes its
-                # raw file on that path, and so must we -- a leaked write
-                # handle could otherwise commit an empty upload at GC time.
+                # An unknown encoding (LookupError) or newline (ValueError) fails after the backend
+                # handle is open; io.open closes its raw file then, and so must we: a leaked write
+                # handle could commit an empty upload at GC time.
                 fh.close()
                 raise
         return fh

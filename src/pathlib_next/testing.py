@@ -270,10 +270,9 @@ class ReadPathContract(PurePathContract):
         assert not _stat.S_ISREG((root / "sub").stat().st_mode)
 
     def test_listing_metadata_agrees_with_stat(self, root):
-        # `_scandir()` carries the metadata `walk()`, `rm()` and `PathSyncer`
-        # trust without a `stat()` per entry; `None` means unknown, never a
-        # different answer, and a stat with `size_known` False answers the
-        # type alone.
+        # `_scandir()` carries the metadata `walk()`, `rm()` and `PathSyncer` trust without
+        # a `stat()` per entry; `None` means unknown, never a different answer, and a
+        # stat with `size_known` False answers the type alone.
         self._require("supports_listing")
         listed = dict(root._scandir())
         assert set(listed) == {"a.txt", "b.py", ".hidden.txt", "sub", "empty_dir"}
@@ -372,10 +371,9 @@ class ReadPathContract(PurePathContract):
         assert bottom_up.index("sub/nested") < bottom_up.index("sub")
 
 
-#: Names that URL-shaped or shell-shaped code tends to cut, decode or fold:
-#: stored, listed and read back exactly as written.
-#: Several pairs only differ after a cut at `#` or a percent-decode, so a
-#: backend that applies either stores them under one name.
+#: Names that URL-shaped or shell-shaped code tends to cut, decode or fold, stored,
+#: listed and read back exactly as written. Several pairs differ only after a cut
+#: at `#` or a percent-decode, so a backend that applies either stores one name.
 UNUSUAL_NAMES = (
     "with space.txt",
     "hash#one.txt",
@@ -673,10 +671,9 @@ class PathContract(ReadPathContract):
         (root / "missing_rm").rm(missing_ok=True)
 
     def test_one_error_predicate_means_the_same_to_rm_and_copy(self, root):
-        # `(error, path) -> bool`: True skips the entry, False raises the
-        # error, and a predicate that raises ends the call with its own
-        # exception. `rm()` is offered a missing path, `copy()` a child whose
-        # target is a directory.
+        # `(error, path) -> bool`: True skips the entry, False raises, and a predicate that
+        # raises ends the call with its own exception. `rm()` is offered a missing path,
+        # `copy()` a child whose target is a directory.
         self._require("supports_mkdir")
 
         class Stop(Exception):

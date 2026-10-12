@@ -294,11 +294,9 @@ class _ZipBackend(_ArchiveBackend):
         self._batch = None
 
     def _is_format_error(self, error):
-        # `zipfile` lets the decoders' own errors through for a damaged
-        # archive: an inflate failure, a short header, a truncated stream, a
-        # name that does not decode, an offset that cannot be seeked to, and a
-        # version it does not know (`NotImplementedError` while reading the
-        # central directory).
+        # `zipfile` lets the decoders' own errors through for a damaged archive: an inflate
+        # failure, a short header, a truncated stream, an undecodable name, an offset that
+        # cannot be seeked to, an unknown version (`NotImplementedError` in the directory).
         return isinstance(
             error,
             (_zlib.error, _struct.error, EOFError, UnicodeDecodeError, OverflowError),
@@ -421,11 +419,9 @@ class _ZipBackend(_ArchiveBackend):
                     return _io.BytesIO(batch.scratch.get(entry.data))
                 path = entry.origin
             with self._reading() as handle:
-                # Copied out rather than returned as the live ZipExtFile:
-                # callers may hold the returned stream open across further
-                # mutations (unlink/rename/write) on this same shared backend,
-                # and those close+reopen the underlying handle. A large member
-                # goes to a temporary file, not to memory.
+                # Copied out, not the live ZipExtFile: callers may hold the stream across later
+                # mutations on this shared backend, which close and reopen the handle. A large
+                # member goes to a temporary file, not to memory.
                 with handle.open(path) as source:  # raises KeyError if missing
                     return _spool(source)
 

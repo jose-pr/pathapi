@@ -82,10 +82,9 @@ def _rate_limit_error(response, path_obj) -> "OSError | None":
 
 @_contextlib.contextmanager
 def _translate_repo_errors(path_obj):
-    # `from None`: never chain a requests exception, whose text can carry a
-    # URL with credentials (an environment proxy URL included) into every
-    # formatted traceback. The status code or exception type stays in the
-    # message instead.
+    # `from None`: a requests exception's text can carry a URL with credentials (an
+    # environment proxy included) into every traceback. The status code or exception
+    # type stays in the message.
     try:
         yield
     except _req.exceptions.HTTPError as e:
@@ -332,12 +331,9 @@ class _RepoApiPath(UriPath):
         return super().with_source(source)
 
     def _make_child_relpath(self, name: str, **kwargs) -> _ty.Self:
-        # The base implementation always resets query/fragment to "" for a
-        # child (uri/__init__.py's Uri._make_child_relpath) -- fine for
-        # every other scheme (none of them give the query string semantic
-        # meaning), but here it would silently drop `?ref=` on every
-        # iterdir()/glob()/walk() descendant, falling back to the default
-        # branch instead of the ref the caller asked for.
+        # The base `_make_child_relpath` resets query and fragment for a child, which would
+        # drop `?ref=` on every iterdir()/glob()/walk() descendant and fall back to the
+        # default branch instead of the ref asked for.
         inst = super()._make_child_relpath(name, **kwargs)
         if self.query:
             inst._query = self.query

@@ -597,11 +597,9 @@ class FtpPath(UriPath):
         return IsADirectoryError(_errno.EISDIR, "Is a directory", str(self))
 
     def _scandir(self):
-        # MLSD's facts already carry type/size/modify for every child in
-        # one round trip -- reuse them instead of `iterdir()` + a separate
-        # stat per child. Falls back to NLST (names only, no metadata) on
-        # servers that don't support MLSD. The listing is read whole before
-        # anything is yielded, so no transfer is left half-read.
+        # MLSD's facts carry type, size and modify for every child in one round trip; NLST
+        # (names only) is the fallback. The listing is read whole before anything is
+        # yielded, so no transfer is left half-read.
         try:
             listing = [
                 (name, self._facts_to_filestat(facts))
@@ -662,11 +660,9 @@ class FtpPath(UriPath):
         facts = self._stat_entry()
         if facts is not None:
             return self._facts_to_filestat(facts)
-        # MLST/MLSD unsupported, the parent unlistable, or the entry not there.
-        # SIZE answers for a file -- in binary mode: servers refuse it in
-        # the ASCII mode a fresh or listing session is in. CWD answers for
-        # a directory (every path here is absolute, so the changed working
-        # directory affects nothing).
+        # MLST/MLSD unsupported, the parent unlistable, or the entry not there. SIZE answers
+        # for a file (in binary mode: servers refuse it in ASCII), CWD for a directory (every
+        # path here is absolute, so the changed working directory affects nothing).
         try:
             self._call("voidcmd", "TYPE I")
             size = self._call("size", self._wirepath)
@@ -837,10 +833,9 @@ class FtpPath(UriPath):
             raise self._translate(error) from error
 
     def chmod(self, mode: int | str, *, follow_symlinks: bool = True):
-        # SITE CHMOD is a non-standard FTP extension; pyftpdlib and many real
-        # servers do not support it.  A server rejection of an existing path
-        # becomes NotImplementedError so that path.py's copy() silently skips
-        # it; a missing path is FileNotFoundError.
+        # SITE CHMOD is a non-standard extension that many servers lack. A rejection of an
+        # existing path becomes NotImplementedError, which copy() skips; a missing path is
+        # FileNotFoundError.
         if not follow_symlinks:
             raise NotImplementedError("chmod(follow_symlinks=False)")
         mode = _utils.as_mode(mode)

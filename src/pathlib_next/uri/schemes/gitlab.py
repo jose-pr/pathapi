@@ -104,11 +104,9 @@ class GitLabPath(_RepoApiPath):
         return resp
 
     def _resolved_ref(self) -> str:
-        # Unlike the tree endpoint (ref optional, defaults server-side),
-        # GitLab's repository/files endpoints (metadata AND raw) 400 with
-        # "ref is missing, ref is empty" if `ref` is omitted entirely --
-        # confirmed live against gitlab.com, not documented clearly. Resolve
-        # and cache the project's default branch once per backend instead.
+        # Unlike the tree endpoint (ref optional), GitLab's repository/files endpoints
+        # (metadata AND raw) answer 400 "ref is missing" without a `ref`: resolve and
+        # cache the project's default branch once per backend.
         ref = self.ref
         if ref:
             return ref
