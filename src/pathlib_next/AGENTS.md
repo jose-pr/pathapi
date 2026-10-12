@@ -1312,6 +1312,12 @@ class UriPath(Uri, Path):
     def __init__(
         self, *args, schemesmap=None, findclass=False, **kwargs,
     ): ...
+    @classmethod
+    def __init_subclass__(cls, replace=False, **kwargs): ...
+    @classmethod
+    def schemes(cls) -> tuple[str, ...]: ...
+    @classmethod
+    def scheme_class(cls, name) -> type[UriPath]: ...
     backend
     def with_backend(self, backend): ...
     def _initbackend(self): ...
@@ -1325,9 +1331,9 @@ returns the subclass registered for the scheme, or plain `UriPath` for an
 unknown scheme (its I/O raises `NotImplementedError`). Keywords other than
 `schemesmap` and `findclass` are options of the path: `backend=` (see `backend`
 below) and those the scheme class reads (`ssh_config=` for `SftpPath`). Resolution: classes
-already imported → entry point in group `pathlib_next.schemes` → built-in
-`pathlib_next.uri.schemes.*` module. An explicit `schemesmap` is the only
-map consulted. It is an allow-list of classes for dispatch, not a sandbox:
+already imported → built-in `pathlib_next.uri.schemes.*` module → entry point
+in group `pathlib_next.schemes`, and an entry point never takes a built-in
+name. An explicit `schemesmap` is the only map consulted. It is an allow-list of classes for dispatch, not a sandbox:
 the path keeps it and every class chosen after construction uses it -- a
 join with a `Uri`/`UriPath` argument, `with_source()`, a `copy()`/`move()`
 `str` destination and the outer URI of a `zip:`/`tar:`/`archive:` path (a
@@ -1336,8 +1342,28 @@ scheme the map omits gives a plain `UriPath`, whose I/O raises
 class does.
 
 - Registering: `__SCHEMES = ("myscheme",)` in the class body (name-mangled:
-  redeclare per class; the class name must not start with `_`). Defining or
-  importing the subclass is enough, including after the first dispatch.
+  redeclare per class, a subclass that lists none registers none; the class
+  name must not start with `_`). Defining or importing the subclass is
+  enough, including after the first dispatch, and it is the one mechanism: a
+  distribution that ships schemes declares them as entry points of the
+  group `pathlib_next.schemes` (`myscheme = "pkg.module:MyPath"`) and the
+  class registers itself when the entry point is loaded. A name another
+  class holds, or a built-in name (whether or not its module is imported
+  yet), raises `ValueError` at the class statement, naming the holder and
+  registering none of the class's names; `class MyPath(UriPath,
+  replace=True)` takes the names it lists from whatever held them (a
+  re-executed class statement, as `importlib.reload()` does, is a second
+  claim and needs it too). A built-in class defined after a replacement
+  leaves the replacement in place.
+- `schemes() -> tuple[str, ...]` — the registered names, sorted: every
+  class defined so far, every built-in scheme and every entry point of the
+  group, whether or not its module is imported yet. A scheme whose client
+  library is missing is listed and fails where it is used, naming the extra.
+  `scheme_class(name)` — the class for `name` (case-insensitive), importing
+  its module or loading its entry point first; `ValueError` naming the
+  registered schemes when there is none, and the `ImportError` of a
+  built-in module that cannot be imported. Both are classmethods of the
+  one registry, whichever class they are called on.
 - `backend` — per-instance connection state from `_initbackend()` (base:
   `None`), built on first use. A derived path (`/`, `joinpath()`,
   `parent`, `parents`, `with_name()`, `with_suffix()`, `with_query()`,

@@ -526,18 +526,10 @@ class Source(_ty.NamedTuple):
         if self.scheme:
             if schemesmap is not None:
                 return schemesmap.get(self.scheme, None) or UriPath
-            schemesmap = UriPath._schemesmap()
-            _cls = schemesmap.get(self.scheme, None)
-            if _cls is None:
-                # The map is rebuilt whenever a UriPath subclass is defined, so a miss is a scheme
-                # no imported class registers; `_load_entry_point` caches that negative answer
-                # instead of rescanning every installed distribution on each construction.
-                if UriPath._load_entry_point(
-                    self.scheme
-                ) or UriPath._load_builtin_scheme(self.scheme):
-                    schemesmap = UriPath._schemesmap(reload=True)
-                    _cls = schemesmap.get(self.scheme, None)
-            return _cls if _cls else UriPath
+            # A scheme no class registers is looked up in the built-in modules and the
+            # entry points once; `_load_entry_point` caches that negative answer instead
+            # of rescanning every installed distribution on each construction.
+            return UriPath._find_scheme(self.scheme) or UriPath
         return UriPath
 
     def is_local(self) -> bool:

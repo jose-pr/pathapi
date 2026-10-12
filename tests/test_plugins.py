@@ -7,7 +7,8 @@ from pathlib_next.uri import UriPath
 
 def test_plugin_dynamic_loading():
     # Verify "dummy" scheme is not registered initially
-    assert "dummy" not in UriPath._schemesmap()
+    with pytest.raises(ValueError):
+        UriPath.scheme_class("dummy")
 
     mock_ep = mock.Mock()
     mock_ep.name = "dummy"
@@ -30,16 +31,12 @@ def test_plugin_dynamic_loading():
         p = UriPath("dummy://host/path")
         assert type(p).__name__ == "DummyPluginPath"
         assert type(p) is not UriPath
-        assert "dummy" in UriPath._schemesmap()
-
-    # Clean up the registered subclass from UriPath.__subclasses__() if possible,
-    # or reload schemesmap to keep tests clean.
-    # Note: in Python, subclasses cannot be easily removed, so we keep reload=True.
+        assert UriPath.scheme_class("dummy") is type(p)
 
 
 def test_plugin_non_matching_scheme():
     # Verify "otherdummy" scheme is not registered
-    assert "otherdummy" not in UriPath._schemesmap()
+    assert "otherdummy" not in UriPath.schemes()
 
     mock_ep = mock.Mock()
     mock_ep.name = "dummy2"
@@ -148,8 +145,10 @@ def test_every_builtin_scheme_is_in_both_fallback_registries():
 
     declared = {
         scheme
-        for scheme, cls in UriPath._get_schemesmap().items()
-        if cls.__module__.startswith("pathlib_next.uri.schemes")
+        for scheme in UriPath.schemes()
+        if UriPath.scheme_class(scheme).__module__.startswith(
+            "pathlib_next.uri.schemes"
+        )
     }
     assert "ftps" in declared
     assert sorted(declared - {ep.name for ep in eps}) == []

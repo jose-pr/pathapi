@@ -895,3 +895,56 @@ mutant(
     ),
     "a check-file request leaves the handle it opened, whether or not it succeeds",
 )
+
+# --- the scheme registry: a name is held by one class -----------------------------
+
+_SCHEME_TESTS = "tests/test_scheme_registry.py"
+
+mutant(
+    "scheme-registry-second-claim-is-dropped-silently",
+    "uri/__init__.py",
+    "            elif name in _REPLACED and _is_builtin_class(name, cls):\n",
+    "            elif True:\n",
+    (
+        f"{_SCHEME_TESTS}::test_a_second_class_listing_a_scheme_raises_at_definition",
+        f"{_SCHEME_TESTS}::test_a_class_refused_for_one_name_registers_none_of_its_names",
+    ),
+    "a second class listing a held scheme is neither refused nor registered",
+)
+mutant(
+    "scheme-registry-built-in-name-is-free-until-its-module-is-imported",
+    "uri/__init__.py",
+    "                if name in _BUILTIN_SCHEMES and not _is_builtin_class(name, cls):\n",
+    "                if False:\n",
+    f"{_SCHEME_TESTS}::test_a_built_in_scheme_is_refused_before_its_module_is_imported",
+    "a class takes a built-in scheme whose module has not been imported yet",
+)
+mutant(
+    "scheme-registry-built-in-class-refused-after-a-replacement",
+    "uri/__init__.py",
+    "            elif name in _REPLACED and _is_builtin_class(name, cls):\n",
+    "            elif False:\n",
+    f"{_SCHEME_TESTS}::test_a_replaced_built_in_scheme_stays_replaced_when_its_module_is_imported",
+    "importing a built-in module fails once a class has replaced one of its schemes",
+)
+mutant(
+    "scheme-lookup-asks-entry-points-before-the-built-in-table",
+    "uri/__init__.py",
+    "            cls._load_builtin_scheme(scheme, strict=strict)\n"
+    "            or cls._load_entry_point(scheme)\n",
+    "            cls._load_entry_point(scheme)\n"
+    "            or cls._load_builtin_scheme(scheme, strict=strict)\n",
+    f"{_SCHEME_TESTS}::test_an_entry_point_named_like_a_built_in_scheme_does_not_displace_it",
+    "a distribution's entry point for a built-in name is loaded ahead of the built-in",
+)
+mutant(
+    "scheme-listing-leaves-out-schemes-not-imported-yet",
+    "uri/__init__.py",
+    "        return tuple(sorted({*claimed, *_BUILTIN_SCHEMES, *_declared_entry_points()}))\n",
+    "        return tuple(sorted({*claimed}))\n",
+    (
+        f"{_SCHEME_TESTS}::test_schemes_lists_every_built_in_name_without_importing_its_module",
+        f"{_SCHEME_TESTS}::test_schemes_lists_an_entry_point_whose_module_is_not_imported",
+    ),
+    "schemes() lists only the classes already imported",
+)

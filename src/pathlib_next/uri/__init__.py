@@ -162,6 +162,43 @@ _ENTRY_POINTS: "tuple[object, dict[str, object]] | None" = None
 #: again cannot help.
 _ENTRY_POINTS_LOADED: "set[str]" = set()
 
+#: Built-in scheme -> the module that defines its class. A name listed here is
+#: resolved from this table before any entry point is consulted.
+_BUILTIN_SCHEMES = {
+    "file": "pathlib_next.uri.schemes.file",
+    "data": "pathlib_next.uri.schemes.data",
+    "zip": "pathlib_next.uri.schemes.archive",
+    "tar": "pathlib_next.uri.schemes.archive",
+    "archive": "pathlib_next.uri.schemes.archive",
+    "archive+zip": "pathlib_next.uri.schemes.archive",
+    "archive+tar": "pathlib_next.uri.schemes.archive",
+    "ftp": "pathlib_next.uri.schemes.ftp",
+    "ftps": "pathlib_next.uri.schemes.ftp",
+    "http": "pathlib_next.uri.schemes.http",
+    "https": "pathlib_next.uri.schemes.http",
+    "dav": "pathlib_next.uri.schemes.dav",
+    "davs": "pathlib_next.uri.schemes.dav",
+    "sftp": "pathlib_next.uri.schemes.sftp",
+    "s3": "pathlib_next.uri.schemes.s3",
+    "gs": "pathlib_next.uri.schemes.gs",
+    "az": "pathlib_next.uri.schemes.az",
+    "github": "pathlib_next.uri.schemes.github",
+    "gitlab": "pathlib_next.uri.schemes.gitlab",
+    "git": "pathlib_next.uri.schemes.git",
+    "git+github": "pathlib_next.uri.schemes.git",
+    "git+gitlab": "pathlib_next.uri.schemes.git",
+}
+
+#: Scheme -> the class that registered it, filled when the class is defined.
+_CLAIMS: "dict[str, type[UriPath]]" = {}
+
+#: Schemes a class took with `replace=True`; a built-in class defined after
+#: one of them leaves it with the replacement.
+_REPLACED: "set[str]" = set()
+
+#: Makes checking a claim and recording it one step.
+_CLAIMS_LOCK = _threading.Lock()
+
 
 def _remove_dots(path: str, scheme: "str | None") -> str:
     """`_remove_dot_segments()`, keeping the drive of a `file:` path on
@@ -206,6 +243,73 @@ def _forget_entry_points() -> None:
     global _ENTRY_POINTS
     _ENTRY_POINTS = None
     _ENTRY_POINTS_LOADED.clear()
+
+
+def _declared_entry_points() -> "dict[str, object]":
+    """The `pathlib_next.schemes` entry points by scheme name, the first
+    declaration of a name winning. Scanning every distribution cost 13-29 ms
+    per construction with an unregistered scheme (`C:/x` on Windows
+    included), so the group is read once per lookup function and dropped when
+    a `UriPath` subclass is defined (`_forget_entry_points`)."""
+    global _ENTRY_POINTS
+    import importlib.metadata as _metadata
+
+    cached = _ENTRY_POINTS
+    if cached is None or cached[0] is not _metadata.entry_points:
+        try:
+            eps = _metadata.entry_points(group="pathlib_next.schemes")
+        except TypeError:
+            # Python 3.9 fallback
+            eps = _metadata.entry_points().get("pathlib_next.schemes", ())
+        declared: "dict[str, object]" = {}
+        for ep in eps:
+            declared.setdefault(ep.name, ep)
+        cached = _ENTRY_POINTS = (_metadata.entry_points, declared)
+    return cached[1]
+
+
+def _is_builtin_class(scheme: str, cls: type) -> bool:
+    """Whether `cls` is defined in the module (or package) the built-in
+    table names for `scheme`."""
+    module = _BUILTIN_SCHEMES.get(scheme)
+    return module is not None and (
+        cls.__module__ == module or cls.__module__.startswith(module + ".")
+    )
+
+
+def _claim_schemes(cls: type, replace: bool) -> None:
+    """Register the schemes `cls` lists in its own `__SCHEMES`.
+
+    A name another class holds, or a built-in name whose class is not the
+    built-in one, is a `ValueError` unless `replace` is true. Nothing is
+    registered when any name is refused.
+    """
+    names = tuple(dict.fromkeys(cls.__dict__.get(f"_{cls.__name__}__SCHEMES", ())))
+    with _CLAIMS_LOCK:
+        taking = []
+        for name in names:
+            held = _CLAIMS.get(name)
+            if replace:
+                taking.append(name)
+            elif held is None:
+                if name in _BUILTIN_SCHEMES and not _is_builtin_class(name, cls):
+                    raise ValueError(
+                        f"{name!r} is a built-in URI scheme; pass replace=True "
+                        f"in the class statement of {cls.__qualname__} to replace it"
+                    )
+                taking.append(name)
+            elif name in _REPLACED and _is_builtin_class(name, cls):
+                continue
+            else:
+                raise ValueError(
+                    f"URI scheme {name!r} is already registered by "
+                    f"{held.__module__}.{held.__qualname__}; pass replace=True "
+                    f"in the class statement of {cls.__qualname__} to replace it"
+                )
+        for name in taking:
+            _CLAIMS[name] = cls
+            if replace:
+                _REPLACED.add(name)
 
 
 def _slot_names(cls: type) -> "tuple[str, ...]":
@@ -1068,7 +1172,10 @@ class UriPath(Uri, Path):
     the concrete subclass registered for the URI's scheme (via `__SCHEMES`)
     -- e.g. `UriPath("http://...")` returns an `HttpPath`. Subclass this
     and set `__SCHEMES` to add a new scheme (Track B of extending this
-    library; see `docs/guides/extending.md`); implement the I/O surface
+    library; see `docs/guides/extending.md`): defining the class registers
+    it, a name another class holds raises `ValueError` unless the class
+    statement passes `replace=True`, and `schemes()` / `scheme_class()` read
+    the registry. Implement the I/O surface
     (`_listdir` or `_scandir`, `stat`, `_open`, ...) documented in
     `docs/guides/extending.md`. Prefer overriding `_scandir()` over `_listdir()` when the
     listing call already returns type/size/mtime metadata (PROPFIND, MLSD,
@@ -1087,30 +1194,52 @@ class UriPath(Uri, Path):
         "_schemes_in_use",
     )
     __SCHEMES: _ty.Sequence[str] = ()
-    __SCHEMESMAP: _ty.Mapping[str, type["Self"]] = None
 
-    def __init_subclass__(cls, **kwargs):
+    def __init_subclass__(cls, replace: bool = False, **kwargs):
         super().__init_subclass__(**kwargs)
-        # A scheme class defined after the first dispatch must be found by
-        # the next one: drop every cached map that could include it.
-        for base in cls.__mro__:
-            if isinstance(base, type) and issubclass(base, UriPath):
-                setattr(base, f"_{base.__name__}__SCHEMESMAP", None)
+        _claim_schemes(cls, replace)
         _forget_entry_points()
 
     @classmethod
-    def _schemesmap(cls, reload=False) -> _ty.Mapping[str, type["Self"]]:
-        _propname = f"_{cls.__name__}__SCHEMESMAP"
-        if not reload:
-            try:
-                schemesmap = getattr(cls, _propname)
-                if schemesmap is not None:
-                    return schemesmap
-            except AttributeError:
-                pass
-        schemesmap = cls._get_schemesmap()
-        setattr(cls, _propname, schemesmap)
-        return schemesmap
+    def schemes(cls) -> "tuple[str, ...]":
+        """The registered scheme names, sorted: those of every class defined
+        so far, every built-in scheme and every entry point of the
+        `pathlib_next.schemes` group, whether or not its module is imported
+        yet. A scheme whose client library is not installed is listed too."""
+        with _CLAIMS_LOCK:
+            claimed = list(_CLAIMS)
+        return tuple(sorted({*claimed, *_BUILTIN_SCHEMES, *_declared_entry_points()}))
+
+    @classmethod
+    def scheme_class(cls, name: str) -> "type[UriPath]":
+        """The class registered for the scheme `name` (case-insensitive),
+        importing its module or loading its entry point first when needed.
+
+        Raises `ValueError` naming the registered schemes when there is
+        none, and the `ImportError` of a built-in module that cannot be
+        imported.
+        """
+        found = cls._find_scheme(name.lower(), strict=True)
+        if found is None:
+            raise ValueError(
+                f"no URI scheme {name!r} is registered; registered: "
+                + ", ".join(cls.schemes())
+            )
+        return found
+
+    @classmethod
+    def _find_scheme(cls, scheme: str, strict: bool = False):
+        """The class that registered `scheme`, or `None`: a class already
+        defined, then the built-in module, then an entry point. With `strict`
+        a built-in module that fails to import raises instead of reading as
+        "no class"."""
+        found = _CLAIMS.get(scheme)
+        if found is None and (
+            cls._load_builtin_scheme(scheme, strict=strict)
+            or cls._load_entry_point(scheme)
+        ):
+            found = _CLAIMS.get(scheme)
+        return found
 
     @classmethod
     def _schemes(cls) -> _ty.Sequence[str]:
@@ -1120,37 +1249,13 @@ class UriPath(Uri, Path):
             return ()
 
     @classmethod
-    def _get_schemesmap(cls):
-        schemesmap = {scheme: cls for scheme in cls._schemes()}
-        for scls in cls.__subclasses__():
-            schemesmap.update(scls._get_schemesmap())
-        return schemesmap
-
-    @classmethod
     def _load_entry_point(cls, scheme: str) -> bool:
         """Attempt to load a scheme class from package entry points.
 
         Looks for entry points in the 'pathlib_next.schemes' group where
         the name matches the requested scheme.
         """
-        global _ENTRY_POINTS
-        import importlib.metadata as _metadata
-
-        # The group is read once (scanning every distribution cost 13-29 ms per
-        # construction with an unregistered scheme, "C:/x" on Windows included), keyed
-        # on the lookup function; a new subclass drops it (`_forget_entry_points`).
-        cached = _ENTRY_POINTS
-        if cached is None or cached[0] is not _metadata.entry_points:
-            try:
-                eps = _metadata.entry_points(group="pathlib_next.schemes")
-            except TypeError:
-                # Python 3.9 fallback
-                eps = _metadata.entry_points().get("pathlib_next.schemes", ())
-            declared: "dict[str, object]" = {}
-            for ep in eps:
-                declared.setdefault(ep.name, ep)
-            cached = _ENTRY_POINTS = (_metadata.entry_points, declared)
-        ep = cached[1].get(scheme)
+        ep = _declared_entry_points().get(scheme)
         if ep is None or scheme in _ENTRY_POINTS_LOADED:
             return False
         ep.load()
@@ -1158,32 +1263,8 @@ class UriPath(Uri, Path):
         return True
 
     @classmethod
-    def _load_builtin_scheme(cls, scheme: str) -> bool:
+    def _load_builtin_scheme(cls, scheme: str, strict: bool = False) -> bool:
         """Attempt to load a builtin scheme module dynamically on-demand."""
-        _BUILTIN_SCHEMES = {
-            "file": "pathlib_next.uri.schemes.file",
-            "data": "pathlib_next.uri.schemes.data",
-            "zip": "pathlib_next.uri.schemes.archive",
-            "tar": "pathlib_next.uri.schemes.archive",
-            "archive": "pathlib_next.uri.schemes.archive",
-            "archive+zip": "pathlib_next.uri.schemes.archive",
-            "archive+tar": "pathlib_next.uri.schemes.archive",
-            "ftp": "pathlib_next.uri.schemes.ftp",
-            "ftps": "pathlib_next.uri.schemes.ftp",
-            "http": "pathlib_next.uri.schemes.http",
-            "https": "pathlib_next.uri.schemes.http",
-            "dav": "pathlib_next.uri.schemes.dav",
-            "davs": "pathlib_next.uri.schemes.dav",
-            "sftp": "pathlib_next.uri.schemes.sftp",
-            "s3": "pathlib_next.uri.schemes.s3",
-            "gs": "pathlib_next.uri.schemes.gs",
-            "az": "pathlib_next.uri.schemes.az",
-            "github": "pathlib_next.uri.schemes.github",
-            "gitlab": "pathlib_next.uri.schemes.gitlab",
-            "git": "pathlib_next.uri.schemes.git",
-            "git+github": "pathlib_next.uri.schemes.git",
-            "git+gitlab": "pathlib_next.uri.schemes.git",
-        }
         module_name = _BUILTIN_SCHEMES.get(scheme)
         if module_name:
             import importlib
@@ -1192,7 +1273,8 @@ class UriPath(Uri, Path):
                 importlib.import_module(module_name)
                 return True
             except ImportError:
-                pass
+                if strict:
+                    raise
         return False
 
     def __new__(

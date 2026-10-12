@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **`UriPath.schemes()` and `UriPath.scheme_class(name)` read the scheme
+  registry.** `schemes()` returns the registered names, sorted: every class
+  defined so far, every built-in scheme and every `pathlib_next.schemes` entry
+  point, whether or not its module is imported yet, and including a scheme whose
+  client library is not installed (it fails where it is used, naming the
+  extra). `scheme_class(name)` returns the class for a name (case-insensitive),
+  importing its module or loading its entry point first, and raises
+  `ValueError` naming the registered schemes when there is none. They answer
+  "why did `UriPath("x://...")` give a plain `UriPath`" without a dispatch.
+
+### Changed
+- **A scheme name belongs to one class: a second claim raises, and an entry
+  point can no longer take a built-in scheme.** Defining a `UriPath` subclass
+  that lists a name another class held used to replace it silently, so the
+  class defined last won, and so did a subclass that kept its parent's class
+  name and listed nothing. A distribution's `pathlib_next.schemes` entry point
+  named `sftp` or `file` was loaded ahead of the built-in class and took it.
+  Now defining a class that lists a name another class holds, or a built-in
+  name (even before its module is imported), raises `ValueError` at the
+  `class` statement, naming the holder; none of that class's names is
+  registered. A built-in name resolves from the built-in module before any
+  entry point, so an entry point for it does not displace it. A
+  subclass registers only the names in its own `__SCHEMES`. To replace a class
+  on purpose, write `class MyHttp(UriPath, replace=True)`; a module that is
+  reloaded passes `replace=True` too, as re-running its `class` statement is
+  a second claim. Otherwise give the scheme a name nobody holds, or remove the
+  duplicate definition.
+
 ## [0.9.14] - 2026-10-12
 
 ### Added

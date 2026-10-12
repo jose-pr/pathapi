@@ -204,7 +204,9 @@ examples in [Extending](https://jose-pr.github.io/pathlib-next/guides/extending/
 - Subclass `Path` directly for a non-URI resource (`MemPath` is the reference).
 - Subclass `UriPath` and declare `__SCHEMES` for a new URI scheme; it is
   dispatched as soon as its module is imported, or through a
-  `pathlib_next.schemes` entry point.
+  `pathlib_next.schemes` entry point. A scheme name belongs to one class:
+  a second claim raises unless the class statement says `replace=True`, and
+  `UriPath.schemes()` / `UriPath.scheme_class(name)` read the registry.
 
 `pathlib_next.testing` provides the pytest contracts (`PurePathContract`,
 `ReadPathContract`, `PathContract`) and `populate_fixture_tree()` used to

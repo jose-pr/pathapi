@@ -176,12 +176,59 @@ print(type(UriPath("myscheme://host/data/file.txt")).__name__)
 Defining (importing) the subclass is enough: `UriPath("myscheme://...")`
 dispatches to it, also when the class is defined after the first dispatch.
 The class name must not start with an underscore, or the name-mangled
-`__SCHEMES` lookup misses it. A distribution can also register the class
-without an import, through an entry point:
+`__SCHEMES` lookup misses it, and a subclass that lists no `__SCHEMES` of its
+own registers nothing, whatever it inherits.
+
+A distribution that ships schemes declares each one as an entry point, so
+that installing it is enough and nothing has to import its module first:
 
 ```toml
 [project.entry-points."pathlib_next.schemes"]
 myscheme = "mypackage.paths:MyPath"
+```
+
+The entry point only loads the module; defining the class is what registers
+the names it lists, so there is no separate registration call.
+
+### Names are held by one class
+
+A scheme name belongs to one class. Defining a second class that lists a name
+another class holds raises `ValueError` at the `class` statement, naming the
+holder, and the class registers none of its names. The built-in names (`file`,
+`http`, `sftp`, ...) are held by the built-in classes even before their
+modules are imported, and a distribution's entry point never takes one: the
+built-in module is consulted before the entry points. To replace a class on
+purpose, say so in the class statement:
+
+```python
+from pathlib_next.uri import UriPath
+
+
+class MyHttp(UriPath, replace=True):
+    __SCHEMES = ("http", "https")
+
+
+assert UriPath.scheme_class("https") is MyHttp
+assert type(UriPath("http://example.com/x")) is MyHttp
+```
+
+A built-in class defined after a replacement leaves it in place. Paths built
+before the replacement keep their class. Re-executing a class statement
+(`importlib.reload()`) is a second claim, so a module meant to be reloaded
+passes `replace=True`.
+
+`UriPath.schemes()` lists the registered names, sorted, including built-in
+and entry-point schemes whose module is not imported yet and schemes whose
+client library is not installed (those fail where they are used, naming the
+extra). `UriPath.scheme_class(name)` returns the class registered for a
+name, importing or loading it first, or raises `ValueError` naming the
+registered schemes:
+
+```python
+from pathlib_next.uri import UriPath
+
+print(UriPath.scheme_class("data").__name__)  # DataUri
+print("sftp" in UriPath.schemes())  # True, though its module is not imported
 ```
 
 Conventions for a scheme implementation:

@@ -78,7 +78,7 @@ def test_a_child_built_from_a_listed_name_is_not_resolved(base):
     assert parent._make_child_relpath("x").path == "/d/x"
     assert parent._make_child_relpath("x.y").path == "/d/x.y"
 
-    class Listed(UriPath):
+    class Listed(UriPath, replace=True):  # redefined for each parameter
         __SCHEMES = ("dot-listing",)
         __slots__ = ()
 
