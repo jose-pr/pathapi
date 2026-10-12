@@ -15,8 +15,9 @@ import re as _re
 import sys as _sys
 import typing as _ty
 
+from .exceptions import NonRelativePatternError
+
 __all__ = [
-    "NonRelativePatternError",
     "RECURSIVE",
     "full_match",
     "glob",
@@ -72,12 +73,6 @@ if _ty.TYPE_CHECKING:
 else:
 
     class _Globable(_ty.Protocol): ...
-
-
-class NonRelativePatternError(NotImplementedError, ValueError):
-    """An absolute or anchored glob pattern. pathlib raises
-    `NotImplementedError("Non-relative patterns are unsupported")`; this is
-    also a `ValueError`, so either `except` clause catches it."""
 
 
 @_func.lru_cache(maxsize=256, typed=True)

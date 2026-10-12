@@ -39,13 +39,15 @@ keep the core and the URI layer under separate headings.
 ## Package root (`pathlib_next`)
 
 `import pathlib_next` exposes `Path`, `Pathname`, `LocalPath`,
-`PosixPathname`, `WindowsPathname`, `FileStat`, the protocols `Stat`, `Chmod`,
-`BinaryOpen`, `FsPathLike`, the aliases `PathLike`/`PurePathLike`, and the modules
-`glob` (`pathlib_next.glob`) and `sync` (`pathlib_next.sync`). `FTPPath`, `ZipPath`,
+`PosixPathname`, `WindowsPathname`, `MemPath`, `FileStat`, the protocols `Stat`,
+`Chmod`, `BinaryOpen`, `FsPathLike`, the aliases `PathLike`/`PurePathLike`, the
+exceptions `PathError` and `NonRelativePatternError`, and the modules `glob`
+(`pathlib_next.glob`) and `sync` (`pathlib_next.sync`). `FTPPath`, `ZipPath`,
 `TarPath` and `ArchivePath` are exported too, imported on first use so that
 `import pathlib_next` loads neither `ftplib` nor `ssl` nor any archive code.
-`MemPath` lives in `pathlib_next.mempath`; `pathlib_next.testing` is never
-imported implicitly.
+`MemPath` is defined in `pathlib_next.mempath`, which also holds
+`MemPathBackend` and `MemFile`; `pathlib_next.testing` is never imported
+implicitly.
 
 The root, `path`, `fspath`, `protocols` (and its `fs`, `io`, `checksum`),
 `glob`, `checksum` and `providers` declare `__all__` with exactly the names
@@ -249,7 +251,7 @@ Base class for I/O paths.
   directory symlinks unless `recurse_symlinks=True`, a
   trailing `**` selects files too on 3.13+, a missing or non-directory base
   yields nothing, `""` → `ValueError`, an absolute pattern →
-  `glob.NonRelativePatternError`. `recursive=None` enables recursion when a
+  `NonRelativePatternError`. `recursive=None` enables recursion when a
   component is `**`; an explicit value wins. Validates eagerly, selects
   lazily. On a remote scheme a recursive glob lists every directory of the
   subtree, once. A path two `**` reach along several splits is yielded once
@@ -1137,8 +1139,6 @@ def select(
 def full_match(segments, pattern, case_sensitive) -> bool: ...
 
 RECURSIVE = '**'
-
-class NonRelativePatternError(NotImplementedError, ValueError): ...
 ```
 
 `glob.glob()`: the pattern
@@ -1148,7 +1148,6 @@ in the path's anchor (a drive, `\\?\C:\`); a bad pattern raises when it is
 called, the selection is lazy. `glob.parse_pattern()` (`ValueError`/`NonRelativePatternError`),
 `glob.select()` (the engine behind
 `Path.glob()`), `glob.full_match()`,
-`glob.NonRelativePatternError(NotImplementedError, ValueError)`,
 `glob.RECURSIVE = "**"`, `glob.compile_pattern()` (one shell-style component
 as a compiled regular expression, cached), `glob.ANY_PATTERN` (a lone `*`) and
 `glob.WILDCARD_PATTERN` (a wildcard character), both compiled expressions, and
@@ -2730,13 +2729,17 @@ A failure is the exception `pathlib` raises for the same condition
 `ValueError`/`TypeError` for a bad argument. Those the package defines are
 listed here; the conditions that raise them are in the entries.
 
-### Core (`pathlib_next.glob`)
+### Core (`pathlib_next.exceptions`, also exported from `pathlib_next`)
 
 ```python
-class NonRelativePatternError(NotImplementedError, ValueError): ...
+class PathError(Exception): ...
+class NonRelativePatternError(PathError, NotImplementedError, ValueError): ...
 ```
 
-`glob()` raises it for an absolute pattern.
+`PathError` is the base of every exception the core defines for a failure at
+run time that no builtin describes; an I/O failure is never a `PathError`.
+`glob()` raises `NonRelativePatternError` for an absolute pattern, and it is
+caught as `PathError`, `NotImplementedError` or `ValueError`.
 
 ### URI layer (`pathlib_next.uri.schemes.sftp`, `pathlib_next.uri.schemes.github`)
 

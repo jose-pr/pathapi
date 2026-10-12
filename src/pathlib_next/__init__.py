@@ -11,7 +11,10 @@ __all__ = [
     "FileStat",
     "FsPathLike",
     "LocalPath",
+    "MemPath",
+    "NonRelativePatternError",
     "Path",
+    "PathError",
     "PathLike",
     "Pathname",
     "PosixPathname",
@@ -31,11 +34,13 @@ except _metadata.PackageNotFoundError:  # a source tree that is not installed
     __version__ = "0+unknown"
 
 from .fspath import LocalPath, PosixPathname, WindowsPathname
+from .mempath import MemPath
 from .path import FsPathLike, Path, PathLike, Pathname, PurePathLike
 from .protocols import BinaryOpen, Chmod, Stat
 from . import glob as glob
 from . import sync as sync
 from ._filestat import FileStat
+from .exceptions import NonRelativePatternError, PathError
 
 _uri_unavailable: "ImportError | None" = None
 try:

@@ -17,6 +17,7 @@ import pytest
 
 import pathlib_next
 from pathlib_next.mempath import MemPath
+from pathlib_next import NonRelativePatternError
 from pathlib_next import glob as _glob
 from pathlib_next import FileStat
 
@@ -465,7 +466,7 @@ def test_a_carried_pattern_selects_lazily(tree):
 
 
 def test_an_absolute_pattern_is_a_notimplementederror_and_a_valueerror(tree):
-    with pytest.raises(_glob.NonRelativePatternError) as info:
+    with pytest.raises(NonRelativePatternError) as info:
         pathlib_next.LocalPath(tree).glob("/abs")
     assert isinstance(info.value, NotImplementedError)
     assert isinstance(info.value, ValueError)

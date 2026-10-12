@@ -17,6 +17,7 @@ from . import path as _proto
 from . import _permissions
 from . import glob as _glob
 from ._filestat import FileStat as _FileStat
+from .exceptions import NonRelativePatternError
 
 __all__ = ["LocalPath", "PosixPathname", "WindowsPathname"]
 
@@ -406,7 +407,7 @@ class LocalPath(
         pattern this path carries) and `native=` (follow the running
         interpreter, or one rule on every version); every separator of this
         flavour splits the pattern, and a pattern with a drive or root
-        raises `glob.NonRelativePatternError` like pathlib.
+        raises `NonRelativePatternError` like pathlib.
 
         Raises the audit event `pathlib.Path.glob` with `(self, pattern)`, as
         pathlib does. `pattern=None` has no pathlib counterpart and raises none.
@@ -430,9 +431,7 @@ class LocalPath(
         if pattern:
             anchored = self.with_segments(pattern)
             if anchored.drive or anchored.root:
-                raise _glob.NonRelativePatternError(
-                    "Non-relative patterns are unsupported"
-                )
+                raise NonRelativePatternError("Non-relative patterns are unsupported")
             for sep in self._path_separators:
                 pattern = pattern.replace(sep, "/")
             if any(self._parser.splitdrive(part)[0] for part in pattern.split("/")):

@@ -28,6 +28,7 @@ from .protocols import BinaryOpen, Chmod, Stat
 from .protocols.io import _ASK_STAT
 from . import glob as _glob
 from ._filestat import FileStat
+from .exceptions import NonRelativePatternError
 
 __all__ = [
     "FsPathLike",
@@ -823,7 +824,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         symlink by default, and a trailing "**" also selects files on Python 3.13+
         (directories only before). A missing or non-directory parent selects
         nothing. An empty pattern raises `ValueError`, an absolute one
-        `glob.NonRelativePatternError` (a `NotImplementedError` and a
+        `NonRelativePatternError` (a `NotImplementedError` and a
         `ValueError`).
 
         `recurse_symlinks=True` lets "**" descend through symlinks to
@@ -943,7 +944,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
             # without listing. A pattern with no component ("." or "./") is allowed.
             try:
                 self.glob(pattern, recursive=False, native=native)
-            except _glob.NonRelativePatternError:
+            except NonRelativePatternError:
                 raise
             except ValueError:
                 pass
