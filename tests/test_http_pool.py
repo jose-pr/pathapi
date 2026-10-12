@@ -346,3 +346,89 @@ def test_bytes_the_server_sends_after_a_reply_are_not_the_next_reply(transport):
         threading.Event().wait(0.6)
         assert get(transport, wire.url + "/").read() == b"second"
     assert wire.connections == 2
+
+
+# --- a closed connection stays closed ---------------------------------------------
+
+
+def _run_as_the_exchange_begins(monkeypatch, action):
+    """Calls `action(transport, connection)` where a request has its connection
+    and is about to write: the instant a concurrent `close()` can land."""
+    original = _builtin.HTTPTransport._exchange
+
+    def exchange(self, connection, *args, **kwargs):
+        action(self, connection)
+        return original(self, connection, *args, **kwargs)
+
+    monkeypatch.setattr(_builtin.HTTPTransport, "_exchange", exchange)
+
+
+def _settle():
+    threading.Event().wait(0.4)
+
+
+def test_a_connection_closed_before_the_request_is_written_is_not_reopened(
+    transport, monkeypatch
+):
+    _run_as_the_exchange_begins(monkeypatch, lambda t, connection: connection.close())
+    with Wire() as wire:
+        with pytest.raises(ConnectionError):
+            get(transport, wire.url + "/")
+        _settle()
+    # The one connection the request made; no second, bare TCP one carried it.
+    assert wire.connections == 1
+    assert wire.requests == []
+
+
+def test_a_transport_closed_before_the_request_is_written_does_not_send_it(
+    transport, monkeypatch
+):
+    _run_as_the_exchange_begins(monkeypatch, lambda t, connection: t.close())
+    with Wire() as wire:
+        with pytest.raises(ConnectionError):
+            transport.send(
+                "GET",
+                wire.url + "/",
+                headers={"Authorization": "Bearer SECRET-TOKEN"},
+                timeout=TIMEOUT,
+            )
+        _settle()
+    assert wire.connections == 1
+    assert wire.requests == []
+
+
+def test_a_body_that_is_being_sent_when_the_transport_is_closed_is_not_finished_in_the_clear(
+    tmp_path,
+):
+    from http_wire import make_authority
+
+    authority = make_authority(tmp_path, "127.0.0.1", "localhost")
+    transport = HTTPTransport(ssl_context=authority.client_context(), proxies={})
+
+    class Upload:
+        def __init__(self):
+            self.blocks = 0
+
+        def read(self, size=-1):
+            self.blocks += 1
+            if self.blocks == 3:
+                transport.close()
+            return b"BLOCK-%d;" % self.blocks if self.blocks < 6 else b""
+
+    with Wire(tls=authority.server_context()) as wire:
+        with pytest.raises(OSError):
+            transport.send(
+                "PUT", wire.url + "/f", headers={}, body=Upload(), timeout=TIMEOUT
+            )
+        _settle()
+    # Nothing came back to the https port in the clear: that would be a
+    # second connection, and the rest of the body would be on it.
+    assert wire.connections == 1
+
+
+def test_a_closed_transport_connects_afresh_when_it_is_used_again(transport):
+    with Wire() as wire:
+        get(transport, wire.url + "/").read()
+        transport.close()
+        assert get(transport, wire.url + "/").read() == b"ok"
+    assert wire.connections == 2

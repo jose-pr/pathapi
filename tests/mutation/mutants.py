@@ -1192,3 +1192,15 @@ mutant(
     ),
     "an idle connection the server closed, or sent extra bytes on, carries the next request",
 )
+mutant(
+    "http-closed-connection-reopens-itself",
+    f"{_HTTP_PKG}/_builtin.py",
+    "        http.auto_open = 0\n",
+    "        http.auto_open = 1\n",
+    (
+        "tests/test_http_pool.py::test_a_connection_closed_before_the_request_is_written_is_not_reopened",
+        "tests/test_http_pool.py::test_a_transport_closed_before_the_request_is_written_does_not_send_it",
+        "tests/test_http_pool.py::test_a_body_that_is_being_sent_when_the_transport_is_closed_is_not_finished_in_the_clear",
+    ),
+    "http.client reconnects a closed connection by itself, in plain TCP outside the TLS session and the proxy",
+)

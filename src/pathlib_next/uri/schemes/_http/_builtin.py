@@ -79,6 +79,8 @@ def _failure(error: BaseException) -> BaseException:
         return ConnectionError(
             _errno.EHOSTUNREACH, "the host name could not be resolved"
         )
+    if isinstance(error, _client.NotConnected):
+        return ConnectionAbortedError(_errno.ECONNABORTED, "the connection was closed")
     if isinstance(error, _client.IncompleteRead):
         return OSError(_errno.EIO, "the response ended before its stated length")
     if isinstance(error, _client.HTTPException):
@@ -106,6 +108,8 @@ def _dropped(error: BaseException) -> bool:
 def _unusable(sock) -> bool:
     """Whether an idle connection must not carry a request: the server closed
     it, or sent bytes nobody asked for, which the next reply would start with."""
+    if sock is None:
+        return True
     try:
         if getattr(sock, "pending", None) is not None and sock.pending():
             return True
@@ -374,8 +378,13 @@ class HTTPTransport:
                     proxy, target, key, scope, connect_timeout, read_timeout
                 )
                 reused = False
+            sock = connection.http.sock
             try:
-                connection.http.sock.settimeout(read_timeout)
+                if sock is None:
+                    raise ConnectionAbortedError(
+                        _errno.ECONNABORTED, "the connection was closed"
+                    )
+                sock.settimeout(read_timeout)
             except OSError:
                 # An idle socket that is already closed: nothing was sent.
                 self._pool.discard(connection)
@@ -480,6 +489,10 @@ class HTTPTransport:
             raw.close()
             raise
         http = _client.HTTPConnection(target.host, target.port)
+        # A connection that was closed stays closed: `http.client` would
+        # otherwise reconnect by itself, in plain TCP, outside the TLS session,
+        # the proxy and the timeout this request was given.
+        http.auto_open = 0
         http.sock = sock
         connection = _pool.Connection(http, key, scope, self._pool.generation)
         self._pool.register(connection)
