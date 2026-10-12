@@ -17,6 +17,29 @@ import pytest
 
 CRLF = b"\r\n"
 
+# How often a blocked accept() looks at the stop flag. Closing a listening
+# socket from another thread does not wake an accept() on every platform
+# (Linux leaves it blocked), so the accept loops never rely on it.
+_POLL = 0.05
+
+
+def _stop_listening(stop, thread, listener, sockets, lock):
+    """Stop an accept loop and drop every connection it accepted."""
+    stop.set()
+    thread.join(timeout=10)  # a safety net: the loop sees the flag within _POLL
+    try:
+        listener.close()
+    except OSError:
+        pass
+    with lock:
+        accepted = list(sockets)
+    for sock in accepted:
+        try:
+            sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        sock.close()
+
 
 class Request(typing.NamedTuple):
     """One request as the server received it."""
@@ -121,6 +144,7 @@ class Wire:
         self._sockets: "list[socket.socket]" = []
         self._stop = threading.Event()
         self._listener = socket.create_server(("127.0.0.1", 0))
+        self._listener.settimeout(_POLL)
         self.port = self._listener.getsockname()[1]
         self.host = "127.0.0.1"
         self._thread = threading.Thread(target=self._accept, daemon=True)
@@ -137,27 +161,19 @@ class Wire:
         self.close()
 
     def close(self):
-        self._stop.set()
-        try:
-            self._listener.close()
-        except OSError:
-            pass
-        with self._lock:
-            sockets = list(self._sockets)
-        for sock in sockets:
-            try:
-                sock.shutdown(socket.SHUT_RDWR)
-            except OSError:
-                pass
-            sock.close()
-        self._thread.join(timeout=5)
+        _stop_listening(
+            self._stop, self._thread, self._listener, self._sockets, self._lock
+        )
 
     def _accept(self):
         while not self._stop.is_set():
             try:
                 sock, _ = self._listener.accept()
+            except socket.timeout:
+                continue
             except OSError:
                 return
+            sock.settimeout(None)
             with self._lock:
                 index = self.connections
                 self.connections += 1
@@ -241,6 +257,7 @@ class Proxy:
         self._sockets: "list[socket.socket]" = []
         self._stop = threading.Event()
         self._listener = socket.create_server(("127.0.0.1", 0))
+        self._listener.settimeout(_POLL)
         self.port = self._listener.getsockname()[1]
         self.url = f"http://127.0.0.1:{self.port}"
         self._thread = threading.Thread(target=self._accept, daemon=True)
@@ -253,27 +270,19 @@ class Proxy:
         self.close()
 
     def close(self):
-        self._stop.set()
-        try:
-            self._listener.close()
-        except OSError:
-            pass
-        with self._lock:
-            sockets = list(self._sockets)
-        for sock in sockets:
-            try:
-                sock.shutdown(socket.SHUT_RDWR)
-            except OSError:
-                pass
-            sock.close()
-        self._thread.join(timeout=5)
+        _stop_listening(
+            self._stop, self._thread, self._listener, self._sockets, self._lock
+        )
 
     def _accept(self):
         while not self._stop.is_set():
             try:
                 sock, _ = self._listener.accept()
+            except socket.timeout:
+                continue
             except OSError:
                 return
+            sock.settimeout(None)
             with self._lock:
                 self._sockets.append(sock)
             threading.Thread(target=self._serve, args=(sock,), daemon=True).start()
@@ -343,7 +352,13 @@ class Proxy:
         thread = threading.Thread(target=pump, args=(upstream, client), daemon=True)
         thread.start()
         pump(client, upstream)
-        thread.join(timeout=5)
+        # The client is gone, so nobody reads the upstream's side any more;
+        # shutting it wakes the other pump however the origin behaves.
+        try:
+            upstream.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        thread.join(timeout=10)
         upstream.close()
 
 
