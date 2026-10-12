@@ -10,6 +10,7 @@ import threading as _threading
 import typing as _ty
 
 from .._extras import import_client
+from ._body import prepare_body
 from ._follow import origin
 from ._headers import (
     Headers,
@@ -207,7 +208,11 @@ class RequestsTransport:
         check_url(url)
         check_body(body)
         check_timeout(timeout)
-        sent = dict(check_headers(headers))
+        pairs = check_headers(headers)
+        sent = dict(pairs)
+        body, length = prepare_body(body, pairs)
+        if length is not None:
+            sent["Content-Length"] = str(length)
         decode = wants_decoding(sent.items())
         if not has_header(sent, "Accept-Encoding"):
             sent["Accept-Encoding"] = "gzip, deflate"

@@ -88,8 +88,10 @@ def response(status=200, headers=None, body=b"", reason="OK", length=True) -> by
     return "\r\n".join(head).encode("latin-1") + CRLF + CRLF + body
 
 
-def _read_until(sock, marker: bytes, limit=1 << 20) -> "tuple[bytes, bytes] | None":
-    data = b""
+def _read_until(
+    sock, marker: bytes, limit=1 << 20, start: bytes = b""
+) -> "tuple[bytes, bytes] | None":
+    data = start
     while marker not in data:
         chunk = sock.recv(65536)
         if not chunk:
@@ -110,13 +112,14 @@ def _read_exactly(sock, rest: bytes, count: int) -> bytes:
     return rest
 
 
-def _read_chunked(sock, rest: bytes) -> bytes:
+def _read_chunked(sock, rest: bytes) -> "tuple[bytes, bytes]":
+    """The body, and the bytes that followed it on the connection."""
     body = b""
     while True:
         while CRLF not in rest:
             chunk = sock.recv(65536)
             if not chunk:
-                return body
+                return body, b""
             rest += chunk
         line, _, rest = rest.partition(CRLF)
         size = int(line.split(b";")[0], 16)
@@ -124,7 +127,7 @@ def _read_chunked(sock, rest: bytes) -> bytes:
         body += rest[:size]
         rest = rest[size + 2 :]
         if size == 0:
-            return body
+            return body, rest
 
 
 class Wire:
@@ -211,8 +214,9 @@ class Wire:
                     return
                 with self._lock:
                     self._sockets.append(sock)
+            carry = b""  # what the client sent beyond the request just read
             while not self._stop.is_set():
-                parsed = _read_until(sock, CRLF + CRLF)
+                parsed = _read_until(sock, CRLF + CRLF, start=carry)
                 if parsed is None:
                     return
                 head, rest = parsed
@@ -228,9 +232,10 @@ class Wire:
                     for k, v in headers
                 )
                 if chunked:
-                    body = _read_chunked(sock, rest)
+                    body, carry = _read_chunked(sock, rest)
                 else:
-                    body = _read_exactly(sock, rest, length)[:length]
+                    data = _read_exactly(sock, rest, length)
+                    body, carry = data[:length], data[length:]
                 request = Request(method, target, headers, body, index)
                 with self._lock:
                     self.requests.append(request)
@@ -248,7 +253,9 @@ class Wire:
                     sock.sendall(action.later)
                 if action.close:
                     return
-        except (OSError, ssl.SSLError):
+        except (OSError, ssl.SSLError, ValueError):
+            # A request line that does not parse, as after bytes the client
+            # should not have sent, ends the connection as a server would.
             return
         finally:
             with self._lock:

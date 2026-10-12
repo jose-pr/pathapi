@@ -2071,7 +2071,20 @@ class HTTPResponse:
   transport (a context manager is optional). `send()` makes exactly one
   request: it follows no redirect, adds no credentials and retries nothing
   but what is stated below. `body` is `None`, `bytes`, a binary file or an
-  iterable of `bytes` (never `str`: `TypeError`). `timeout` is seconds, a
+  iterable of `bytes` (never `str`: `TypeError`). A body is sent under a
+  `Content-Length` when its length is known without reading it: `bytes`, a
+  list or tuple of `bytes`, a file that is seekable (the bytes from `tell()`
+  to its end, the position restored) and a regular file (its size less
+  `tell()`). Any other body (an iterator, a generator, a pipe or another
+  stream that cannot report its size) is sent `Transfer-Encoding: chunked`.
+  Both transports send the same. A `Content-Length` in `headers` is trusted:
+  that many bytes are sent and nothing is chunked, a longer body is cut
+  there, a count that is not a number or is larger than a body whose length
+  is known is `ValueError` before anything is sent, and a body that runs out
+  first is `OSError(EIO)` with its connection closed. No body is sent past
+  its length (a file that grew after it was measured is cut there). A file or
+  iterator is never rewound and never sent twice, whatever its length is
+  known to be. `timeout` is seconds, a
   `(connect, read)` pair or `None` (no limit); the read half bounds each wait
   on the server, not the whole reply. With `stream=False` the body has been
   read when `send()` returns; with `stream=True` it is read from the

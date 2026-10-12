@@ -1360,3 +1360,45 @@ mutant(
     "tests/test_http_transport.py::test_a_server_that_never_answers_is_a_timeout_after_the_read_timeout",
     "the wait for a reply is bounded by the connect half of the timeout",
 )
+_BODY = "tests/test_http_body.py"
+mutant(
+    "http-body-length-ignores-the-position",
+    f"{_HTTP_PKG}/_body.py",
+    "        return max(0, end - here)\n",
+    "        return max(0, end)\n",
+    (
+        f"{_BODY}::test_a_bytes_io_part_way_sends_what_is_left_under_that_length",
+        f"{_BODY}::test_an_open_file_part_way_sends_what_is_left_under_that_length",
+    ),
+    "a file read from the middle is sent under the length of the whole file",
+)
+mutant(
+    "http-body-sent-past-its-length",
+    f"{_HTTP_PKG}/_body.py",
+    "        want = self._left if amount is None or amount < 0 else min(amount, self._left)\n",
+    "        want = self._left if amount is None or amount < 0 else amount\n",
+    (
+        f"{_BODY}::test_a_file_that_grew_after_it_was_measured_sends_only_the_length_it_stated",
+        f"{_BODY}::test_a_length_the_caller_set_cuts_a_longer_body_at_that_length",
+    ),
+    "a body longer than its Content-Length sends the rest into the next request",
+)
+mutant(
+    "http-body-short-of-its-length-is-not-an-error",
+    f"{_HTTP_PKG}/_body.py",
+    "        if not chunk:\n            raise OSError(\n",
+    "        if False:\n            raise OSError(\n",
+    (
+        f"{_BODY}::test_a_file_that_ends_before_the_length_it_stated_is_an_error",
+        f"{_BODY}::test_a_generator_that_ends_before_the_length_the_caller_set_is_an_error",
+    ),
+    "a body that ends before its Content-Length leaves the server waiting for the rest",
+)
+mutant(
+    "http-length-larger-than-the-body-is-sent",
+    f"{_HTTP_PKG}/_body.py",
+    "        if known is not None and declared > known:\n",
+    "        if False:\n",
+    f"{_BODY}::test_a_length_larger_than_a_body_whose_size_is_known_is_refused",
+    "a Content-Length larger than a file or list is sent and the upload stalls",
+)

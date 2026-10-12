@@ -12,6 +12,7 @@ import time as _time
 import typing as _ty
 
 from . import _pool
+from ._body import prepare_body
 from ._headers import (
     Target,
     bracket,
@@ -174,11 +175,12 @@ class _Dropped(Exception):
 
 
 class _Payload:
-    """The request body, and whether it can be sent twice."""
+    """The request body, whether it can be sent twice, and the
+    `Content-Length` to add to the request (`None`: none to add)."""
 
-    def __init__(self, body):
+    def __init__(self, body, pairs):
         self.repeatable = check_body(body)
-        self.value = body
+        self.value, self.length = prepare_body(body, pairs)
 
 
 class _Body:
@@ -325,7 +327,9 @@ class HTTPTransport:
 
         `headers` are sent as given; `Accept-Encoding: gzip, deflate` is added
         (and a coded body decoded) unless they name an `Accept-Encoding`.
-        `timeout` is seconds for the connection and for each wait on the
+        A `body` whose length is known without reading it goes under a
+        `Content-Length`, any other chunked; a `Content-Length` in `headers`
+        is used as it is. `timeout` is seconds for the connection and for each wait on the
         server: a number, a `(connect, read)` pair, or `None` to wait for ever.
         With `stream=False` the body has been read when this returns; with
         `stream=True` it is read from the response, which must be closed.
@@ -338,7 +342,7 @@ class HTTPTransport:
         target = check_url(url)
         pairs = check_headers(headers)
         connect_timeout, read_timeout = check_timeout(timeout)
-        payload = _Payload(body)
+        payload = _Payload(body, pairs)
         names = {name.lower() for name, _ in pairs}
         decode = wants_decoding(pairs)
         # As the server will see it: no fragment, "/" for an empty path.
@@ -433,9 +437,11 @@ class HTTPTransport:
                 raise dropped.error from None
 
     def _headers(
-        self, proxy: "ProxyAddress | None", target: Target, pairs, names
+        self, proxy: "ProxyAddress | None", target: Target, pairs, names, payload
     ) -> "dict[str, str]":
         sent = dict(pairs)
+        if payload.length is not None:
+            sent["Content-Length"] = str(payload.length)
         if "host" not in names:
             sent["Host"] = target.authority
         if "accept-encoding" not in names:
@@ -472,7 +478,7 @@ class HTTPTransport:
                 method,
                 line,
                 body=payload.value,
-                headers=self._headers(proxy, target, pairs, names),
+                headers=self._headers(proxy, target, pairs, names, payload),
             )
             response = http.getresponse()
         except (OSError, _client.HTTPException) as error:
