@@ -154,7 +154,9 @@ class Loopback:
     `ANY_PASSWORD` accepts whichever is offered);
     `sftp_version` is the highest version the server speaks; `server_class`
     replaces the counting `SFTPServer` subclass; `escaped_names` serves the
-    names `name_on_disk()` stores as the bytes they stand for.
+    names `name_on_disk()` stores as the bytes they stand for; `sftp=False`
+    leaves the SFTP subsystem out, so a request for it is refused and the
+    connection stays open.
     """
 
     def __init__(
@@ -166,6 +168,7 @@ class Loopback:
         sftp_version=3,
         server_class=None,
         escaped_names=False,
+        sftp=True,
     ):
         self.root = root
         self.wire = Wire() if wire is None else wire
@@ -173,6 +176,7 @@ class Loopback:
         self.sftp_version = sftp_version
         self.server_class = server_class
         self.escaped_names = escaped_names
+        self.sftp = sftp
         self.host_key = asyncssh.generate_private_key("ssh-rsa")
         self.live = set()
         #: Connections accepted so far, and the most that were open at once.
@@ -234,7 +238,11 @@ class Loopback:
                 0,
                 server_factory=_Auth,
                 server_host_keys=[self.host_key],
-                sftp_factory=lambda chan: server_class(chan, chroot=root),
+                sftp_factory=(
+                    (lambda chan: server_class(chan, chroot=root))
+                    if state.sftp
+                    else None
+                ),
                 sftp_version=self.sftp_version,
                 process_factory=None,
                 # No GSS: its default asks the resolver for this machine's own name.

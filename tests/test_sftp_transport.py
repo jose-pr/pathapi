@@ -584,37 +584,22 @@ def test_paramiko_failed_login_closes_the_connection(
     assert wait_until(lambda: not (_transports() - before), timeout=30)
 
 
-class _NoSftpServer(asyncssh.SFTPServer):
-    """A server whose SFTP subsystem fails to start."""
-
-    def __init__(self, *args, **kwargs):
-        raise RuntimeError("no sftp subsystem here")
-
-
 @needs_paramiko
-def test_paramiko_closes_the_connection_when_the_sftp_subsystem_fails(
+def test_paramiko_closes_the_connection_when_the_sftp_subsystem_is_refused(
     server_root, home, backends, sftp_loopbacks
 ):
-    srv = sftp_loopbacks(server_root, password=ANY_PASSWORD, server_class=_NoSftpServer)
-    before = {t for t in threading.enumerate() if isinstance(t, paramiko.Transport)}
+    # The server keeps the SSH connection open after refusing the subsystem:
+    # only the client closing it ends it.
+    srv = sftp_loopbacks(server_root, password=ANY_PASSWORD, sftp=False)
     backend = _paramiko_backend(
         backends, None, paramiko.AutoAddPolicy(), known_hosts=None
     )
 
-    # Which error depends on whether the server's refusal or its closing of
-    # the connection reaches the client first.
     with pytest.raises(OSError):
         backend.client(srv.source())
 
     assert srv.connections == 1
     assert wait_until(lambda: not srv.live)
-    assert wait_until(
-        lambda: not {
-            t for t in threading.enumerate() if isinstance(t, paramiko.Transport)
-        }
-        - before,
-        timeout=30,
-    )
 
 
 class _Proxy:
