@@ -14,9 +14,8 @@ def _querylist(
     items: _ty.Sequence[_ty.Tuple[str, _ty.Any]], sep: str, encoding: str
 ) -> bytes:
     # Escaped in every name and value: the separator; "=", which ends a name
-    # ({"a=b": "c"} would decode as ("a", "b=c")); and "+", which a
-    # form-urlencoded reader takes for a space (a base64 signature or a
-    # "+00:00" offset would arrive altered).
+    # ({"a=b": "c"} would decode as ("a", "b=c")); and "+", which a form-urlencoded
+    # reader takes for a space (a base64 signature or "+00:00" would arrive altered).
     safe = _SAFE_QUERY.replace(sep, "").replace("=", "").replace("+", "")
     name_safe = safe
     terms = []

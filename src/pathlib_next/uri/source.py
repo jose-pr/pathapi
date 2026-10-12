@@ -15,11 +15,9 @@ if _ty.TYPE_CHECKING:
 
 _DIGITS = "0123456789"
 
-#: Decoding and encoding error handler for percent-escapes. A valid URI may
-#: escape bytes that are not UTF-8 (`caf%E9.html` from a latin-1 server);
-#: `surrogateescape` carries each such byte through the decoded `str` and
-#: back out to the same escape, where the default `strict` raised
-#: UnicodeDecodeError while the path object was being constructed.
+#: Error handler for percent-escapes. A valid URI may escape bytes that are not
+#: UTF-8 (`caf%E9.html`); `surrogateescape` carries each through the decoded `str`
+#: and back out to the same escape, where `strict` would raise UnicodeDecodeError.
 ERRORS = "surrogateescape"
 _ERRORS = ERRORS
 
@@ -194,24 +192,8 @@ def _remove_dot_segments(path: str, *, drive: bool = False) -> str:
 
 
 # --- composer (direct-assembly fast path) ----------------------------
-# `uritools.uricompose()` re-validates every component on every call
-# (scheme regex, authority-string re-parsing, IP-literal detection on
-# plain strings, ...) -- necessary for its own "arbitrary input" contract,
-# wasted work when composing FROM already-canonical parsed/normalized
-# state (a `Source`/path/query/fragment that came from `_parse_uri` or
-# `Uri`'s own join logic). These helpers do direct string assembly,
-# reusing uritools' own `uriencode()` for percent-encoding (kept, not
-# reimplemented -- same reasoning as the parse side) and replicating only
-# the transformations that affect the OUTPUT STRING (lowercasing,
-# IP-literal bracketing, the colon-in-first-segment "./" escape), not the
-# validation that only matters for genuinely untrusted input (scheme
-# regex, "path must start with a leading '/' with an authority present"
-# -- `Uri._load_parts()` already enforces that invariant on construction,
-# it can never actually fire here for a real `Uri`; kept anyway below
-# since it's a single free `.startswith()` check). Verified equivalent to
-# `uricompose()` (via the composer's actual call site,
-# `_format_parsed_parts`) by fuzzing 30000+ generated
-# (scheme, userinfo, host, port, path, query, fragment) combinations.
+# Direct string assembly instead of `uricompose()`'s per-call re-validation, which
+# only matters for untrusted input: these parts come from a parse or a join.
 
 _SUB_DELIMS = "!$&'()*+,;="
 _SAFE_USER = _SUB_DELIMS
@@ -315,12 +297,9 @@ def compose_host(host: "str | _IPAddress") -> str:
         pass
     host = host.lower()
     if not host.isascii():
-        # RFC 3986 3.2.2: a non-ASCII registered name meant for DNS should be
-        # produced in its IDNA form, not percent-encoded. HTTP clients
-        # IDNA-encode only a non-ASCII host, so "b%c3%bccher.example" was
-        # sent verbatim and never resolved. A name the codec rejects (an
-        # empty or over-long label, a surrogate-escaped byte) keeps the
-        # percent-encoded form.
+        # RFC 3986 3.2.2: a non-ASCII registered name meant for DNS is produced in its
+        # IDNA form (HTTP clients IDNA-encode only a non-ASCII host). A name the codec
+        # rejects (an empty or over-long label, a surrogate-escaped byte) stays percent-encoded.
         try:
             return _idna_encode(host)
         except UnicodeError:
@@ -370,7 +349,15 @@ def compose_uri(
     """The URI text of already-decoded components, percent-encoding each as
     its part of RFC 3986 asks. `None` leaves a component out; a path that
     cannot sit beside the authority given (or beside none) is a `ValueError`,
-    as is an invalid scheme or port."""
+    as is an invalid scheme or port.
+
+    This is direct string assembly, not `uritools.uricompose()`'s re-validation
+    of every component (a scheme regex, authority re-parsing, IP-literal
+    detection), which only matters for untrusted input. It reuses uritools'
+    `uriencode()` and replicates only what changes the output string
+    (lowercasing, IP-literal bracketing, the "./" escape of a colon in the first
+    segment), and was checked against `uricompose()` on generated (scheme,
+    userinfo, host, port, path, query, fragment) combinations."""
     parts = []
     if scheme is not None:
         if not _SCHEME_RE.fullmatch(scheme):
@@ -484,10 +471,8 @@ class Source(_ty.NamedTuple):
         return self.as_str(sanitize=True)
 
     def __repr__(self) -> str:
-        # NamedTuple's auto-generated __repr__ would include self.userinfo
-        # verbatim (password and all) -- a traceback frame renders repr(),
-        # so an unredacted Source anywhere on a failing call stack leaks
-        # the credential into logs. Redact the same way __str__ does.
+        # NamedTuple's generated __repr__ shows self.userinfo verbatim, and a traceback
+        # frame renders repr(): redact as __str__ does, or a failing call stack leaks it.
         return (
             f"{type(self).__name__}(scheme={self.scheme!r}, "
             f"userinfo={self._redacted_userinfo()!r}, host={self.host!r}, "
@@ -544,11 +529,9 @@ class Source(_ty.NamedTuple):
             schemesmap = UriPath._schemesmap()
             _cls = schemesmap.get(self.scheme, None)
             if _cls is None:
-                # The map is rebuilt whenever a UriPath subclass is defined
-                # (UriPath.__init_subclass__), so a miss here is a scheme no
-                # imported class registers; `_load_entry_point` caches that
-                # negative answer instead of rescanning every installed
-                # distribution on each construction.
+                # The map is rebuilt whenever a UriPath subclass is defined, so a miss is a scheme
+                # no imported class registers; `_load_entry_point` caches that negative answer
+                # instead of rescanning every installed distribution on each construction.
                 if UriPath._load_entry_point(
                     self.scheme
                 ) or UriPath._load_builtin_scheme(self.scheme):
