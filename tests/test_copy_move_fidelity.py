@@ -282,3 +282,80 @@ def test_copy_overwrite_replaces_a_live_symlink_at_the_target(tmp_path):
     assert not os.path.islink(tmp_path / "link")
     assert (tmp_path / "link").read_text() == "SRC"
     assert (tmp_path / "real.txt").read_text() == "REAL"
+
+
+# --- copy(follow_symlinks=False) of a link --------------------------------------
+
+
+class UnlinkLog(LocalPath):
+    """A local path that records the paths `unlink()` was called on."""
+
+    __slots__ = ()
+    calls: "list[str]" = []
+
+    def unlink(self, missing_ok=False):
+        type(self).calls.append(str(self))
+        return super().unlink(missing_ok=missing_ok)
+
+
+def test_copying_a_link_onto_itself_is_refused_and_keeps_the_link(tmp_path):
+    (tmp_path / "real.txt").write_text("real")
+    _symlink_or_skip(tmp_path / "link", "real.txt")
+    link = LocalPath(tmp_path / "link")
+
+    with pytest.raises(OSError) as raised:
+        link.copy(link, overwrite=True, follow_symlinks=False)
+
+    assert raised.value.errno == errno.EINVAL
+    assert os.readlink(tmp_path / "link") == "real.txt"
+    assert (tmp_path / "real.txt").read_text() == "real"
+
+
+def test_copying_a_link_replaces_a_link_at_the_target_when_asked_to(tmp_path):
+    (tmp_path / "real.txt").write_text("real")
+    (tmp_path / "other.txt").write_text("other")
+    _symlink_or_skip(tmp_path / "link", "real.txt")
+    _symlink_or_skip(tmp_path / "out", "other.txt")
+
+    LocalPath(tmp_path / "link").copy(
+        LocalPath(tmp_path / "out"), overwrite=True, follow_symlinks=False
+    )
+
+    assert os.readlink(tmp_path / "out") == "real.txt"
+    assert (tmp_path / "other.txt").read_text() == "other"
+
+
+def test_copying_a_link_never_removes_a_directory_at_the_target(tmp_path):
+    (tmp_path / "real.txt").write_text("real")
+    _symlink_or_skip(tmp_path / "link", "real.txt")
+    (tmp_path / "out").mkdir()
+    (tmp_path / "out" / "keep.txt").write_text("kept")
+    UnlinkLog.calls = []
+
+    with pytest.raises(IsADirectoryError):
+        LocalPath(tmp_path / "link").copy(
+            UnlinkLog(tmp_path / "out"), overwrite=True, follow_symlinks=False
+        )
+
+    assert UnlinkLog.calls == []
+    assert (tmp_path / "out" / "keep.txt").read_text() == "kept"
+
+
+class LinkWithoutReadlink(MemPath):
+    """A path that says it is a link and cannot read where it points."""
+
+    __slots__ = ()
+
+    def is_symlink(self):
+        return True
+
+
+def test_a_link_of_a_backend_that_cannot_read_links_is_not_copied_as_content():
+    backend = MemPath("/").backend
+    source = LinkWithoutReadlink("/link", backend=backend)
+    target = MemPath("/out", backend=backend)
+
+    with pytest.raises(NotImplementedError, match="follow_symlinks=False"):
+        source.copy(target, follow_symlinks=False)
+
+    assert not target.exists()
