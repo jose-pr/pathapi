@@ -166,9 +166,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   (`OSError(EBUSY)`). A block inside another joins it, and another
   thread's use of the archive waits for the block. A tar, a non-local
   zip and a nested archive raise `NotImplementedError`, as their writes
-  do. A new hook, `Path._write_batch()` (documented for path implementers,
-  a block that does nothing by default), is what `copy(recursive=True)`
-  and `PathSyncer.sync()` enter around their writes to their target.
+  do. Each change patches the pending member list instead of deriving it
+  again: a block of any number of renames, deletes or overwrites derives the
+  list twice. A new hook, `Path._write_batch()` (documented for path implementers, a block
+  that does nothing by default), is what `copy(recursive=True)` and
+  `PathSyncer.sync()` enter around their writes to their target.
 - **Symbolic links in `zip:` and `tar:` archives are links.** A tar
   symlink and a zip entry whose Unix mode says link are listed as links:
   `is_symlink()` is True, `stat(follow_symlinks=False)` is a link,

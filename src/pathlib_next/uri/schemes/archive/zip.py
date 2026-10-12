@@ -16,6 +16,7 @@ from ....utils.stat import FileStat
 from ..file import FileUri
 from ._base import (
     MEMBER_SPOOL_BYTES,
+    NO_LINK as _NO_LINK,
     ArchiveUri,
     _ArchiveBackend,
     _LazyReadFile,
@@ -249,32 +250,33 @@ class _Scratch:
         self._file.close()
 
 
-_NO_LINK = object()
-
-
 class _Pending:
     """One member of a batch: the `ZipInfo` a listing reports for it, the
     entry of the archive file whose stored bytes it is (`origin`, None for a
     member written in the batch) and where the written bytes are (`data`).
     `link` is the text of a link member (None when unreadable), else
-    `_NO_LINK`."""
+    `_NO_LINK`. `seq` is its place in the archive: a renamed member keeps it,
+    a new one comes last."""
 
-    __slots__ = ("info", "origin", "data", "link")
+    __slots__ = ("info", "origin", "data", "link", "seq")
 
-    def __init__(self, info, origin, data, link=_NO_LINK):
+    def __init__(self, info, origin, data, link=_NO_LINK, seq=0):
         self.info = info
         self.origin = origin
         self.data = data
         self.link = link
+        self.seq = seq
 
 
 class _Batch:
     """What a batch changed. `table` maps each member's name to its `_Pending`
-    in archive order and is read from the archive on the first change;
-    `signature` is the file it was read from (None: there was none), checked
-    again before the archive is replaced."""
+    and is read from the archive on the first change; `signature` is the file
+    it was read from (None: there was none), checked again before the archive
+    is replaced. `snapshot` is the member list derived from the table, kept up
+    to date change by change once it exists; `next_seq` is the place of the
+    next new member."""
 
-    __slots__ = ("table", "signature", "scratch", "dirty", "snapshot")
+    __slots__ = ("table", "signature", "scratch", "dirty", "snapshot", "next_seq")
 
     def __init__(self):
         self.table = None
@@ -282,6 +284,7 @@ class _Batch:
         self.scratch = _Scratch()
         self.dirty = False
         self.snapshot = None
+        self.next_seq = 0
 
 
 class _ZipBackend(_ArchiveBackend):
@@ -398,13 +401,13 @@ class _ZipBackend(_ArchiveBackend):
             if batch is None or not batch.dirty:
                 return super().snapshot()
             if batch.snapshot is None:
-                table = self._table()
+                members = self._ordered()
                 batch.snapshot = _Snapshot(
                     type(self),
-                    [(name, entry.info) for name, entry in table.items()],
+                    [(name, entry.info) for name, entry in members],
                     {
                         name: entry.link
-                        for name, entry in table.items()
+                        for name, entry in members
                         if entry.link is not _NO_LINK
                     },
                 )
@@ -465,12 +468,12 @@ class _ZipBackend(_ArchiveBackend):
             with self._reading() as handle:
                 infos = handle.infolist()
             links = self._link_texts([(info.filename, info) for info in infos])
-            for info in infos:
+            for seq, info in enumerate(infos):
                 # The last of several entries of one name is the live one.
-                table.pop(info.filename, None)
                 table[info.filename] = _Pending(
-                    info, info, None, links.get(info.filename, _NO_LINK)
+                    info, info, None, links.get(info.filename, _NO_LINK), seq
                 )
+            batch.next_seq = len(infos)
             signature = self._signature
         except FileNotFoundError:
             if _os.path.lexists(outer_path):
@@ -480,6 +483,33 @@ class _ZipBackend(_ArchiveBackend):
             self._check_writable(_os.path.realpath(outer_path))
         batch.table, batch.signature = table, signature
         return table
+
+    def _ordered(self) -> "list[tuple[str, _Pending]]":
+        """The members of the open batch in the order of the archive."""
+        return sorted(self._table().items(), key=lambda item: item[1].seq)
+
+    def _attach(self, name: str, entry: _Pending) -> None:
+        """Make `entry` the member `name`. The member list the batch has
+        derived takes the change itself; one that cannot (a name the archive
+        spells two ways) is derived again on the next read. Must be called with
+        `self._lock` held."""
+        batch = self._batch
+        batch.table[name] = entry
+        batch.dirty = True
+        if batch.snapshot is not None and not batch.snapshot.add(
+            name, entry.info, entry.link
+        ):
+            batch.snapshot = None
+
+    def _detach(self, name: str) -> "_Pending | None":
+        """Remove the member `name` and return it; see `_attach()`."""
+        batch = self._batch
+        entry = batch.table.pop(name, None)
+        if entry is not None:
+            batch.dirty = True
+            if batch.snapshot is not None and not batch.snapshot.drop(name):
+                batch.snapshot = None
+        return entry
 
     def _put(self, path: str, data: bytes) -> None:
         """Set member `path` to `data`, keeping an existing member's place and
@@ -492,12 +522,14 @@ class _ZipBackend(_ArchiveBackend):
             info = _copy_zipinfo(old.info, info.filename)
             info.date_time = _now()
             info.file_size = len(data)
-        table[info.filename] = _Pending(info, None, batch.scratch.add(data))
-        batch.dirty = True
-        # A snapshot only the batch reads takes one more entry in place; any
-        # other change to the members derives it again on the next read.
-        if batch.snapshot is not None and not batch.snapshot.add(info.filename, info):
-            batch.snapshot = None
+            seq = old.seq
+        else:
+            seq = batch.next_seq
+            batch.next_seq += 1
+        self._attach(
+            info.filename,
+            _Pending(info, None, batch.scratch.add(data), _NO_LINK, seq),
+        )
 
     def _flush(self, batch: _Batch) -> None:
         if not batch.dirty:
@@ -505,8 +537,10 @@ class _ZipBackend(_ArchiveBackend):
         table = batch.table
         outer_path = _os.path.realpath(str(self.outer.filepath))
 
+        members = sorted(table.items(), key=lambda item: item[1].seq)
+
         def steps():
-            for name, entry in table.items():
+            for name, entry in members:
                 if entry.data is not None:
                     yield name, None, entry.info, batch.scratch.get(entry.data)
                 else:
@@ -628,11 +662,10 @@ class _ZipBackend(_ArchiveBackend):
         directory that exists only through its members must outlive them."""
         with self._lock:
             if self._batch is not None:
-                table = self._table()
+                self._table()
                 for name in names:
-                    table.pop(name, None)
+                    self._detach(name)
                 self._batch.dirty = True
-                self._batch.snapshot = None
                 if keep_dir:
                     self._put(keep_dir, b"")
                 return
@@ -669,23 +702,41 @@ class _ZipBackend(_ArchiveBackend):
             )
 
     def _rename_pending(self, exclude, rename) -> None:
-        """`_rewrite()`'s exclusions and renames, applied to the open batch."""
-        batch = self._batch
-        renamed: "dict[str, _Pending]" = {}
-        for name, entry, _moved in _collapse(
-            self._table().items(), _remapper(exclude, rename)
-        ):
-            if name != entry.info.filename:
-                entry = _Pending(
-                    _renamed_info(entry.info, name),
+        """`_rewrite()`'s exclusions and renames, applied to the open batch:
+        a renamed member keeps its place and replaces whatever has its new
+        name, and a `<name>/` key of `rename` also moves every member below
+        it. Costs the members moved, and, for a `<name>/` key, one pass over
+        the members."""
+        table = self._table()
+        for name in exclude:
+            self._detach(name)
+        moving = {
+            old: new for old, new in rename.items() if old in table and old != new
+        }
+        prefixes = {old: new for old, new in rename.items() if old.endswith("/")}
+        if prefixes:
+            for name in table:
+                if name in rename:
+                    continue
+                for prefix, new_prefix in prefixes.items():
+                    if name.startswith(prefix):
+                        moving[name] = new_prefix + name[len(prefix) :]
+                        break
+        entries = sorted((table[name].seq, new, name) for name, new in moving.items())
+        taken = [(new, self._detach(name)) for _seq, new, name in entries]
+        for new, entry in taken:
+            self._detach(new)
+            self._attach(
+                new,
+                _Pending(
+                    _renamed_info(entry.info, new),
                     entry.origin,
                     entry.data,
                     entry.link,
-                )
-            renamed[name] = entry
-        batch.table = renamed
-        batch.dirty = True
-        batch.snapshot = None
+                    entry.seq,
+                ),
+            )
+        self._batch.dirty = True
 
     def _rewrite(
         self,

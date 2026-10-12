@@ -107,6 +107,10 @@ class LinkTarget(_pathlib.PurePosixPath):
             return self.as_posix()
 
 
+NO_LINK = object()
+"""What a snapshot is given for an entry that is not a link."""
+
+
 class _Unresolved(Exception):
     """A lookup that cannot get through the link members on its way: the one
     named `link` leaves the archive, is absolute or has no readable text
@@ -387,23 +391,32 @@ class _Snapshot:
         self.implicit = implicit
         self.children = children
 
-    def add(self, raw: str, info) -> bool:
+    def add(self, raw: str, info, link=NO_LINK) -> bool:
         """Adds the entry `raw`, or replaces its info, in place, giving the
         snapshot the entries it would have been built from with this one
-        last. False, and nothing changed, when `raw` names a member the
-        snapshot already holds under another spelling. For a snapshot that no
-        other thread reads."""
+        last. `link` is the text of a link entry (None when unreadable). False,
+        and nothing changed, when `raw` names a member the snapshot already
+        holds under another spelling. For a snapshot that no other thread
+        reads."""
         normalized = _normalize_member_name(raw)
         current = self.index.get(normalized) if normalized else None
         if current is not None and current != raw:
             return False
         self.infos[raw] = info
-        if not normalized or current is not None:
+        if not normalized:
             return True
         self.index[normalized] = raw
+        if link is NO_LINK:
+            self.links.pop(normalized, None)
+        else:
+            self.links[normalized] = link
         directory = normalized.endswith("/") or self._format._is_directory(info)
-        if not directory:
+        if directory or link is not NO_LINK:
+            self.files.discard(normalized)
+        else:
             self.files.add(normalized)
+        if current is not None:
+            return True
         directory_path = ""
         parts = normalized.rstrip("/").split("/")
         for position, part in enumerate(parts):
@@ -414,6 +427,39 @@ class _Snapshot:
             directory_path = path
         if directory:
             self.children.setdefault(directory_path, {})
+        return True
+
+    def drop(self, raw: str) -> bool:
+        """Removes the entry `raw` in place, giving the snapshot the entries it
+        would have been built from without it: a directory that existed only
+        through it goes too, and so does each directory above that was left
+        with nothing. A directory keeps its place in the listing of its parent.
+        False, and nothing changed, when its name has several spellings here.
+        For a snapshot that no other thread reads."""
+        normalized = _normalize_member_name(raw)
+        if normalized and (
+            self.index.get(normalized) != raw or normalized in self.spellings
+        ):
+            return False
+        self.infos.pop(raw, None)
+        if not normalized:
+            return True
+        del self.index[normalized]
+        self.files.discard(normalized)
+        self.links.pop(normalized, None)
+        path = normalized.rstrip("/")
+        while path:
+            below = self.children.get(path)
+            if not below:
+                self.implicit.discard(path)
+            if path in self.index or f"{path}/" in self.index or below:
+                break
+            parent, _, leaf = path.rpartition("/")
+            self.children.pop(path, None)
+            siblings = self.children.get(parent)
+            if siblings is not None:
+                siblings.pop(leaf, None)
+            path = parent
         return True
 
     def resolve(self, member: str, *, follow: bool = True) -> str:

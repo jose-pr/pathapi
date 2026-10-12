@@ -2475,8 +2475,10 @@ with the scheme it was written with.
   replaced meanwhile (`OSError(EBUSY)`; their file stays). A block inside
   another joins it and commits or drops nothing itself. The block holds the
   archive for its thread: another thread's use of the archive waits for it.
-  Adding a member costs nothing in the size of the archive; deleting or
-  renaming one makes the next lookup derive the member list again.
+  A change patches the pending member list, so the list is derived twice
+  however many changes the block makes (once for the archive as the block
+  finds it, once when it first holds a change); only a change to a name
+  the archive spells two ways derives it again.
   `copy(recursive=True)` into a zip and `PathSyncer.sync()` onto one enter
   it themselves, so each is one replacement; a copy or sync that raises
   leaves the archive as it was, where the members written before the error
