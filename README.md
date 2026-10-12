@@ -191,12 +191,15 @@ flag is described in the
 | `pathlib_next.fspath` | `LocalPath`, `PosixPathname`, `WindowsPathname` |
 | `pathlib_next.mempath` | `MemPath` in-memory filesystem |
 | `pathlib_next.ftp` | `FTPPath`, `FTPBackend` (FTP and FTPS on `ftplib`) |
-| `pathlib_next.archive` | `ZipPath`, `TarPath`, `ArchivePath` (members of a zip or tar file) |
+| `pathlib_next.archive` | `ZipPath`, `TarPath`, `ArchivePath` (members of a zip or tar file), `make_archive`, `unpack_archive` |
 | `pathlib_next.protocols` | `Stat`, `Chmod`, `BinaryOpen`, `NativeChecksum` |
+| `pathlib_next.sync` | `PathSyncer`, `SyncEvent`, `PathAndStat` |
+| `pathlib_next.glob` | the glob engine behind `Path.glob()` |
+| `pathlib_next.checksum` | `md5`, `sha256`, `stream`, `native` |
+| `pathlib_next.providers` | the helpers a class built on `Path` calls |
+| `pathlib_next.exceptions` | `PathError`, `NonRelativePatternError` |
 | `pathlib_next.uri` | `Uri`, `UriPath`, `Source`, `Query` |
 | `pathlib_next.uri.schemes` | Built-in schemes: `file`, `data`, `zip`/`tar`/`archive`, `ftp`, `http`, `dav`, `sftp`, `s3`, `gs`, `az`, `github`, `gitlab`, `git` |
-| `pathlib_next.glob`, `pathlib_next.sync` (`PathSyncer`), `pathlib_next.checksum` | glob engine, tree sync, checksums |
-| `pathlib_next.providers` | helpers for a class built on `Path` |
 | `pathlib_next.testing` | pytest contracts for custom implementations |
 | `pathlib_next.tools.uripath` | the `uripath` command |
 

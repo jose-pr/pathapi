@@ -65,6 +65,50 @@ members as ordinary methods too, because the bare `Path(...)` builds a
 `LocalPath`: a subclass that leaves one out is refused when it is instantiated,
 not by a checker.
 
+### `FileStat` (`pathlib_next`)
+
+```python
+class FileStat:
+    st_mode: int
+    st_nlink: int
+    st_uid: int
+    st_gid: int
+    st_size: int
+    st_atime: float
+    st_mtime: float
+    st_ctime: float
+    mode_known
+    size_known
+    def __init__(
+        self, st_mode=None, st_size=0, st_mtime=0, is_dir=False, size_known=True,
+    ): ...
+    @classmethod
+    def from_stat(cls, stat) -> FileStat: ...
+    @classmethod
+    def from_path(cls, path, *, follow_symlink=True): ...
+    def settime(self, value): ...
+    def setmode(self, value, isdir=None): ...
+    def items(self): ...
+```
+
+Slotted stat for non-`os` backends, with the fields of `os.stat_result`
+(`st_mode`, `st_nlink`, `st_uid`, `st_gid`, `st_size`, `st_atime`, `st_mtime`,
+`st_ctime`), `mode_known` and `size_known`. Without `st_mode`, a placeholder
+(`S_IFREG|0o444` / `S_IFDIR|0o555`) with `mode_known=False`. A bare
+permission `st_mode` (`0o644`) gets the type bits of `is_dir` ORed in and
+counts as reported; one that carries a type keeps it. `size_known=False`
+(default `True`) marks a listing's **type-only** stat: the entry is known to
+be a file (or a directory) and `st_size` and `st_mtime` are placeholders (0).
+It answers the type (`is_dir()`, `is_file()`, `exists()`, `walk()`, `glob()`,
+`rm(recursive=True)`) and nothing else: `UriPath` does not hand it to
+`stat()`, which asks the server, and `PathSyncer`, `copy()`'s progress total and
+`quick_check` ask the path for a size or a time instead of reading the
+placeholder (`from_stat()` copies the flag from a foreign stat that has one).
+`from_stat(stat)` (a `FileStat` passes through; `None` fields become 0),
+`from_path(path, *, follow_symlink=True) -> FileStat | None` (`None` only
+on `FileNotFoundError`), `settime(value)`, `setmode(value, isdir=None)`,
+`items()`. `is_dir()`/`is_file()`/... are **methods**.
+
 ### URI layer
 
 `pathlib_next` also exposes `Uri`/`UriPath` **only when `uritools` is
@@ -1022,6 +1066,29 @@ first bytes (a `PK` magic sniff) on first use.
   that names it, and renaming over it replaces them all.
 - `TarPath` (plain, gz, bz2, xz) is read-only.
 
+### `make_archive`, `unpack_archive` (`pathlib_next.archive`)
+
+```python
+def make_archive(src, format, target) -> None: ...
+def unpack_archive(archive, dest) -> None: ...
+```
+
+`make_archive()` (`format` `"zip"` or
+`"tar"`, else `ValueError`; `src` file or directory of any `Path`; built in
+a temporary buffer, written to `target` only when complete; zip64 always;
+every directory is a member, empty ones too; a member carries the source's
+modification time and, in a tar, its permission bits — a source that
+reports no time gets 1980-01-01 (zip) or the epoch (tar), and one that
+reports no mode gets 0o644 for a file and 0o755 for a directory; a tar
+member is sized from the bytes read, not from `stat()`)
+and `unpack_archive()` (format from the name, else magic
+bytes; creates `dest`; non-seekable streams are buffered; members that
+would leave `dest` are skipped, and for a Windows-flavoured `dest` so are
+members with a part Windows would rewrite or send to a device
+(`UserWarning`); tar hard links and links to regular files are extracted as
+copies, other links — to nothing, to a directory, or in a loop — skipped
+with `UserWarning`).
+
 ## Protocols (`pathlib_next.protocols`)
 
 ### `fs.FileStatLike`
@@ -1120,42 +1187,7 @@ it cannot return a genuine content digest under exactly that algorithm
 multipart ETag); callers catch only `NotImplementedError`. `supported_checksums()` (default
 empty) is advisory and never raises.
 
-## Utilities (`pathlib_next.glob`, `pathlib_next.sync`, `pathlib_next.checksum`, `pathlib_next.providers`)
-
-### `glob` (`pathlib_next.glob`)
-
-```python
-def glob(
-    path, *, dironly=False, root_dir=None, recursive=False,
-    include_hidden=False, case_sensitive=None, native=True, on_error=None,
-    bound_loops=False, recurse_symlinks=False,
-) -> Iterator[_Globable]: ...
-def compile_pattern(pat, case_sensitive): ...
-WILCARD_PATTERN = WILDCARD_PATTERN
-def parse_pattern(pattern, *, native=True) -> Tuple[List[str], bool]: ...
-def select(
-    base, parts, *, dironly=False, recursive=True, include_hidden=True,
-    case_sensitive=None, native=True, on_error=None, bound_loops=False,
-    recurse_symlinks=False,
-) -> Iterator[_Globable]: ...
-def full_match(segments, pattern, case_sensitive) -> bool: ...
-
-RECURSIVE = '**'
-```
-
-`glob.glob()`: the pattern
-is itself a path (`UriPath("file:/x/**/*.py")`); like stdlib `glob`, hidden
-names need `include_hidden=True`. It is split at the first wildcard, never
-in the path's anchor (a drive, `\\?\C:\`); a bad pattern raises when it is
-called, the selection is lazy. `glob.parse_pattern()` (`ValueError`/`NonRelativePatternError`),
-`glob.select()` (the engine behind
-`Path.glob()`), `glob.full_match()`,
-`glob.RECURSIVE = "**"`, `glob.compile_pattern()` (one shell-style component
-as a compiled regular expression, cached), `glob.ANY_PATTERN` (a lone `*`) and
-`glob.WILDCARD_PATTERN` (a wildcard character), both compiled expressions, and
-`glob.WILCARD_PATTERN`, the old misspelling of `WILDCARD_PATTERN`.
-
-### `sync` (`pathlib_next.sync`)
+## Syncing trees (`pathlib_next.sync`)
 
 ```python
 class PathSyncer:
@@ -1254,7 +1286,7 @@ One-way tree sync between any two
   (event `RemovedMissing`). FIFOs, sockets and devices are skipped. A dry run makes the same
   decisions without changes.
 
-#### `SyncEvent`
+### `SyncEvent`
 
 ```python
 class SyncEvent(Enum):
@@ -1280,7 +1312,7 @@ Members: `Copy`, `RemovedMissing`, `Synced`,
 (a comparison failed; only passed to `ignore_error`), `Skipped` (not a
 file, directory or link), `Error` (an error was tolerated).
 
-#### `PathAndStat`
+### `PathAndStat`
 
 ```python
 class PathAndStat:
@@ -1296,51 +1328,40 @@ class PathAndStat:
 `refresh(follow_symlink=True)`; `is_*` attributes delegate to the stat
 (always-`False` callables when missing).
 
-### `FileStat` (`pathlib_next`)
+## Globbing (`pathlib_next.glob`)
 
 ```python
-class FileStat:
-    st_mode: int
-    st_nlink: int
-    st_uid: int
-    st_gid: int
-    st_size: int
-    st_atime: float
-    st_mtime: float
-    st_ctime: float
-    mode_known
-    size_known
-    def __init__(
-        self, st_mode=None, st_size=0, st_mtime=0, is_dir=False, size_known=True,
-    ): ...
-    @classmethod
-    def from_stat(cls, stat) -> FileStat: ...
-    @classmethod
-    def from_path(cls, path, *, follow_symlink=True): ...
-    def settime(self, value): ...
-    def setmode(self, value, isdir=None): ...
-    def items(self): ...
+def glob(
+    path, *, dironly=False, root_dir=None, recursive=False,
+    include_hidden=False, case_sensitive=None, native=True, on_error=None,
+    bound_loops=False, recurse_symlinks=False,
+) -> Iterator[_Globable]: ...
+def compile_pattern(pat, case_sensitive): ...
+WILCARD_PATTERN = WILDCARD_PATTERN
+def parse_pattern(pattern, *, native=True) -> Tuple[List[str], bool]: ...
+def select(
+    base, parts, *, dironly=False, recursive=True, include_hidden=True,
+    case_sensitive=None, native=True, on_error=None, bound_loops=False,
+    recurse_symlinks=False,
+) -> Iterator[_Globable]: ...
+def full_match(segments, pattern, case_sensitive) -> bool: ...
+
+RECURSIVE = '**'
 ```
 
-Slotted stat for non-`os` backends, with the fields of `os.stat_result`
-(`st_mode`, `st_nlink`, `st_uid`, `st_gid`, `st_size`, `st_atime`, `st_mtime`,
-`st_ctime`), `mode_known` and `size_known`. Without `st_mode`, a placeholder
-(`S_IFREG|0o444` / `S_IFDIR|0o555`) with `mode_known=False`. A bare
-permission `st_mode` (`0o644`) gets the type bits of `is_dir` ORed in and
-counts as reported; one that carries a type keeps it. `size_known=False`
-(default `True`) marks a listing's **type-only** stat: the entry is known to
-be a file (or a directory) and `st_size` and `st_mtime` are placeholders (0).
-It answers the type (`is_dir()`, `is_file()`, `exists()`, `walk()`, `glob()`,
-`rm(recursive=True)`) and nothing else: `UriPath` does not hand it to
-`stat()`, which asks the server, and `PathSyncer`, `copy()`'s progress total and
-`quick_check` ask the path for a size or a time instead of reading the
-placeholder (`from_stat()` copies the flag from a foreign stat that has one).
-`from_stat(stat)` (a `FileStat` passes through; `None` fields become 0),
-`from_path(path, *, follow_symlink=True) -> FileStat | None` (`None` only
-on `FileNotFoundError`), `settime(value)`, `setmode(value, isdir=None)`,
-`items()`. `is_dir()`/`is_file()`/... are **methods**.
+`glob.glob()`: the pattern
+is itself a path (`UriPath("file:/x/**/*.py")`); like stdlib `glob`, hidden
+names need `include_hidden=True`. It is split at the first wildcard, never
+in the path's anchor (a drive, `\\?\C:\`); a bad pattern raises when it is
+called, the selection is lazy. `glob.parse_pattern()` (`ValueError`/`NonRelativePatternError`),
+`glob.select()` (the engine behind
+`Path.glob()`), `glob.full_match()`,
+`glob.RECURSIVE = "**"`, `glob.compile_pattern()` (one shell-style component
+as a compiled regular expression, cached), `glob.ANY_PATTERN` (a lone `*`) and
+`glob.WILDCARD_PATTERN` (a wildcard character), both compiled expressions, and
+`glob.WILCARD_PATTERN`, the old misspelling of `WILDCARD_PATTERN`.
 
-### `checksum` (`pathlib_next.checksum`)
+## Checksums (`pathlib_next.checksum`)
 
 ```python
 def md5(path, chunk_size=65536) -> str: ...
@@ -1354,30 +1375,7 @@ def native(path, algorithm="md5") -> str | None: ...
 `native()` (`None` when the protocol is
 missing or raises `NotImplementedError`).
 
-### `make_archive`, `unpack_archive` (`pathlib_next.archive`)
-
-```python
-def make_archive(src, format, target) -> None: ...
-def unpack_archive(archive, dest) -> None: ...
-```
-
-`make_archive()` (`format` `"zip"` or
-`"tar"`, else `ValueError`; `src` file or directory of any `Path`; built in
-a temporary buffer, written to `target` only when complete; zip64 always;
-every directory is a member, empty ones too; a member carries the source's
-modification time and, in a tar, its permission bits — a source that
-reports no time gets 1980-01-01 (zip) or the epoch (tar), and one that
-reports no mode gets 0o644 for a file and 0o755 for a directory; a tar
-member is sized from the bytes read, not from `stat()`)
-and `unpack_archive()` (format from the name, else magic
-bytes; creates `dest`; non-seekable streams are buffered; members that
-would leave `dest` are skipped, and for a Windows-flavoured `dest` so are
-members with a part Windows would rewrite or send to a device
-(`UserWarning`); tar hard links and links to regular files are extracted as
-copies, other links — to nothing, to a directory, or in a loop — skipped
-with `UserWarning`).
-
-### Helpers (`pathlib_next.providers`)
+## Providers (`pathlib_next.providers`)
 
 ```python
 def is_safe_child_name(name, *, windows=False) -> bool: ...

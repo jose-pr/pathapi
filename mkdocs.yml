@@ -45,7 +45,11 @@ nav:
           - "s3:, gs: and az:": api/schemes/objstore.md
           - Archives: api/schemes/archive.md
           - "github:, gitlab: and git:": api/schemes/git.md
-      - Utilities: api/utils.md
+      - Sync: api/sync.md
+      - Glob: api/glob.md
+      - Checksum: api/checksum.md
+      - Providers: api/providers.md
+      - Exceptions: api/exceptions.md
       - Testing Contracts: api/testing.md
       - CLI: api/cli.md
   - Changelog: changelog.md
