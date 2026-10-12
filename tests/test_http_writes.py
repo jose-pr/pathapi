@@ -115,9 +115,25 @@ def _handler_class(wire):
         def log_message(self, format, *args):
             pass
 
-        def _serve(self):
+        def _read_body(self):
+            """The request body, whether it is sized or chunked. One left unread
+            makes the server reset the connection when it closes it, which can
+            discard the reply the client has not read yet."""
+            if "chunked" in (self.headers.get("Transfer-Encoding") or "").lower():
+                body = b""
+                while True:
+                    size = int(self.rfile.readline().split(b";")[0].strip() or b"0", 16)
+                    if size == 0:
+                        while self.rfile.readline().strip():
+                            pass  # trailers, up to the empty line
+                        return body
+                    body += self.rfile.read(size)
+                    self.rfile.readline()  # the line break after the chunk
             length = int(self.headers.get("Content-Length") or 0)
-            body = self.rfile.read(length) if length else b""
+            return self.rfile.read(length) if length else b""
+
+        def _serve(self):
+            body = self._read_body()
             headers = dict(self.headers.items())
             wire.log.append(_Request(self.command, self.path, headers, body))
             reply = wire.rules.get((self.command, self.path))
