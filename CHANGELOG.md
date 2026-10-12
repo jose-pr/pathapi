@@ -30,11 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `class` statement, naming the holder; none of that class's names is
   registered. A built-in name resolves from the built-in module before any
   entry point, so an entry point for it does not displace it. A
-  subclass registers only the names in its own `__SCHEMES`. To replace a class
-  on purpose, write `class MyHttp(UriPath, replace=True)`; a module that is
-  reloaded passes `replace=True` too, as re-running its `class` statement is
-  a second claim. Otherwise give the scheme a name nobody holds, or remove the
-  duplicate definition.
+  subclass registers only the names in its own `__SCHEMES`. Running the same
+  `class` statement again (`importlib.reload()` of a module, a function body
+  called twice, a notebook cell) is the same class, not a second claim: the
+  newer class takes the name. To replace a class on purpose, write
+  `class MyHttp(UriPath, replace=True)`; otherwise give the scheme a name
+  nobody holds, or remove the duplicate definition.
 
 ## [0.9.14] - 2026-10-12
 

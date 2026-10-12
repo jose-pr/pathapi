@@ -213,9 +213,11 @@ assert type(UriPath("http://example.com/x")) is MyHttp
 ```
 
 A built-in class defined after a replacement leaves it in place. Paths built
-before the replacement keep their class. Re-executing a class statement
-(`importlib.reload()`) is a second claim, so a module meant to be reloaded
-passes `replace=True`.
+before the replacement keep their class. Running the same class statement
+again (same module and qualified name: `importlib.reload()`, a function called
+twice, a notebook cell) is not a second claim: the newer class takes the name
+without `replace=True`. A class of another module, or of another qualified
+name, is still refused.
 
 `UriPath.schemes()` lists the registered names, sorted, including built-in
 and entry-point schemes whose module is not imported yet and schemes whose

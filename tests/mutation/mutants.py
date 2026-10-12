@@ -948,3 +948,11 @@ mutant(
     ),
     "schemes() lists only the classes already imported",
 )
+mutant(
+    "scheme-registry-same-qualified-name-in-another-module-is-the-same-class",
+    "uri/__init__.py",
+    "    return a.__module__ == b.__module__ and a.__qualname__ == b.__qualname__\n",
+    "    return a.__qualname__ == b.__qualname__\n",
+    f"{_SCHEME_TESTS}::test_a_class_of_the_same_qualified_name_in_another_module_is_still_refused",
+    "a class of another module takes a scheme from a class that has the same name",
+)

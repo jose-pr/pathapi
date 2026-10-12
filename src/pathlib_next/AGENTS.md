@@ -1351,10 +1351,11 @@ class does.
   class holds, or a built-in name (whether or not its module is imported
   yet), raises `ValueError` at the class statement, naming the holder and
   registering none of the class's names; `class MyPath(UriPath,
-  replace=True)` takes the names it lists from whatever held them (a
-  re-executed class statement, as `importlib.reload()` does, is a second
-  claim and needs it too). A built-in class defined after a replacement
-  leaves the replacement in place.
+  replace=True)` takes the names it lists from whatever held them. The same
+  class statement run again (same `__module__` and `__qualname__`, as
+  `importlib.reload()` or a function called twice does) is the same class:
+  the newer one takes its names without `replace=True`. A built-in class
+  defined after a replacement leaves the replacement in place.
 - `schemes() -> tuple[str, ...]` — the registered names, sorted: every
   class defined so far, every built-in scheme and every entry point of the
   group, whether or not its module is imported yet. A scheme whose client

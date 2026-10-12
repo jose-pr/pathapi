@@ -277,12 +277,19 @@ def _is_builtin_class(scheme: str, cls: type) -> bool:
     )
 
 
+def _same_definition(a: type, b: type) -> bool:
+    """Whether two classes come from one `class` statement run twice (a
+    reload, a function body called again): same module, same qualified name."""
+    return a.__module__ == b.__module__ and a.__qualname__ == b.__qualname__
+
+
 def _claim_schemes(cls: type, replace: bool) -> None:
     """Register the schemes `cls` lists in its own `__SCHEMES`.
 
-    A name another class holds, or a built-in name whose class is not the
-    built-in one, is a `ValueError` unless `replace` is true. Nothing is
-    registered when any name is refused.
+    A name a different class holds, or a built-in name whose class is not the
+    built-in one, is a `ValueError` unless `replace` is true; the same
+    definition run again takes its names over. Nothing is registered when any
+    name is refused.
     """
     names = tuple(dict.fromkeys(cls.__dict__.get(f"_{cls.__name__}__SCHEMES", ())))
     with _CLAIMS_LOCK:
@@ -297,6 +304,8 @@ def _claim_schemes(cls: type, replace: bool) -> None:
                         f"{name!r} is a built-in URI scheme; pass replace=True "
                         f"in the class statement of {cls.__qualname__} to replace it"
                     )
+                taking.append(name)
+            elif _same_definition(held, cls):
                 taking.append(name)
             elif name in _REPLACED and _is_builtin_class(name, cls):
                 continue

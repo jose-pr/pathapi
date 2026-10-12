@@ -160,7 +160,9 @@ def test_a_subclass_sharing_its_parents_name_and_listing_nothing_takes_nothing()
     assert UriPath.scheme_class("regsame1") is parent
 
 
-def test_executing_a_class_statement_again_is_a_second_claim(tmp_path, monkeypatch):
+def test_reloading_a_module_takes_its_scheme_over_with_the_new_class(
+    tmp_path, monkeypatch
+):
     source = tmp_path / "regreload_module.py"
     source.write_bytes(textwrap.dedent("""\
             from pathlib_next.uri import UriPath
@@ -172,11 +174,68 @@ def test_executing_a_class_statement_again_is_a_second_claim(tmp_path, monkeypat
     import regreload_module
 
     try:
-        with pytest.raises(ValueError, match="'regreload1'"):
-            importlib.reload(regreload_module)
-        assert type(UriPath("regreload1://h/x")) is regreload_module.Reloaded
+        first = regreload_module.Reloaded
+        assert UriPath.scheme_class("regreload1") is first
+        importlib.reload(regreload_module)
+        second = regreload_module.Reloaded
+        assert second is not first
+        assert UriPath.scheme_class("regreload1") is second
+        assert type(UriPath("regreload1://h/x")) is second
     finally:
         sys.modules.pop("regreload_module", None)
+
+
+def test_reloading_a_built_in_scheme_module_keeps_the_scheme_dispatching():
+    result = _run("""
+        import importlib
+        from pathlib_next.uri import UriPath
+        import pathlib_next.uri.schemes.data as data
+
+        first = data.DataUri
+        importlib.reload(data)
+        second = data.DataUri
+        print(second is not first)
+        print(UriPath.scheme_class("data") is second)
+        print(type(UriPath("data:,x")) is second)
+        """)
+    assert result.stdout.split() == ["True", "True", "True"]
+
+
+def test_a_class_statement_run_twice_registers_the_second_class():
+    def define():
+        class Twice(UriPath):
+            __SCHEMES = ("regtwice1",)
+            __slots__ = ()
+
+        return Twice
+
+    first, second = define(), define()
+
+    assert first is not second
+    assert UriPath.scheme_class("regtwice1") is second
+    assert type(UriPath("regtwice1://h/x")) is second
+
+
+def test_a_class_of_the_same_qualified_name_in_another_module_is_still_refused():
+    source = (
+        "from pathlib_next.uri import UriPath\n"
+        "class Twin(UriPath):\n"
+        "    __SCHEMES = ('regtwin1',)\n"
+        "    __slots__ = ()\n"
+    )
+
+    def define(module):
+        namespace = {"__name__": module}
+        exec(source, namespace)
+        return namespace["Twin"]
+
+    first = define("regtwin_module_a")
+    assert first.__qualname__ == "Twin" and first.__module__ == "regtwin_module_a"
+    with pytest.raises(ValueError, match="regtwin_module_a.Twin"):
+        define("regtwin_module_b")
+    assert UriPath.scheme_class("regtwin1") is first
+    assert define("regtwin_module_a") is not first
+    assert UriPath.scheme_class("regtwin1").__module__ == "regtwin_module_a"
 
 
 @pytest.mark.parametrize("scheme", ["file", "data", "https"])
