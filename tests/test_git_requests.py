@@ -9,6 +9,7 @@ import pytest
 
 requests = pytest.importorskip("requests")
 
+from http_fakes import FakeTransport, reply
 from pathlib_next.uri import UriPath
 from pathlib_next.uri.schemes._gitrepo import (
     BaseRepoBackend,
@@ -160,20 +161,11 @@ def test_gitlab_file_url_is_one_encoded_segment():
 # --- a token over plain http warns, except to this machine ---
 
 
-class _Session:
-    def __init__(self):
-        self.calls = []
-
-    def request(self, method, url, **kwargs):
-        self.calls.append((method, url, kwargs.get("headers")))
-        return object()
-
-
 def _send(api_base, **backend_args):
-    session = _Session()
-    backend = RepoBackend(session=session, api_base=api_base, **backend_args)
+    transport = FakeTransport(default=reply(200))
+    backend = RepoBackend(transport=transport, api_base=api_base, **backend_args)
     backend.request("GET", f"{backend.api_base}/repos/o/r")
-    return session.calls
+    return [(s.method, s.url, s.headers) for s in transport.sent]
 
 
 def test_token_over_plain_http_to_another_host_warns_and_is_still_sent():

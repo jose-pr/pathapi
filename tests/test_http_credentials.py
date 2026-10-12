@@ -105,16 +105,17 @@ def test_url_password_is_sent_as_the_octets_it_stands_for(
     assert _sent_credentials(recorder) == b"us@er:" + octets
 
 
-def test_ascii_credentials_are_still_passed_to_requests_as_text(monkeypatch):
-    seen = []
+def test_ascii_credentials_reach_the_transport_as_a_basic_authorization_header():
+    from http_fakes import FakeTransport, reply
 
-    def request(self, method, url, **kwargs):
-        seen.append(kwargs.get("auth"))
-        raise requests.exceptions.ConnectionError("stop")
-
-    monkeypatch.setattr(requests.Session, "request", request)
-    UriPath("http://al%40ice:s3cr3t@h/x").exists()
-    assert seen == [("al@ice", "s3cr3t")]
+    transport = FakeTransport(default=reply(200))
+    path = UriPath("http://al%40ice:s3cr3t@h/x").with_transport(transport)
+    path.exists()
+    sent = transport.sent[0]
+    assert sent.url == "http://h/x"
+    assert sent.headers["Authorization"] == "Basic " + base64.b64encode(
+        b"al@ice:s3cr3t"
+    ).decode("ascii")
 
 
 # --- an open mode is matched exactly ---

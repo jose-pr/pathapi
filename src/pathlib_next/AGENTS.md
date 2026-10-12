@@ -2007,18 +2007,26 @@ fragment. Read-only single file: `open("r")` only,
 
 ```python
 class HttpPath(UriPath):
+    def with_transport(
+        self, transport, *, headers=None, timeout=(10, 60),
+        write_method="PUT", append_mode="rewrite",
+    ): ...
     def with_session(
         self, session, write_method="PUT", append_mode="rewrite",
         **requests_args,
     ): ...
     def stat(self, *, follow_symlinks=True, walk_up_last_modified=False): ...
 
-class HttpBackend(NamedTuple):
+class HttpBackend:
     def __init__(
-        self, session, requests_args, write_method="PUT",
-        append_mode="rewrite",
+        self, transport=None, *, headers=None, timeout=(10, 60),
+        write_method="PUT", append_mode="rewrite",
     ): ...
-    def request(self, method, uri, **kwargs): ...
+    def request(
+        self, method, uri, *, data=None, headers=None, stream=False,
+        allow_redirects=None, timeout=...,
+    ): ...
+    def close(self): ...
 
 class HttpWriteStream(BytesIO): ...
 class HttpAppendStream(BytesIO): ...
@@ -2027,9 +2035,12 @@ DEFAULT_TIMEOUT = (10, 60)
 MAX_LISTING_BYTES = 8388608
 ```
 
-- `with_session()` — installs an `HttpBackend` (a `NamedTuple` with `request()`); `requests_args` (`headers=`, `auth=`,
-  `verify=`, `timeout=`, ...) go to every request, request-specific
-  headers merge over them.
+- `with_transport(transport, ...)` — installs an `HttpBackend` over any
+  transport (an object with `send()`); `with_session(session, ...)` — over a
+  `RequestsTransport` for a `requests.Session`: its `headers=` and
+  `timeout=` are the backend's, the other `requests_args` (`auth=`,
+  `verify=`, ...) go to every request, request-specific headers merge over
+  the backend's.
 - Timeout: `DEFAULT_TIMEOUT = (10, 60)` (connect, read) unless given;
   `timeout=None` waits forever.
 - Redirects: `GET`/`HEAD`/`OPTIONS` follow them as `requests` does. Every
@@ -2580,11 +2591,13 @@ class GitHubPath(UriPath):
 
 class RepoBackend(BaseRepoBackend):
     def __init__(
-        self, token=None, session=None, api_base=None, **requests_args,
+        self, token=None, session=None, api_base=None, *, transport=None,
+        headers=None, timeout=(10, 60), **requests_args,
     ): ...
+    def close(self): ...
 
 class BaseRepoBackend:
-    def request(self, method, url, **kwargs): ...
+    def request(self, method, url, headers=None, params=None, **kwargs): ...
 ```
 
 Read-only; `open()` other than `"r"` and every
@@ -2594,7 +2607,8 @@ write method raise `NotImplementedError`.
   branch); `?ref=` is carried to every child.
 - `RepoBackend` (`schemes.github`; `BaseRepoBackend` is in `schemes._gitrepo`): `Authorization: Bearer <token>`, timeout default
   `(10, 60)`, `cache` dict; `api_base` overrides the API root;
-  `BaseRepoBackend.request(method, url, **kwargs)` is the override point.
+  `BaseRepoBackend.request(method, url, headers=None, params=None, **kwargs)`
+  is the override point and returns an `HTTPResponse`.
   A request that carries `Authorization` (the token, or one given in
   `headers=`) to a plain `http://` URL on a host other than loopback is
   still sent, with an `InsecureTransportWarning` (a `UserWarning`,

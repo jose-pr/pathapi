@@ -294,6 +294,29 @@ def mem_root(mem_backend):
     return MemPath("/", backend=mem_backend)
 
 
+TRANSPORT_KINDS = ["builtin", "requests"]
+
+
+@pytest.fixture(params=TRANSPORT_KINDS)
+def http_transport_kind(request, monkeypatch):
+    """Runs the test once per HTTP transport: the default transport of every
+    backend the test builds is that kind (`PATHLIB_NEXT_HTTP_TRANSPORT`), and
+    `http_fakes.make_transport(kind)` builds one of it."""
+    if request.param == "requests":
+        pytest.importorskip("requests")
+    monkeypatch.setenv("PATHLIB_NEXT_HTTP_TRANSPORT", request.param)
+    return request.param
+
+
+@pytest.fixture
+def http_transport(http_transport_kind):
+    """A transport of the kind under test, closed after the test."""
+    from http_fakes import make_transport
+
+    with make_transport(http_transport_kind) as transport:
+        yield transport
+
+
 @pytest.fixture
 def http_server(fixture_tree):
     """Serve fixture_tree over HTTP via stdlib's ThreadingHTTPServer with

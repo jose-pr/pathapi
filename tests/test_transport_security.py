@@ -30,8 +30,7 @@ import traceback
 
 import pytest
 
-requests = pytest.importorskip("requests")
-
+from http_fakes import FakeTransport, reply
 from pathlib_next.uri import Source, UriPath
 from pathlib_next.uri.schemes import _gitrepo
 from pathlib_next.uri.schemes import http as http_scheme
@@ -133,59 +132,80 @@ def stalled_server():
         listener.close()
 
 
-class _RecordingSession(requests.Session):
-    def __init__(self):
-        super().__init__()
-        self.calls = []
-
-    def request(self, method, url, **kwargs):
-        self.calls.append((method, url, kwargs))
-        return super().request(method, url, **kwargs)
-
-
 # --- HTTP / WebDAV: credentials ---------------------------------------------
 
 
-def test_http_sends_userinfo_as_auth_not_in_url(recording_http_server):
+def _recording(inner):
+    from http_fakes import RecordingTransport
+
+    return RecordingTransport(inner)
+
+
+def test_http_sends_userinfo_as_authorization_not_in_url(
+    recording_http_server, http_transport
+):
     host, seen = recording_http_server
-    session = _RecordingSession()
-    p = UriPath(f"http://alice:s3cr3t@{host}/ok").with_session(session)
+    transport = _recording(http_transport)
+    p = UriPath(f"http://alice:s3cr3t@{host}/ok").with_transport(transport)
     assert p.read_bytes() == b"ok"
 
-    method, url, kwargs = session.calls[-1]
-    assert url == f"http://{host}/ok"
-    assert kwargs["auth"] == ("alice", "s3cr3t")
+    sent = transport.sent[-1]
+    assert sent.url == f"http://{host}/ok"
     expected = "Basic " + base64.b64encode(b"alice:s3cr3t").decode()
+    assert sent.headers["Authorization"] == expected
     assert seen[-1][2]["Authorization"] == expected
 
 
-def test_http_percent_encoded_userinfo_is_decoded_for_auth(recording_http_server):
+def test_http_percent_encoded_userinfo_is_decoded_for_authorization(
+    recording_http_server, http_transport
+):
     host, seen = recording_http_server
-    session = _RecordingSession()
-    p = HttpPath(f"http://al%40ice:p%3Aw@{host}/ok").with_session(session)
+    transport = _recording(http_transport)
+    p = HttpPath(f"http://al%40ice:p%3Aw@{host}/ok").with_transport(transport)
     p.read_bytes()
-    assert session.calls[-1][1] == f"http://{host}/ok"
-    assert session.calls[-1][2]["auth"] == ("al@ice", "p:w")
+    assert transport.sent[-1].url == f"http://{host}/ok"
+    assert seen[-1][2]["Authorization"] == "Basic " + base64.b64encode(
+        b"al@ice:p:w"
+    ).decode("ascii")
 
 
-def test_http_explicit_auth_wins_over_userinfo():
-    session = _FakeSession()
+def test_http_explicit_authorization_wins_over_userinfo():
+    transport = _FakeTransport()
     p = HttpPath(
-        "http://alice:s3cr3t@h/x", backend=HttpBackend(session, {"auth": ("bob", "b")})
+        "http://alice:s3cr3t@h/x",
+        backend=HttpBackend(transport, headers={"authorization": "Bearer B"}),
     )
     p.backend.request("GET", p)
-    method, url, kwargs = session.calls[-1]
-    assert url == "http://h/x"
-    assert kwargs["auth"] == ("bob", "b")
+    sent = transport.sent[-1]
+    assert sent.url == "http://h/x"
+    assert [v for k, v in sent.headers.items() if k.lower() == "authorization"] == [
+        "Bearer B"
+    ]
 
 
-def test_http_redirect_response_urls_carry_no_credentials(recording_http_server):
-    host, _seen = recording_http_server
-    p = UriPath(f"http://alice:s3cr3t@{host}/redirect")
+def test_http_explicit_session_auth_wins_over_userinfo(recording_http_server):
+    requests = pytest.importorskip("requests")
+    host, seen = recording_http_server
+    p = HttpPath(f"http://alice:s3cr3t@{host}/ok").with_session(
+        requests.Session(), auth=("bob", "b")
+    )
+    p.read_bytes()
+    assert (
+        seen[-1][2]["Authorization"] == "Basic " + base64.b64encode(b"bob:b").decode()
+    )
+
+
+def test_http_redirect_response_urls_carry_no_credentials(
+    recording_http_server, http_transport
+):
+    host, seen = recording_http_server
+    p = UriPath(f"http://alice:s3cr3t@{host}/redirect").with_transport(http_transport)
     resp = p.backend.request("GET", p)
-    urls = [r.url for r in resp.history] + [resp.url]
-    assert urls == [f"http://{host}/redirect", f"http://{host}/final"]
-    assert resp.request.headers["Authorization"].startswith("Basic ")
+    resp.close()
+    assert resp.url == f"http://{host}/final"
+    assert [path for _method, path, _headers in seen] == ["/redirect", "/final"]
+    # Same origin: the credentials continue to the redirect's target.
+    assert all(h["Authorization"].startswith("Basic ") for _m, _p, h in seen)
 
 
 @pytest.mark.parametrize(
@@ -193,10 +213,10 @@ def test_http_redirect_response_urls_carry_no_credentials(recording_http_server)
     [("500", OSError), ("404", FileNotFoundError), ("403", PermissionError)],
 )
 def test_http_error_text_and_traceback_carry_no_password(
-    recording_http_server, path, exc
+    recording_http_server, http_transport, path, exc
 ):
     host, _seen = recording_http_server
-    p = UriPath(f"http://alice:s3cr3t@{host}/{path}")
+    p = UriPath(f"http://alice:s3cr3t@{host}/{path}").with_transport(http_transport)
     with pytest.raises(exc) as excinfo:
         p.read_bytes()
     text = _formatted(excinfo.value)
@@ -205,8 +225,10 @@ def test_http_error_text_and_traceback_carry_no_password(
     assert excinfo.value.__suppress_context__
 
 
-def test_http_refused_connection_carries_no_password(unused_tcp_port):
-    p = UriPath(f"http://alice:s3cr3t@127.0.0.1:{unused_tcp_port}/x")
+def test_http_refused_connection_carries_no_password(unused_tcp_port, http_transport):
+    p = UriPath(f"http://alice:s3cr3t@127.0.0.1:{unused_tcp_port}/x").with_transport(
+        http_transport
+    )
     with pytest.raises(ConnectionError) as excinfo:
         p.read_bytes()
     assert "s3cr3t" not in _formatted(excinfo.value)
@@ -214,10 +236,10 @@ def test_http_refused_connection_carries_no_password(unused_tcp_port):
     assert excinfo.value.__suppress_context__
 
 
-def test_http_timeout_carries_no_password(http_status_server):
+def test_http_timeout_carries_no_password(http_status_server, http_transport):
     host = http_status_server.removeprefix("http://")
-    p = UriPath(f"http://alice:s3cr3t@{host}/timeout").with_session(
-        requests.Session(), timeout=0.5
+    p = UriPath(f"http://alice:s3cr3t@{host}/timeout").with_transport(
+        http_transport, timeout=0.5
     )
     with pytest.raises(TimeoutError) as excinfo:
         p.read_bytes()
@@ -226,31 +248,59 @@ def test_http_timeout_carries_no_password(http_status_server):
     assert excinfo.value.__suppress_context__
 
 
-class _RaisingSession:
-    auth = None
-
-    def __init__(self, error):
-        self.error = error
-
-    def request(self, method, url, **kwargs):
-        raise self.error
+@pytest.mark.parametrize(
+    "make, exc",
+    [
+        (ConnectionError, ConnectionError),
+        (ConnectionRefusedError, ConnectionError),
+        (TimeoutError, TimeoutError),
+    ],
+)
+def test_http_transport_error_text_never_reaches_the_raised_error(make, exc):
+    # A transport's error can quote a proxy URL taken from the environment,
+    # credentials included; none of it may be in the error or its traceback.
+    quoted = "http://proxyuser:pr0xyS3cret@proxy.example:3128"
+    transport = _FakeTransport()
+    transport.fail = make(f"ProxyError({quoted})")
+    p = HttpPath("http://alice:s3cr3t@h/x", backend=HttpBackend(transport))
+    with pytest.raises(exc) as excinfo:
+        p.read_bytes()
+    text = _formatted(excinfo.value)
+    assert "pr0xyS3cret" not in text
+    assert "s3cr3t" not in text
+    assert excinfo.value.__cause__ is None
+    assert excinfo.value.__suppress_context__
 
 
 @pytest.mark.parametrize(
     "make, exc",
     [
-        (requests.exceptions.ConnectionError, ConnectionError),
-        (requests.exceptions.ConnectTimeout, TimeoutError),
-        (requests.exceptions.ReadTimeout, TimeoutError),
-        (requests.exceptions.TooManyRedirects, OSError),
+        ("ConnectionError", ConnectionError),
+        ("ProxyError", ConnectionError),
+        ("ConnectTimeout", TimeoutError),
+        ("ReadTimeout", TimeoutError),
+        ("TooManyRedirects", OSError),
     ],
 )
-def test_http_transport_error_text_never_reaches_the_raised_error(make, exc):
-    # A requests exception can quote a proxy URL taken from the environment,
-    # credentials included; none of it may be in the error or its traceback.
+def test_requests_transport_error_text_never_reaches_the_raised_error(make, exc):
+    # `requests` exceptions can quote a proxy URL with credentials; the
+    # transport raises builtin exceptions that carry none of it.
+    requests = pytest.importorskip("requests")
+    from pathlib_next.uri.schemes.http import RequestsTransport
+
     quoted = "http://proxyuser:pr0xyS3cret@proxy.example:3128"
-    session = _RaisingSession(make(f"ProxyError({quoted})"))
-    p = HttpPath("http://alice:s3cr3t@h/x", backend=HttpBackend(session, {}))
+
+    class _Raising:
+        auth = None
+        headers = {}
+
+        def request(self, method, url, **kwargs):
+            raise getattr(requests.exceptions, make)(f"ProxyError({quoted})")
+
+    p = HttpPath(
+        "http://alice:s3cr3t@h/x",
+        backend=HttpBackend(RequestsTransport(_Raising())),
+    )
     with pytest.raises(exc) as excinfo:
         p.read_bytes()
     text = _formatted(excinfo.value)
@@ -261,17 +311,20 @@ def test_http_transport_error_text_never_reaches_the_raised_error(make, exc):
 
 
 def test_http_error_message_keeps_status():
-    session = _FakeSession()
-    session.responses[("GET", "http://h/x")] = _FakeResponse(502, reason="Bad Gateway")
-    p = HttpPath("http://alice:s3cr3t@h/x", backend=HttpBackend(session, {}))
+    transport = _FakeTransport(
+        {("GET", "http://h/x"): _FakeResponse(502, "Bad Gateway")}
+    )
+    p = HttpPath("http://alice:s3cr3t@h/x", backend=HttpBackend(transport))
     with pytest.raises(OSError) as excinfo:
         p.read_bytes()
     assert "HTTP Error 502 Bad Gateway" in str(excinfo.value)
 
 
-def test_dav_error_and_move_destination_carry_no_password(recording_http_server):
+def test_dav_error_and_move_destination_carry_no_password(
+    recording_http_server, http_transport
+):
     host, seen = recording_http_server
-    p = DavPath(f"dav://alice:s3cr3t@{host}/501")
+    p = DavPath(f"dav://alice:s3cr3t@{host}/501").with_transport(http_transport)
     with pytest.raises(OSError) as excinfo:
         p.rename("b.txt")
     assert "s3cr3t" not in _formatted(excinfo.value)
@@ -282,65 +335,47 @@ def test_dav_error_and_move_destination_carry_no_password(recording_http_server)
 
 
 def test_dav_requests_strip_userinfo():
-    session = _FakeSession()
-    session.responses[("MOVE", "http://host/docs/a.txt")] = _FakeResponse(201)
-    p = DavPath("dav://alice:pw@host/docs/a.txt", backend=HttpBackend(session, {}))
+    transport = _FakeTransport({("MOVE", "http://host/docs/a.txt"): _FakeResponse(201)})
+    p = DavPath("dav://alice:pw@host/docs/a.txt", backend=HttpBackend(transport))
     p.rename("b.txt")
-    method, url, kwargs = session.calls[-1]
-    assert url == "http://host/docs/a.txt"
-    assert kwargs["auth"] == ("alice", "pw")
-    assert kwargs["headers"]["Destination"] == "http://host/docs/b.txt"
+    sent = transport.sent[-1]
+    assert sent.url == "http://host/docs/a.txt"
+    assert sent.headers["Authorization"] == "Basic " + base64.b64encode(
+        b"alice:pw"
+    ).decode("ascii")
+    assert sent.headers["Destination"] == "http://host/docs/b.txt"
 
 
 # --- HTTP: timeouts -----------------------------------------------------------
 
 
-class _FakeResponse:
-    def __init__(self, status_code=200, reason="", content=b""):
-        self.status_code = status_code
-        self.reason = reason
-        self.content = content
-        self.headers = {}
-        self.is_redirect = False
-        self.url = ""
-
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            raise requests.HTTPError(str(self.status_code), response=self)
-
-    def close(self):
-        pass
+def _FakeResponse(status=200, reason="", content=b""):
+    return reply(status, content, reason=reason)
 
 
-class _FakeSession:
-    auth = None
-
-    def __init__(self):
-        self.calls = []
-        self.responses = {}
-
-    def request(self, method, url, **kwargs):
-        self.calls.append((method, url, kwargs))
-        return self.responses.get((method, url)) or _FakeResponse(404)
+def _FakeTransport(responses=None):
+    return FakeTransport(responses)
 
 
 def test_http_default_timeout_applied():
-    session = _FakeSession()
-    HttpBackend(session, {}).request("GET", "http://h/x")
-    assert session.calls[-1][2]["timeout"] == (10, 60)
+    transport = _FakeTransport()
+    HttpBackend(transport).request("GET", "http://h/x")
+    assert transport.sent[-1].timeout == (10, 60)
     assert http_scheme.DEFAULT_TIMEOUT == (10, 60)
 
 
 @pytest.mark.parametrize("timeout", [5, None])
 def test_http_caller_timeout_wins(timeout):
-    session = _FakeSession()
-    HttpBackend(session, {"timeout": timeout}).request("GET", "http://h/x")
-    assert session.calls[-1][2]["timeout"] == timeout
-    HttpBackend(session, {}).request("GET", "http://h/x", timeout=timeout)
-    assert session.calls[-1][2]["timeout"] == timeout
+    transport = _FakeTransport()
+    HttpBackend(transport, timeout=timeout).request("GET", "http://h/x")
+    assert transport.sent[-1].timeout == timeout
+    HttpBackend(transport).request("GET", "http://h/x", timeout=timeout)
+    assert transport.sent[-1].timeout == timeout
 
 
-def test_http_stalled_server_times_out_by_default(stalled_server, monkeypatch):
+def test_http_stalled_server_times_out_by_default(
+    stalled_server, monkeypatch, http_transport_kind
+):
     # The default path (no caller timeout), shortened for the test.
     monkeypatch.setattr(http_scheme, "DEFAULT_TIMEOUT", (2, 0.5))
     p = UriPath(f"http://127.0.0.1:{stalled_server}/x")
@@ -396,17 +431,19 @@ def test_git_dispatch_error_redacts_token():
 
 
 def test_git_default_timeout_applied():
-    session = _FakeSession()
-    _gitrepo.RepoBackend(session=session).request("GET", "http://h/x")
-    assert session.calls[-1][2]["timeout"] == (10, 60)
-    _gitrepo.RepoBackend(session=session, timeout=None).request("GET", "http://h/x")
-    assert session.calls[-1][2]["timeout"] is None
+    transport = _FakeTransport()
+    _gitrepo.RepoBackend(transport=transport).request("GET", "http://h/x")
+    assert transport.sent[-1].timeout == (10, 60)
+    _gitrepo.RepoBackend(transport=transport, timeout=None).request("GET", "http://h/x")
+    assert transport.sent[-1].timeout is None
 
 
-def test_git_stalled_server_times_out_by_default(stalled_server, monkeypatch):
+def test_git_stalled_server_times_out_by_default(
+    stalled_server, monkeypatch, http_transport_kind
+):
     monkeypatch.setattr(_gitrepo, "DEFAULT_TIMEOUT", (2, 0.5))
-    backend = _gitrepo.RepoBackend(api_base=f"http://127.0.0.1:{stalled_server}")
-    p = GitHubPath("github://github.com/acme/widgets/a.txt", backend=backend)
+    p = GitHubPath("github://github.com/acme/widgets/a.txt")
+    p.backend.api_base = f"http://127.0.0.1:{stalled_server}"
     started = time.monotonic()
     with pytest.raises(TimeoutError):
         p.stat()

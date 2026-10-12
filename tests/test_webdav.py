@@ -1,60 +1,36 @@
-"""Unit-only WebDAV tests: a fake `requests`-like session plugged into the
-real `HttpBackend`, no real server. Covers PROPFIND-based stat/listdir and
+"""Unit-only WebDAV tests: a fake transport plugged into the real
+`HttpBackend`, no real server. Covers PROPFIND-based stat/listdir and
 PUT/DELETE/MKCOL/MOVE.
 """
 
-import io
-
 import pytest
 
-requests = pytest.importorskip("requests")
-
-from pathlib_next.uri.schemes.http import HttpBackend
+from http_fakes import FakeTransport, reply
+from pathlib_next.uri.schemes.http import HttpBackend, HTTPResponse
 from pathlib_next.uri.schemes.dav import DavPath
 
 
-class _FakeResponse:
-    def __init__(self, status_code=200, content=b"", headers=None):
-        self.status_code = status_code
-        self.content = content
-        self.headers = headers or {}
-        self.raw = io.BytesIO(content)
-        self.is_redirect = False
-
-    def iter_content(self, chunk_size=1):
-        while True:
-            chunk = self.raw.read(chunk_size)
-            if not chunk:
-                return
-            yield chunk
-
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            raise requests.HTTPError(str(self.status_code), response=self)
-
-    def close(self):
-        pass
+def _FakeResponse(status_code=200, content=b"", headers=None):
+    return reply(status_code, content, headers)
 
 
-class _FakeSession:
-    def __init__(self):
-        self.calls = []
-        self.responses = {}
+class _FakeSession(FakeTransport):
+    """The calls as `(method, url, {"data", "headers", "timeout"})`."""
 
-    def request(self, method, url, **kwargs):
-        self.calls.append((method, url, kwargs))
-        if method == "PROPFIND":
-            key = (method, url, kwargs.get("headers", {}).get("Depth"))
-        else:
-            key = (method, url)
-        resp = self.responses.get(key)
-        if resp is None:
-            return _FakeResponse(404)
-        return resp() if callable(resp) else resp
+    @property
+    def calls(self):
+        return [
+            (
+                s.method,
+                s.url,
+                {"data": s.body, "headers": s.headers, "timeout": s.timeout},
+            )
+            for s in self.sent
+        ]
 
 
 def _dav(uri, session=None):
-    return DavPath(uri, backend=HttpBackend(session or _FakeSession(), {}))
+    return DavPath(uri, backend=HttpBackend(session or _FakeSession()))
 
 
 _MULTISTATUS_FILE = b"""<?xml version="1.0"?>
@@ -145,7 +121,7 @@ def test_session_headers_merge_with_request_headers():
     session.responses[("PROPFIND", "http://host/docs/readme.txt", "0")] = _FakeResponse(
         207, _MULTISTATUS_FILE
     )
-    backend = HttpBackend(session, {"headers": {"X-Token": "t", "Depth": "infinity"}})
+    backend = HttpBackend(session, headers={"X-Token": "t", "Depth": "infinity"})
     DavPath("dav://host/docs/readme.txt", backend=backend).stat()
     headers = session.calls[-1][2]["headers"]
     assert headers["X-Token"] == "t"
@@ -346,19 +322,14 @@ def test_propfind_dot_entries_are_not_children(tmp_path):
     assert (dst / "ok.txt").read_bytes() == b"ok"
 
 
-class _ClosingResponse(_FakeResponse):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+class _ClosingResponse(HTTPResponse):
+    def __init__(self, status, content):
+        super().__init__(status, "", {}, "", content)
         self.closed = False
-
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            err = requests.HTTPError(str(self.status_code))
-            err.response = self
-            raise err
 
     def close(self):
         self.closed = True
+        super().close()
 
 
 @pytest.mark.parametrize(

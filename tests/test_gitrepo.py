@@ -15,8 +15,10 @@ import pytest
 
 pytest.importorskip("requests")
 
+from http_fakes import FakeTransport, reply
 from pathlib_next.uri.schemes._gitrepo import BaseRepoBackend
 from pathlib_next.uri.schemes.github import GitHubPath, RepoBackend
+from pathlib_next.uri.schemes.http import HTTPTransport
 from pathlib_next.uri.schemes.git import GitHubGitPath, GitLabGitPath, GitPath
 from pathlib_next.uri.schemes.gitlab import GitLabPath
 from pathlib_next.uri import UriPath
@@ -300,18 +302,13 @@ def test_api_base_keeps_port_and_brackets(uri, expected):
 
 
 def test_repo_backend_headers_merge_with_request_headers():
-    class _Session:
-        def request(self, method, url, **kwargs):
-            self.kwargs = kwargs
-
-    session = _Session()
-    backend = RepoBackend(token="T", session=session, headers={"X-A": "1"})
+    transport = FakeTransport(default=reply(200))
+    backend = RepoBackend(token="T", transport=transport, headers={"X-A": "1"})
     backend.request("GET", "https://h/x", headers={"Accept": "raw"})
-    assert session.kwargs["headers"] == {
-        "X-A": "1",
-        "Accept": "raw",
-        "Authorization": "Bearer T",
-    }
+    sent = transport.sent[0].headers
+    assert sent["X-A"] == "1"
+    assert sent["Accept"] == "raw"
+    assert sent["Authorization"] == "Bearer T"
 
 
 # --- gittools-gitlab-tree-pagination-truncates ---
@@ -616,7 +613,7 @@ def test_git_scheme_with_source_keeps_provider_and_backend():
 
 
 def test_gitlab_custom_backend_without_cache_reads(gitlab_api_server, fixture_tree):
-    import requests
+    import urllib.parse
 
     from pathlib_next.uri.schemes._gitrepo import BaseRepoBackend
 
@@ -628,9 +625,14 @@ def test_gitlab_custom_backend_without_cache_reads(gitlab_api_server, fixture_tr
             self.api_base = f"{base_url}/api/v4"
             self.urls = []
 
-        def request(self, method, url, **kwargs):
+        def request(self, method, url, headers=None, params=None, **kwargs):
             self.urls.append(url)
-            return requests.request(method, url, timeout=10, **kwargs)
+            if params:
+                url += "?" + urllib.parse.urlencode(params)
+            with HTTPTransport() as transport:
+                return transport.send(
+                    method, url, headers=headers or {}, timeout=10, **kwargs
+                )
 
     backend = _Plain()
     p = GitLabPath(f"gitlab://gitlab.com/{owner}/{repo}/a.txt", backend=backend)
@@ -644,8 +646,6 @@ def test_gitlab_custom_backend_without_cache_reads(gitlab_api_server, fixture_tr
 
 
 def test_ref_with_escaped_ampersand_reaches_the_api_whole():
-    import requests
-
     from pathlib_next.uri.schemes._gitrepo import BaseRepoBackend
 
     class _Recording(BaseRepoBackend):
@@ -654,11 +654,9 @@ def test_ref_with_escaped_ampersand_reaches_the_api_whole():
 
         def request(self, method, url, params=None, **kwargs):
             self.params.append(params)
-            response = requests.Response()
-            response.status_code = 200
-            response._content = b"branch content"
-            response.headers["Content-Type"] = "application/octet-stream"
-            return response
+            return reply(
+                200, b"branch content", {"Content-Type": "application/octet-stream"}
+            )
 
     backend = _Recording()
     p = GitHubPath(
@@ -704,18 +702,8 @@ def test_read_stream_is_read_only(github_api_server, gitlab_api_server, provider
 _NOT_ONE_COMPONENT = ["..", ".", "a/b", "/abs", "", "x\0y"]
 
 
-class _Reply:
-    status_code = 200
-    headers = {}
-
-    def __init__(self, payload):
-        self._payload = payload
-
-    def json(self):
-        return self._payload
-
-    def raise_for_status(self):
-        pass
+def _Reply(payload):
+    return reply(200, json.dumps(payload).encode())
 
 
 class _CannedBackend(BaseRepoBackend):

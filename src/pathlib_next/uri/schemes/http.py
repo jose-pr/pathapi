@@ -14,18 +14,30 @@ from ... import providers as _providers
 from ... import FileStat
 from .. import DerivedBackend, UriPath
 from . import _httpdate
-from ._extras import import_or_stub as _import_or_stub
-
-# The `http` extra. Without it a path still constructs and joins; the first
-# request raises an ImportError naming the extra.
-_req = _import_or_stub("requests", "http")
-_urllib3_exc = _import_or_stub("urllib3.exceptions", "http")
+from ._http import (
+    HTTPResponse,
+    HTTPTransport,
+    RequestsTransport,
+    TransportOwner,
+)
+from ._http import _follow
+from ._http._follow import (
+    FOLLOWED_METHODS as _FOLLOWED_METHODS,
+    basic_authorization as _basic_authorization,
+    split_userinfo as _split_userinfo,
+)
+from ._http._status import HTTPStatusError as _HTTPStatusError
+from ._http._status import raise_for_status as _raise_for_status
+from ._http._headers import check_headers as _check_headers
+from ._http._headers import check_url as _check_url
+from ._http._headers import has_header as _has_header
+from ._http._headers import merge_headers as _merge_headers
 
 DEFAULT_TIMEOUT = (10, 60)
 """`(connect, read)` timeout, in seconds, `HttpBackend` sends with every
-request unless the caller supplies `timeout` (via `with_session(...,
-timeout=...)` / `requests_args`, or per request); `timeout=None` there
-restores requests' unbounded wait."""
+request unless the caller supplies `timeout` (`HttpBackend(timeout=...)`,
+`with_transport(timeout=...)`, `with_session(..., timeout=...)`, or per
+request); `timeout=None` there waits without a limit."""
 
 MAX_LISTING_BYTES = 8 * 1024 * 1024
 """Most bytes of a directory-index body `HttpPath` reads to list a directory
@@ -36,42 +48,9 @@ megabyte. Read at the time of each listing."""
 _RE_URL_SCHEME = _re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://")
 
 _IDENTITY_ENCODING = {"Accept-Encoding": "identity"}
-"""Sent on content GETs and `stat()` probes: requests' session advertises
-gzip/deflate, and a compressing server's reply would otherwise come back
-compressed from `open()` (and a rewrite-mode append would store that blob),
-while `Content-Length` would count encoded bytes."""
-
-
-def _credential(text: str) -> "str | bytes":
-    """The octets a percent-encoded userinfo part stands for (RFC 3986 2.1),
-    as `str` when they are ASCII and as `bytes` otherwise: `requests` encodes
-    a `str` credential as Latin-1, which would send the UTF-8 `caf%C3%A9` as
-    the single byte E9 and fail outright for `%FF` decoded to U+FFFD."""
-    octets = _urlparse.unquote_to_bytes(text)
-    return octets.decode("ascii") if octets.isascii() else octets
-
-
-def _split_userinfo(url: str) -> "tuple[str, tuple[str|bytes, str|bytes] | None]":
-    """Split the userinfo out of an absolute URL: `(url_without_userinfo,
-    (user, password) | None)`, both parts percent-decoded to the octets they
-    stand for. Credentials sent inside the request URL end up in
-    `Response.url`, `raise_for_status()` text and redirect handling; they go
-    out as `auth=` instead."""
-    match = _RE_URL_SCHEME.match(url)
-    if not match:
-        return url, None
-    start = match.end()
-    end = len(url)
-    for sep in "/?#":
-        index = url.find(sep, start)
-        if index != -1 and index < end:
-            end = index
-    userinfo, at, hostport = url[start:end].rpartition("@")
-    if not at:
-        return url, None
-    user, _, password = userinfo.partition(":")
-    auth = (_credential(user), _credential(password))
-    return url[:start] + hostport + url[end:], (auth if any(auth) else None)
+"""Sent on content GETs and `stat()` probes: a transport advertises
+gzip/deflate by default, and a stored blob must not come back as its encoded
+form, while `Content-Length` would count the encoded bytes."""
 
 
 _ERRNOS = {
@@ -105,15 +84,15 @@ def _translate_http_errors(path_obj, *, conflict=FileExistsError):
     `conflict` is what a 409 means: for a write (PUT, MKCOL, MOVE) RFC 4918
     uses 409 for a missing parent collection, so writers pass
     FileNotFoundError."""
-    # `from None`: a requests exception can carry a URL (a proxy URL from the
-    # environment included) with credentials, and a chained cause is printed by every
-    # traceback. The status or the exception type stays in the message.
+    # `from None`: a chained cause is printed by every traceback, and a
+    # transport's own error must not be what a log shows. The status or the
+    # exception type stays in the message.
     try:
         yield
-    except _req.exceptions.HTTPError as e:
+    except _HTTPStatusError as e:
         response = e.response
-        status = response.status_code if response is not None else None
-        reason = getattr(response, "reason", None) or ""
+        status = response.status
+        reason = response.reason or ""
         if status in (404, 410):
             raise _path_error(FileNotFoundError, path_obj) from None
         elif status in (401, 403):
@@ -131,15 +110,11 @@ def _translate_http_errors(path_obj, *, conflict=FileExistsError):
                 _errno.EIO,
                 f"HTTP Error {status} {reason}".rstrip() + f" for {path_obj}",
             ) from None
-    except _req.exceptions.Timeout as e:
+    except TimeoutError as e:
         raise TimeoutError(f"Timeout for {path_obj} ({type(e).__name__})") from None
-    except _req.exceptions.ConnectionError as e:
+    except ConnectionError as e:
         raise ConnectionError(
             f"Connection error for {path_obj} ({type(e).__name__})"
-        ) from None
-    except _req.exceptions.RequestException as e:
-        raise OSError(
-            _errno.EIO, f"Request failed for {path_obj} ({type(e).__name__})"
         ) from None
 
 
@@ -543,20 +518,29 @@ def _is_exact_size(sizestr: str) -> bool:
     return sizestr.isdigit()
 
 
+def _charset(headers) -> str:
+    """The charset a `Content-Type` names, `utf-8` when it names none."""
+    for part in (headers.get("Content-Type") or "").split(";")[1:]:
+        name, _, value = part.partition("=")
+        if name.strip().lower() == "charset":
+            return value.strip().strip("\"'") or "utf-8"
+    return "utf-8"
+
+
 class _ResponseReader(_io.RawIOBase):
-    """Raw read stream over a streamed `requests` response body.
+    """Raw read stream over a streamed response body.
 
-    Reads go through `iter_content()`, so a body the server encoded anyway
-    (despite `Accept-Encoding: identity`) is decoded, and a failure in the
-    middle of the body surfaces as `TimeoutError`/`ConnectionError`/
-    `OSError` rather than a urllib3 exception. A decoded chunk larger than
-    the caller's buffer is kept for the next `readinto()`."""
+    The transport has decoded a body the server encoded anyway (despite
+    `Accept-Encoding: identity`), and a failure in the middle of the body
+    surfaces as `TimeoutError`/`ConnectionError`/`OSError` naming the path.
+    A decoded chunk larger than the caller's buffer is kept for the next
+    `readinto()`."""
 
-    def __init__(self, path, response: _req.Response, chunk_size: int):
+    def __init__(self, path, response: HTTPResponse, chunk_size: int):
         super().__init__()
         self._path = path
         self._response = response
-        self._chunks = response.iter_content(chunk_size)
+        self._chunks = response.iter_bytes(chunk_size)
         self._pending = b""
         self._offset = 0
 
@@ -565,32 +549,13 @@ class _ResponseReader(_io.RawIOBase):
 
     def _next_chunk(self) -> bytes:
         path = self._path
-        try:
-            return next(self._chunks, b"")
-        except _req.exceptions.RequestException as error:
-            # requests reports a read timeout inside the body as its
-            # ConnectionError: keep it a TimeoutError, like a request that
-            # stalls before its headers.
-            if any(isinstance(a, _urllib3_exc.ReadTimeoutError) for a in error.args):
-                raise TimeoutError(f"Timeout for {path} (ReadTimeoutError)") from None
-            with _translate_http_errors(path):
+        with _translate_http_errors(path):
+            try:
+                return next(self._chunks, b"")
+            except OSError as error:
+                if type(error) is OSError and error.errno == _errno.EIO:
+                    raise OSError(_errno.EIO, f"{error.strerror} for {path}") from None
                 raise
-        except _urllib3_exc.HTTPError as error:
-            raise OSError(
-                _errno.EIO, f"Read failed for {path} ({type(error).__name__})"
-            ) from None
-
-    def _check_complete(self) -> None:
-        # urllib3 1.26 ends a streamed body silently when the connection
-        # closes early; 2.x raises. A short body must never read as a
-        # complete file.
-        length = self._response.headers.get("Content-Length", "")
-        tell = getattr(self._response.raw, "tell", None)
-        if length.isdigit() and callable(tell) and tell() < int(length):
-            raise OSError(
-                _errno.EIO,
-                f"Incomplete read for {self._path}: {tell()} of {length} bytes",
-            )
 
     def readinto(self, buffer):
         view = memoryview(buffer).cast("B")
@@ -599,7 +564,6 @@ class _ResponseReader(_io.RawIOBase):
         while self._offset >= len(self._pending):
             chunk = self._next_chunk()
             if not chunk:
-                self._check_complete()
                 return 0
             self._pending, self._offset = chunk, 0
         count = min(len(view), len(self._pending) - self._offset)
@@ -615,7 +579,7 @@ class _ResponseReader(_io.RawIOBase):
                 super().close()
 
 
-def _response_reader(path, response: _req.Response, buffering: int):
+def _response_reader(path, response: HTTPResponse, buffering: int):
     buffer_size = _io.DEFAULT_BUFFER_SIZE if buffering < 0 else buffering
     raw = _ResponseReader(path, response, buffer_size or _io.DEFAULT_BUFFER_SIZE)
     return raw if buffer_size == 0 else _io.BufferedReader(raw, buffer_size)
@@ -670,9 +634,9 @@ class HttpWriteStream(_UploadStream):
             resp = backend.request(
                 backend.write_method, self._path.as_uri(), data=data, **extra
             )
-            if self._exclusive and resp.status_code == 412:
+            if self._exclusive and resp.status == 412:
                 raise _path_error(FileExistsError, self._path)
-            resp.raise_for_status()
+            _raise_for_status(resp)
 
 
 class HttpAppendStream(_UploadStream):
@@ -712,7 +676,7 @@ class HttpAppendStream(_UploadStream):
                 resp = backend.request(
                     backend.write_method, self._path.as_uri(), data=data
                 )
-                resp.raise_for_status()
+                _raise_for_status(resp)
             else:
                 # "patch" mode: send only new content via Content-Range
                 if not data:
@@ -722,7 +686,7 @@ class HttpAppendStream(_UploadStream):
                         resp = backend.request(
                             backend.write_method, self._path.as_uri(), data=b""
                         )
-                        resp.raise_for_status()
+                        _raise_for_status(resp)
                     return
                 start = self._start_offset
                 end = start + len(data) - 1
@@ -730,47 +694,17 @@ class HttpAppendStream(_UploadStream):
                 resp = backend.request(
                     "PATCH", self._path.as_uri(), data=data, headers=headers
                 )
-                resp.raise_for_status()
-
-
-_FOLLOWED_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
-"""Methods whose redirects `requests` follows. Every other method is sent by
-`_send_without_redirects`: `requests` would turn a state-changing one into
-a different request, and a PROPFIND into a GET or one without its body."""
-
-_RESENT_STATUSES = {"PROPFIND": (301, 302, 303, 307, 308)}
-"""The redirect statuses after which a method is sent again, same method and
-body, to a Location on the same scheme, host and port. PROPFIND only reads,
-so it is repeated for every redirect; any other method only for 307 and 308,
-which are defined to keep the method and the body."""
-
-
-def _redirect_location(url: str, resp) -> "str | None":
-    """`resp`'s `Location` as an absolute URL without userinfo, or `None`
-    when there is none or it cannot be parsed."""
-    location = resp.headers.get("Location")
-    if not location:
-        return None
-    try:
-        # http.client decodes header bytes as Latin-1; servers send UTF-8.
-        location = location.encode("latin1").decode("utf-8")
-    except (UnicodeEncodeError, UnicodeDecodeError):
-        pass
-    try:
-        return _split_userinfo(_urlparse.urljoin(url, location))[0]
-    except ValueError:
-        return None
+                _raise_for_status(resp)
 
 
 def _redirect_target(uri: "HttpPath|str", resp) -> "HttpPath|str":
     """The URL for `HttpBackend.request` that the redirect `resp`, the answer
     to `uri`, leads to. Within the same scheme, host and port it keeps the
-    userinfo of `uri` (the credentials continue, as `requests` continues them
-    through a followed redirect); `uri` itself when there is no usable
-    `Location`."""
+    userinfo of `uri` (the credentials continue); `uri` itself when there is
+    no usable `Location`."""
     full = uri if isinstance(uri, str) else uri.as_uri(False)
     url = _split_userinfo(full)[0]
-    location = _redirect_location(url, resp)
+    location = _follow.redirect_location(url, resp)
     if location is None:
         return uri
     target = _urlparse.urlsplit(location)
@@ -779,119 +713,118 @@ def _redirect_target(uri: "HttpPath|str", resp) -> "HttpPath|str":
     return target.geturl()
 
 
-def _refused_redirect(method, url, resp, location, reason) -> OSError:
-    status = f"HTTP {resp.status_code} {getattr(resp, 'reason', None) or ''}".rstrip()
-    return OSError(
-        _errno.EIO,
-        f"{status} for {method} {url}: redirect to {location or '(none)'} "
-        f"not followed ({reason})",
-    )
+_UNSET = object()
+"""The `timeout` of a call that did not give one: the backend's own."""
+
+_BASE_HEADERS = {"User-Agent": "pathlib-next", "Accept": "*/*"}
 
 
-def _can_resend_body(args: dict) -> bool:
-    """Whether `requests` can send the request body a second time: a file
-    object or an iterator has been read to its end by the first attempt."""
-    body = args.get("data")
-    return args.get("files") is None and (
-        body is None
-        or isinstance(body, (bytes, bytearray, memoryview, str, dict, list, tuple))
-    )
+class HttpBackend(TransportOwner):
+    """The transport and the settings shared by an `HttpPath` tree (see
+    `with_transport()` and `with_session()`).
 
+    `transport` is any object with a `send()` method as
+    `HTTPTransport.send()`; without one the backend builds the built-in
+    `HTTPTransport` on first use (`PATHLIB_NEXT_HTTP_TRANSPORT=requests`
+    builds `RequestsTransport` instead) and closes it with `close()` or at the
+    end of a `with` block. A transport it was given stays the caller's.
+    `headers` are sent with every request, request-specific headers merged
+    over them by name; every request gets `timeout=DEFAULT_TIMEOUT`
+    (`(10, 60)` seconds) unless `timeout` here or in the call says otherwise
+    (`None` waits without limit). URL userinfo (`http://user:password@host/`)
+    is never sent inside the request URL: it is stripped and sent as an
+    `Authorization: Basic` header unless `headers` or the call name one.
 
-def _send_without_redirects(session, method: str, url: str, args: dict):
-    """Send a request that `requests` must not redirect. It follows a
-    redirect as a browser does: a 301 re-sends a PUT without its body, a 302
-    or 303 turns it into a GET, and the final 2xx then reads as the write
-    succeeding. So nothing is followed by `requests` here: a redirect with a
-    status in `_RESENT_STATUSES` to the same scheme, host and port is sent
-    once more with the same method and body, and any other 3xx raises
-    `OSError(EIO)` naming the status and the `Location`."""
-    args = {**args, "allow_redirects": False}
-    resp = session.request(method=method, url=url, **args)
-    if not 300 <= resp.status_code < 400:
-        return resp
-    location = _redirect_location(url, resp)
-    resent = _RESENT_STATUSES.get(method.upper(), (307, 308))
-    if resp.status_code not in resent:
-        reason = (
-            "only "
-            + ", ".join(map(str, resent[:-1]))
-            + f" and {resent[-1]} send the request again"
-        )
-    elif location is None:
-        reason = "no usable Location"
-    elif _origin(_urlparse.urlsplit(location)) != _origin(_urlparse.urlsplit(url)):
-        reason = "it leaves the scheme, host and port of the request"
-    elif not _can_resend_body(args):
-        reason = "the request body cannot be sent twice"
-    else:
-        resp.close()
-        resp = session.request(method=method, url=location, **args)
-        if not 300 <= resp.status_code < 400:
-            return resp
-        url, location = location, _redirect_location(location, resp)
-        reason = "a second redirect"
-    raise _refused_redirect(method, url, resp, location, reason)
+    This backend, not the transport, follows redirects. `GET`, `HEAD` and
+    `OPTIONS` follow up to 30; a redirect that changes the scheme, host or
+    port drops `Authorization` (and nothing else). Any other method
+    (`PROPFIND`, `PUT`, `PATCH`, `DELETE`, `MKCOL`, `MOVE`, a `write_method`
+    such as `POST`) is sent without following: a 307 or 308 (for `PROPFIND` also
+    a 301, 302 or 303) to the same scheme, host and port is sent once more
+    with the same method and body, and any other 3xx, a redirect to another
+    origin or a second redirect raises `OSError(EIO)`."""
 
+    __slots__ = ("headers", "timeout", "write_method", "append_mode", "__weakref__")
 
-class HttpBackend(_ty.NamedTuple):
-    """Per-instance `requests.Session` + extra request kwargs shared by an
-    `HttpPath` tree (see `with_session()`).
+    def __init__(
+        self,
+        transport=None,
+        *,
+        headers=None,
+        timeout=DEFAULT_TIMEOUT,
+        write_method: str = "PUT",
+        append_mode: str = "rewrite",
+    ):
+        super().__init__(transport)
+        self.headers = dict(headers or {})
+        self.timeout = timeout
+        self.write_method = write_method
+        self.append_mode = append_mode
 
-    Every request gets `timeout=DEFAULT_TIMEOUT` (`(10, 60)` seconds)
-    unless `requests_args` or the call supplies `timeout` (`None` there
-    waits forever). URL userinfo (`http://user:password@host/`) is never
-    sent inside the request URL: it is stripped and sent as `auth=(user,
-    password)` -- unless `requests_args`/the call pass their own `auth`
-    or the session has `session.auth` set, which win as they did before.
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(write_method={self.write_method!r})"
 
-    Redirects: `GET`, `HEAD` and `OPTIONS` follow them as `requests` does.
-    Any other method (`PROPFIND`, `PUT`, `PATCH`, `DELETE`, `MKCOL`, `MOVE`,
-    a `write_method` such as `POST`) is sent with `allow_redirects=False`,
-    whatever `requests_args` or the call say: a 307 or 308 (for `PROPFIND`
-    also a 301, 302 or 303) to the same scheme, host and port is sent once
-    more with the same method and body, and any other 3xx, a redirect to
-    another origin or a second redirect raises `OSError(EIO)`."""
-
-    session: _req.Session
-    requests_args: dict
-    write_method: str = "PUT"
-    append_mode: str = "rewrite"
-
-    def request(self, method, uri: "HttpPath|str", **kwargs):
+    def request(
+        self,
+        method,
+        uri: "HttpPath|str",
+        *,
+        data=None,
+        headers=None,
+        stream: bool = False,
+        allow_redirects=None,
+        timeout=_UNSET,
+    ) -> HTTPResponse:
+        """Send `method` to `uri` and return the final response. A `data`
+        that is not `bytes` (a file, an iterable) cannot be sent twice, so it
+        is not re-sent after a redirect or a dropped connection.
+        `allow_redirects=False` returns the first answer of a `GET`, `HEAD`
+        or `OPTIONS` as it is. `ValueError` for a URL or header with a control
+        character, before anything is sent."""
         url, auth = _split_userinfo(uri if isinstance(uri, str) else uri.as_uri(False))
-        args = {**self.requests_args, **kwargs}
-        if self.requests_args.get("headers") and kwargs.get("headers"):
-            # Merged key by key: the caller's `with_session(headers=...)` (an auth token) must
-            # survive a request that sends its own (PROPFIND `Depth`, MOVE `Destination`);
-            # the request's values win on a shared key.
-            args["headers"] = {**self.requests_args["headers"], **kwargs["headers"]}
-        args.setdefault("timeout", DEFAULT_TIMEOUT)
-        if (
-            auth is not None
-            and "auth" not in args
-            and not getattr(self.session, "auth", None)
-        ):
-            args["auth"] = auth
-        if method.upper() in _FOLLOWED_METHODS:
-            return self.session.request(method=method, url=url, **args)
-        return _send_without_redirects(self.session, method, url, args)
+        sent = _merge_headers(_BASE_HEADERS, self.headers, headers)
+        if auth is not None and not _has_header(sent, "Authorization"):
+            sent["Authorization"] = _basic_authorization(auth)
+        _check_url(url)
+        _check_headers(sent)
+        if timeout is _UNSET:
+            timeout = self.timeout
+        if isinstance(data, str):
+            data = data.encode("utf-8")
+        transport = self.transport
+        if method.upper() in _FOLLOWED_METHODS and data is None:
+            if allow_redirects is False:
+                return transport.send(
+                    method, url, headers=sent, timeout=timeout, stream=stream
+                )
+            return _follow.send_following(
+                transport, method, url, headers=sent, timeout=timeout, stream=stream
+            )
+        return _follow.send_once(
+            transport,
+            method,
+            url,
+            headers=sent,
+            body=data,
+            timeout=timeout,
+            stream=stream,
+        )
 
 
 class _DerivedHttpBackend(HttpBackend, DerivedBackend):
-    """What `HttpPath._initbackend()` returns. A tuple cannot be weakly
-    referenced, so the class itself says the path derived this backend for
-    itself (see `UriPath._supplied_backend()`)."""
+    """What `HttpPath._initbackend()` returns: the class itself says the path
+    derived this backend for itself (see `UriPath._supplied_backend()`)."""
 
     __slots__ = ()
 
 
 class HttpPath(UriPath):
     """`http`/`https` scheme: read/write access over HTTP (`PUT`/`DELETE`
-    for writes/deletes, configurable via `with_session()`), listing
+    for writes/deletes, configurable via `with_transport()`), listing
     directories by scraping an Apache/nginx-style HTML index with a
-    zero-dependency in-house parser (`_DirectoryListingParser`). Requires
-    the `http` extra."""
+    zero-dependency in-house parser (`_DirectoryListingParser`). Needs no
+    third-party library: requests go through `HTTPTransport` unless a
+    transport is given."""
 
     __SCHEMES = ("http", "https")
     __slots__ = ()
@@ -900,7 +833,7 @@ class HttpPath(UriPath):
         backend: HttpBackend
 
     def _initbackend(self):
-        return _DerivedHttpBackend(_req.Session(), {})
+        return _DerivedHttpBackend(timeout=DEFAULT_TIMEOUT)
 
     def _listdir(self) -> list[_FileEntry]:
         # The slash form first: a server redirects a directory's slash-less URL to it, at a
@@ -925,12 +858,12 @@ class HttpPath(UriPath):
             req.close()
         # Scoped by the URL actually answered (after redirects), not by the
         # page's own <title>.
-        parser = _DirectoryListingParser(base_url=getattr(req, "url", None))
+        parser = _DirectoryListingParser(base_url=req.url)
         parser.feed(text)
         parser.close()
         return parser.listing
 
-    def _read_listing(self, req: _req.Response) -> str:
+    def _read_listing(self, req: HTTPResponse) -> str:
         """The body of the directory index `req` as text, read the way
         `open()` reads a file: a cut-short, stalled or undecodable body
         raises `TimeoutError`/`OSError` naming the path, and one longer than
@@ -954,18 +887,18 @@ class HttpPath(UriPath):
             chunks.append(chunk)
         body = b"".join(chunks)
         try:
-            return body.decode(req.encoding or "utf-8", "replace")
+            return body.decode(_charset(req.headers), "replace")
         except LookupError:
             return body.decode("utf-8", "replace")
 
-    def _get(self, uri, **kwargs) -> _req.Response:
+    def _get(self, uri, **kwargs) -> HTTPResponse:
         """A streamed `GET` of `uri` that succeeded, its body unread. A
         failure is translated to the pathlib exception for this path, and the
         connection is released first: `stream=True` leaves it held."""
         with _translate_http_errors(self):
             req = self.backend.request("GET", uri, stream=True, **kwargs)
             try:
-                req.raise_for_status()
+                _raise_for_status(req)
             except BaseException:
                 req.close()
                 raise
@@ -1002,7 +935,7 @@ class HttpPath(UriPath):
                 stat = FileStat(is_dir=False, size_known=False)
             yield name, stat
 
-    def _is_dir(self, resp: _req.Response):
+    def _is_dir(self, resp: HTTPResponse):
         # Judged on the FINAL response, after redirects (http->https, CDN and "latest"
         # download links redirect to files), by the path of that URL: a query or fragment
         # does not make a directory a file.
@@ -1032,7 +965,7 @@ class HttpPath(UriPath):
                     "HEAD", uri, allow_redirects=False, headers=_IDENTITY_ENCODING
                 )
                 resp.close()
-                if resp.status_code == 405:
+                if resp.status == 405:
                     # Some servers reject HEAD outright; fall back to GET.
                     resp = self.backend.request(
                         "GET",
@@ -1042,22 +975,22 @@ class HttpPath(UriPath):
                         headers=_IDENTITY_ENCODING,
                     )
                     resp.close()
-                if resp.status_code < 400:
+                if resp.status < 400:
                     break
 
-            if resp.is_redirect:
+            if _follow.is_redirect(resp):
                 # Where the first answer pointed, not the same request again.
                 target = _redirect_target(uri, resp)
                 resp = self.backend.request("HEAD", target, headers=_IDENTITY_ENCODING)
                 resp.close()
-                if resp.status_code == 405:
+                if resp.status == 405:
                     # The HEAD-405 fallback again after a redirect: a server or proxy that rejects HEAD
                     # everywhere would otherwise raise PermissionError for an existing path.
                     resp = self.backend.request(
                         "GET", target, stream=True, headers=_IDENTITY_ENCODING
                     )
                     resp.close()
-            resp.raise_for_status()
+            _raise_for_status(resp)
             # From the final URL, once any redirect has been followed.
             is_dir = self._is_dir(resp)
 
@@ -1127,11 +1060,11 @@ class HttpPath(UriPath):
         # verified an empty directory before calling it.
         with _translate_http_errors(self):
             resp = self.backend.request("DELETE", self)
-            if resp.status_code == 404:
+            if resp.status == 404:
                 if missing_ok:
                     return
                 raise FileNotFoundError(self)
-            resp.raise_for_status()
+            _raise_for_status(resp)
 
     def rmdir(self):
         # An empty directory's listing and a file whose body parses to zero entries look
@@ -1146,13 +1079,46 @@ class HttpPath(UriPath):
             raise OSError(_errno.ENOTEMPTY, "Directory not empty", str(self))
         self._delete()
 
+    def with_transport(
+        self,
+        transport,
+        *,
+        headers=None,
+        timeout=DEFAULT_TIMEOUT,
+        write_method: str = "PUT",
+        append_mode: str = "rewrite",
+    ):
+        """This path with a backend that sends through `transport` (any object
+        with a `send()` method as `HTTPTransport.send()`; the caller closes
+        it). `headers` go with every request; `write_method` (`"PUT"`, or
+        e.g. `"POST"`) uploads on close, and `append_mode` is `"rewrite"` or
+        `"patch"`."""
+        backend = HttpBackend(
+            transport,
+            headers=headers,
+            timeout=timeout,
+            write_method=write_method,
+            append_mode=append_mode,
+        )
+        return type(self)(self, backend=backend)
+
     def with_session(
         self,
-        session: _req.Session,
+        session,
         write_method: str = "PUT",
         append_mode: str = "rewrite",
         **requests_args,
     ):
-        return type(self)(
-            self, backend=HttpBackend(session, requests_args, write_method, append_mode)
+        """This path with a backend that sends through a `requests.Session`
+        (a `RequestsTransport`). `headers` and `timeout` in `requests_args`
+        are the backend's; the others (`auth`, `verify`, `proxies`, `cert`, ...) go
+        to every `session.request()`. Needs the `http` extra."""
+        headers = requests_args.pop("headers", None)
+        timeout = requests_args.pop("timeout", DEFAULT_TIMEOUT)
+        return self.with_transport(
+            RequestsTransport(session, **requests_args),
+            headers=headers,
+            timeout=timeout,
+            write_method=write_method,
+            append_mode=append_mode,
         )

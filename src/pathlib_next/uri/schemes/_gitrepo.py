@@ -11,14 +11,21 @@ import warnings as _warnings
 from ... import providers as _providers
 from .. import Source, UriPath
 from ..source import compose_host
-from ._extras import import_or_stub as _import_or_stub
-
-_req = _import_or_stub("requests", "http")
+from ._http import HTTPResponse, RequestsTransport, TransportOwner
+from ._http import _follow
+from ._http._headers import check_headers as _check_headers
+from ._http._headers import check_url as _check_url
+from ._http._headers import merge_headers as _merge_headers
+from ._http._status import HTTPStatusError as _HTTPStatusError
+from ._http._status import json_body as _json_body
 
 DEFAULT_TIMEOUT = (10, 60)
 """`(connect, read)` timeout, in seconds, `RepoBackend` sends with every
 request unless the caller supplies `timeout` (`RepoBackend(timeout=...)` or
-per request); `timeout=None` restores requests' unbounded wait."""
+per request); `timeout=None` waits without a limit."""
+
+_UNSET = object()
+"""The `timeout` of a call that did not give one: the backend's own."""
 
 
 class InsecureTransportWarning(UserWarning):
@@ -62,12 +69,12 @@ def _rate_limit_error(response, path_obj) -> "OSError | None":
     429 and a `Retry-After` header; a bare 429 is a limit too. Checked
     before the generic mapping, which read a secondary-limit 403 as
     PermissionError and a 429 as EIO."""
-    if response is None or response.status_code not in (403, 429):
+    if response is None or response.status not in (403, 429):
         return None
     headers = response.headers
     remaining = headers.get("X-RateLimit-Remaining", headers.get("RateLimit-Remaining"))
     retry_after = headers.get("Retry-After")
-    if response.status_code == 403 and remaining != "0" and retry_after is None:
+    if response.status == 403 and remaining != "0" and retry_after is None:
         return None
     if retry_after is not None:
         when = f"retry after {retry_after}s"
@@ -76,21 +83,25 @@ def _rate_limit_error(response, path_obj) -> "OSError | None":
         when = f"resets at {reset}"
     return OSError(
         _errno.EAGAIN,
-        f"API rate limit exceeded (HTTP {response.status_code}) for {path_obj} ({when})",
+        f"API rate limit exceeded (HTTP {response.status}) for {path_obj} ({when})",
     )
+
+
+def _raise_for_status(resp: HTTPResponse) -> None:
+    if resp.status >= 400:
+        raise _HTTPStatusError(resp)
 
 
 @_contextlib.contextmanager
 def _translate_repo_errors(path_obj):
-    # `from None`: a requests exception's text can carry a URL with credentials (an
-    # environment proxy included) into every traceback. The status code or exception
-    # type stays in the message.
+    # `from None`: a chained cause is printed by every traceback. The status
+    # code or exception type stays in the message.
     try:
         yield
-    except _req.exceptions.HTTPError as e:
+    except _HTTPStatusError as e:
         response = e.response
-        status = response.status_code if response is not None else None
-        reason = getattr(response, "reason", None) or ""
+        status = response.status
+        reason = response.reason or ""
         limited = _rate_limit_error(response, path_obj)
         if limited is not None:
             raise limited from None
@@ -101,76 +112,121 @@ def _translate_repo_errors(path_obj):
         else:
             message = f"HTTP Error {status} {reason}".rstrip()
             raise OSError(_errno.EIO, f"{message} for {path_obj}") from None
-    except _req.exceptions.Timeout as e:
+    except TimeoutError as e:
         raise TimeoutError(f"Timeout for {path_obj} ({type(e).__name__})") from None
-    except _req.exceptions.ConnectionError as e:
+    except ConnectionError as e:
         raise ConnectionError(
             f"Connection error for {path_obj} ({type(e).__name__})"
-        ) from None
-    except _req.exceptions.RequestException as e:
-        raise OSError(
-            _errno.EIO, f"Request failed for {path_obj} ({type(e).__name__})"
         ) from None
 
 
 class BaseRepoBackend(object):
     """Protocol for issuing an authenticated HTTP request against a
     GitHub/GitLab REST API. Subclass this to plug in custom auth/session
-    handling; `RepoBackend` is the real `requests`-based implementation."""
+    handling; `RepoBackend` is the real transport-based implementation."""
 
     # Weakly referenceable so `UriPath` can record which backends a path
     # derived for itself (see `UriPath._supplied_backend()`).
     __slots__ = ("__weakref__",)
 
     @_providers.notimplemented
-    def request(self, method, url, **kwargs):
-        """Send one request to the API and return the `requests` response."""
+    def request(self, method, url, headers=None, params=None, **kwargs):
+        """Send one request to the API and return its `HTTPResponse`."""
 
 
-class RepoBackend(BaseRepoBackend):
-    """Lazily-used `requests.Session` + an optional bearer `token` sent on
-    every request (mirrors `HttpBackend.requests_args` in `http.py`).
-    Unauthenticated works fine for public repos, subject to the host's
-    anonymous rate limit (60 req/h for github.com). `api_base`, when set,
-    overrides the scheme's convention-derived API root entirely (e.g.
-    `https://api.github.com`/`https://{host}/api/v3`) -- the seam a test
-    fake (or a reverse-proxied self-hosted setup) plugs into, since the
-    real convention always forces `https`; a request that carries an
-    `Authorization` header to a plain `http://` URL on a host other than
+class RepoBackend(TransportOwner, BaseRepoBackend):
+    """The transport and the optional bearer `token` sent on every request
+    (mirrors `HttpBackend` in `http.py`). Unauthenticated works fine for
+    public repos, subject to the host's anonymous rate limit (60 req/h for
+    github.com).
+
+    `transport` is any object with a `send()` method as
+    `HTTPTransport.send()`; without one the built-in `HTTPTransport` is built
+    on first use (see `HttpBackend`). `session=` (a `requests.Session`) or
+    `requests_args` (`verify=`, `proxies=`, ...) select a `RequestsTransport`
+    over it. `headers` go with every request, under the request's own.
+    `api_base`, when set, overrides the scheme's convention-derived API root
+    entirely (e.g. `https://api.github.com`/`https://{host}/api/v3`) -- the
+    seam a test fake (or a reverse-proxied self-hosted setup) plugs into,
+    since the real convention always forces `https`; a request that carries
+    an `Authorization` header to a plain `http://` URL on a host other than
     loopback warns (`InsecureTransportWarning`). Every request gets
-    `timeout=DEFAULT_TIMEOUT` (`(10, 60)` seconds) unless `requests_args`
-    (`RepoBackend(timeout=...)`) or the call supplies one; `timeout=None`
-    waits forever."""
+    `timeout=DEFAULT_TIMEOUT` (`(10, 60)` seconds) unless `timeout` here or
+    in the call says otherwise; `None` waits without limit. A `GET` follows
+    redirects as `HttpBackend` does, dropping the token when the host
+    changes."""
 
-    __slots__ = ("session", "token", "api_base", "requests_args", "cache")
+    __slots__ = ("token", "api_base", "headers", "timeout", "cache")
 
     def __init__(
         self,
         token: str = None,
-        session: _req.Session = None,
+        session=None,
         api_base: str = None,
+        *,
+        transport=None,
+        headers=None,
+        timeout=DEFAULT_TIMEOUT,
         **requests_args,
     ):
-        self.session = session or _req.Session()
+        if session is not None or requests_args:
+            if transport is not None:
+                raise TypeError("give a transport, or a session and its arguments")
+            transport = RequestsTransport(session, **requests_args)
+        super().__init__(transport)
         self.token = token or None
         self.api_base = api_base.rstrip("/") if api_base else None
-        self.requests_args = requests_args
+        self.headers = dict(headers or {})
+        self.timeout = timeout
         # Generic per-backend memoization slot for schemes that need it
         # (GitLabPath's resolved default-branch lookup, see `_resolved_ref`)
         # -- shared across every path instance that shares this backend.
         self.cache = {}
 
-    def request(self, method, url, headers=None, **kwargs):
-        # `RepoBackend(headers=...)` merged key by key under the request's
-        # own headers, instead of colliding with the `headers=` keyword.
-        headers = {**(self.requests_args.get("headers") or {}), **(headers or {})}
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(api_base={self.api_base!r})"
+
+    def request(
+        self,
+        method,
+        url,
+        headers=None,
+        params=None,
+        *,
+        data=None,
+        timeout=_UNSET,
+        stream=False,
+    ) -> HTTPResponse:
+        sent = _merge_headers(
+            {"User-Agent": "pathlib-next", "Accept": "*/*"}, self.headers, headers
+        )
         if self.token:
-            headers.setdefault("Authorization", f"Bearer {self.token}")
-        _warn_if_plaintext(url, headers)
-        args = {**self.requests_args, **kwargs}
-        args.pop("headers", None)
-        args.setdefault("timeout", DEFAULT_TIMEOUT)
-        return self.session.request(method, url, headers=headers, **args)
+            sent.setdefault("Authorization", f"Bearer {self.token}")
+        _warn_if_plaintext(url, sent)
+        if params:
+            query = _urlparse.urlencode(
+                [(k, v) for k, v in dict(params).items() if v is not None], doseq=True
+            )
+            if query:
+                url = url + ("&" if "?" in url else "?") + query
+        _check_url(url)
+        _check_headers(sent)
+        if timeout is _UNSET:
+            timeout = self.timeout
+        transport = self.transport
+        if method.upper() in _follow.FOLLOWED_METHODS and data is None:
+            return _follow.send_following(
+                transport, method, url, headers=sent, timeout=timeout, stream=stream
+            )
+        return _follow.send_once(
+            transport,
+            method,
+            url,
+            headers=sent,
+            body=data,
+            timeout=timeout,
+            stream=stream,
+        )
 
 
 class _RepoApiPath(UriPath):
@@ -217,7 +273,7 @@ class _RepoApiPath(UriPath):
 
     def _initbackend(self):
         user, password = self.source.parsed_userinfo()
-        return RepoBackend(token=password or user or None)
+        return RepoBackend(token=password or user or None, timeout=DEFAULT_TIMEOUT)
 
     @property
     def _api_base(self) -> str:
@@ -236,7 +292,7 @@ class _RepoApiPath(UriPath):
         `null`, a truncated body -- is `OSError(EIO)` naming this path, so
         `exists()` answers `False` and `stat()` raises."""
         try:
-            data = resp.json()
+            data = _json_body(resp)
         except ValueError:
             data = None
         if not isinstance(data, expected):

@@ -9,6 +9,7 @@ from ._gitrepo import (  # noqa: F401  (re-exported)
     InsecureTransportWarning,
     RepoBackend,
     _RepoApiPath,
+    _raise_for_status,
     _translate_repo_errors,
 )
 from .http import _server_size
@@ -23,8 +24,8 @@ class GitHubPath(_RepoApiPath):
     ~1MB inline-content cap) instead of the default JSON+base64 envelope.
     `symlink`/`submodule` tree entries are treated as plain files (no
     special handling -- see `docs/divergences.md`). No mtime (would need a
-    separate commits-history call per path). Requires the `http` extra
-    (plain `requests`, no PyGithub SDK)."""
+    separate commits-history call per path). Needs no third-party
+    library (no PyGithub SDK)."""
 
     __SCHEMES = ("github",)
     __slots__ = ()
@@ -66,7 +67,7 @@ class GitHubPath(_RepoApiPath):
             )
             # A rate-limited reply (403/429) becomes EAGAIN in
             # `_translate_repo_errors`.
-            resp.raise_for_status()
+            _raise_for_status(resp)
         return resp
 
     def _object(self, data: dict) -> dict:
@@ -102,11 +103,11 @@ class GitHubPath(_RepoApiPath):
             )
             if "X-GitHub-Media-Type" not in resp.headers:
                 return None
-            resp.raise_for_status()
+            _raise_for_status(resp)
         headers = resp.headers
         media_type = headers.get("Content-Type", "").partition(";")[0].strip().lower()
         if (
-            resp.status_code != 200
+            resp.status != 200
             or not media_type.startswith("application/vnd.github")
             or "raw" not in media_type
             or headers.get("Content-Encoding", "identity").strip().lower() != "identity"
@@ -228,4 +229,4 @@ class GitHubPath(_RepoApiPath):
             # Every reply of the API names its media type in that header, so
             # an HTML page without it is a proxy's or a portal's, not a file.
             raise self._bad_reply("an HTML page that is not the API's answer")
-        return self._reader(resp.content)
+        return self._reader(resp.read())

@@ -11,6 +11,7 @@ import pytest
 
 pytest.importorskip("requests")
 
+from http_fakes import FakeTransport, reply
 from pathlib_next.uri import UriPath
 
 
@@ -162,58 +163,26 @@ def test_http_exception_translation(http_server):
         p.unlink()
 
 
-def test_http_write_put_default(monkeypatch):
-    recorded = []
-
-    class MockResponse:
-        status_code = 200
-        content = b""
-        reason = "OK"
-
-        def raise_for_status(self):
-            pass
-
-    def mock_request(self, method, url, **kwargs):
-        recorded.append((method, url, kwargs.get("data")))
-        return MockResponse()
-
-    import requests
-
-    monkeypatch.setattr(requests.Session, "request", mock_request)
-
-    p = UriPath("http://example.com/file.txt")
+def test_http_write_put_default():
+    transport = FakeTransport(default=reply(200))
+    p = UriPath("http://example.com/file.txt").with_transport(transport)
     p.write_text("hello")
 
-    assert len(recorded) == 1
-    assert recorded[0] == ("PUT", "http://example.com/file.txt", b"hello")
+    assert [(s.method, s.url, s.body) for s in transport.sent] == [
+        ("PUT", "http://example.com/file.txt", b"hello")
+    ]
 
 
-def test_http_write_post_configured(monkeypatch):
-    recorded = []
-
-    class MockResponse:
-        status_code = 200
-        content = b""
-        reason = "OK"
-
-        def raise_for_status(self):
-            pass
-
-    def mock_request(self, method, url, **kwargs):
-        recorded.append((method, url, kwargs.get("data")))
-        return MockResponse()
-
-    import requests
-
-    monkeypatch.setattr(requests.Session, "request", mock_request)
-
-    # Configure session with POST as the write method
-    p = UriPath("http://example.com/file.txt")
-    p = p.with_session(requests.Session(), write_method="POST")
+def test_http_write_post_configured():
+    transport = FakeTransport(default=reply(200))
+    p = UriPath("http://example.com/file.txt").with_transport(
+        transport, write_method="POST"
+    )
     p.write_text("world")
 
-    assert len(recorded) == 1
-    assert recorded[0] == ("POST", "http://example.com/file.txt", b"world")
+    assert [(s.method, s.url, s.body) for s in transport.sent] == [
+        ("POST", "http://example.com/file.txt", b"world")
+    ]
 
 
 def test_http_unlink(site):
@@ -304,29 +273,14 @@ def test_http_rmdir_on_file_raises_notadirectoryerror(site, content_type):
     assert site.sent("DELETE") == []
 
 
-def test_http_write_stream_marks_closed_on_upload_failure(monkeypatch):
+def test_http_write_stream_marks_closed_on_upload_failure():
     # A failed close() must not leave the stream open -- otherwise a
     # later close() (context-manager __exit__, or GC via
     # IOBase.__del__) silently retries the PUT.
-    import requests
     from pathlib_next.uri.schemes.http import HttpWriteStream
 
-    calls = []
-
-    class MockResponse:
-        status_code = 500
-        reason = "Server Error"
-
-        def raise_for_status(self):
-            raise requests.exceptions.HTTPError(response=self)
-
-    def mock_request(self, method, url, **kwargs):
-        calls.append((method, url))
-        return MockResponse()
-
-    monkeypatch.setattr(requests.Session, "request", mock_request)
-
-    p = UriPath("http://example.com/f.txt")
+    transport = FakeTransport(default=reply(500))
+    p = UriPath("http://example.com/f.txt").with_transport(transport)
     stream = HttpWriteStream(p)
     stream.write(b"x")
 
@@ -336,43 +290,25 @@ def test_http_write_stream_marks_closed_on_upload_failure(monkeypatch):
 
     # a second close() must be a no-op, not another PUT attempt
     stream.close()
-    assert len(calls) == 1
+    assert len(transport.sent) == 1
 
 
-class _MockHttpResponse:
-    def __init__(self, status_code, text="", headers=None, url=None):
-        self.status_code = status_code
-        self.text = text
-        self.content = text.encode()
-        self.headers = headers or {}
-        self.url = url or "http://example.com/file.txt"
-        self.is_redirect = status_code in (301, 302, 303, 307, 308)
-        self.reason = "OK" if status_code < 400 else "Not Found"
-        self.encoding = "utf-8"
-        self.raw = io.BytesIO(self.content)
-
-    def iter_content(self, chunk_size=1):
-        while chunk := self.raw.read(chunk_size):
-            yield chunk
-
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            import requests
-
-            raise requests.exceptions.HTTPError(response=self)
-
-    def close(self):
-        pass
+def _MockHttpResponse(status_code, text="", headers=None, url=None):
+    return reply(
+        status_code,
+        text.encode(),
+        headers,
+        reason="OK" if status_code < 400 else "Not Found",
+        url=url or "http://example.com/file.txt",
+    )
 
 
-def test_listdir_retries_with_trailing_slash_on_404(monkeypatch):
+def test_listdir_retries_with_trailing_slash_on_404():
     # Real servers (incl. this repo's http_server fixture) 301-redirect a
-    # slash-less directory GET, and requests follows that automatically --
+    # slash-less directory GET, and the backend follows that automatically --
     # but a non-redirecting server/proxy would just 404 the bare path. This
     # mirrors stat()'s [no-slash, with-slash] retry so _listdir() is
     # robust to that case too (kept minimal by design).
-    import requests
-
     listing_html = (
         "<html><body><pre>"
         '<a href="../">../</a>\n'
@@ -380,37 +316,27 @@ def test_listdir_retries_with_trailing_slash_on_404(monkeypatch):
         "</pre></body></html>"
     )
 
-    def mock_request(self, method, url, **kwargs):
+    def answer(method, url, **kwargs):
         # `url=`: a listing is scoped by the URL that answered it.
         if url.endswith("/"):
             return _MockHttpResponse(200, listing_html, url=url)
         return _MockHttpResponse(404, url=url)
 
-    monkeypatch.setattr(requests.Session, "request", mock_request)
-
-    p = UriPath("http://example.com/sub")
+    transport = FakeTransport(handler=answer)
+    p = UriPath("http://example.com/sub").with_transport(transport)
     names = {e.name for e in p._listdir()}
     assert names == {"a.txt"}
 
 
-def test_listdir_no_retry_when_already_trailing_slash(monkeypatch):
+def test_listdir_no_retry_when_already_trailing_slash():
     # A 404 on a path that already ends in "/" is a real 404, not a
     # missing-redirect case -- must not retry (would just repeat the same
     # request) and must propagate FileNotFoundError.
-    import requests
-
-    calls = []
-
-    def mock_request(self, method, url, **kwargs):
-        calls.append(url)
-        return _MockHttpResponse(404)
-
-    monkeypatch.setattr(requests.Session, "request", mock_request)
-
-    p = UriPath("http://example.com/sub/")
+    transport = FakeTransport(default=_MockHttpResponse(404))
+    p = UriPath("http://example.com/sub/").with_transport(transport)
     with pytest.raises(FileNotFoundError):
         p._listdir()
-    assert calls == ["http://example.com/sub/"]
+    assert [s.url for s in transport.sent] == ["http://example.com/sub/"]
 
 
 # --- Append mode tests ---
@@ -515,14 +441,10 @@ def test_http_append_patch_mode_empty_append_real_server(
     assert "PATCH" not in patch_mode_requests
 
 
-def test_http_append_patch_mode_configured(monkeypatch):
+def test_http_append_patch_mode_configured():
     """Test PATCH mode with Content-Range header."""
-    import requests
 
-    recorded = []
-
-    def mock_request(self, method, url, **kwargs):
-        recorded.append((method, url, kwargs.get("headers", {}), kwargs.get("data")))
+    def answer(method, url, **kwargs):
         if method == "HEAD":
             return _MockHttpResponse(200, "", headers={"Content-Length": "16"}, url=url)
         elif method == "PATCH":
@@ -530,29 +452,27 @@ def test_http_append_patch_mode_configured(monkeypatch):
         else:
             return _MockHttpResponse(200, url=url)
 
-    monkeypatch.setattr(requests.Session, "request", mock_request)
-
-    p = UriPath("http://example.com/file.txt")
-    session = requests.Session()
-    p = p.with_session(session, append_mode="patch")
+    transport = FakeTransport(handler=answer)
+    p = UriPath("http://example.com/file.txt").with_transport(
+        transport, append_mode="patch"
+    )
 
     with p.open("ab") as f:
         f.write(b"new content")
 
     # One HEAD for the size (the start offset), then exactly the new bytes
     # at that offset -- never a GET + full rewrite.
-    assert [(method, data) for method, _url, _headers, data in recorded] == [
+    assert [(s.method, s.body) for s in transport.sent] == [
         ("HEAD", None),
         ("PATCH", b"new content"),
     ]
-    assert recorded[1][2] == {"Content-Range": "bytes 16-26/*"}
+    assert transport.sent[1].headers["Content-Range"] == "bytes 16-26/*"
 
 
-def test_http_append_patch_mode_rejection(monkeypatch):
+def test_http_append_patch_mode_rejection():
     """PATCH mode should raise if server rejects with 405."""
-    import requests
 
-    def mock_request(self, method, url, **kwargs):
+    def answer(method, url, **kwargs):
         if method == "PATCH":
             return _MockHttpResponse(405)
         elif method == "HEAD":
@@ -562,48 +482,26 @@ def test_http_append_patch_mode_rejection(monkeypatch):
         else:
             return _MockHttpResponse(200)
 
-    monkeypatch.setattr(requests.Session, "request", mock_request)
+    p = UriPath("http://example.com/file.txt").with_transport(
+        FakeTransport(handler=answer), append_mode="patch"
+    )
 
-    p = UriPath("http://example.com/file.txt")
-    session = requests.Session()
-    p = p.with_session(session, append_mode="patch")
-
-    # Should raise PermissionError on PATCH rejection (405 → PermissionError)
+    # Should raise PermissionError on PATCH rejection (405 -> PermissionError)
     with pytest.raises(PermissionError):
         with p.open("ab") as f:
             f.write(b"new content")
 
 
-def test_http_append_write_stream_marks_closed_on_failure(monkeypatch):
+def test_http_append_write_stream_marks_closed_on_failure():
     """Append stream must mark itself closed even on failed close()."""
-    import requests
     from pathlib_next.uri.schemes.http import HttpAppendStream
 
-    class MockResponse:
-        def __init__(self, status_code=500):
-            self.status_code = status_code
-            self.reason = "Server Error" if status_code >= 400 else "OK"
-
-        def raise_for_status(self):
-            if self.status_code >= 400:
-                raise requests.exceptions.HTTPError(response=self)
-
-        def close(self):
-            pass
-
-    call_count = [0]
-
-    def mock_request(self, method, url, **kwargs):
-        call_count[0] += 1
-        # First call (GET for initial content in rewrite mode) succeeds
-        if call_count[0] == 1:
-            return MockResponse(404)  # File doesn't exist
-        # Second call (PUT to close) fails
-        return MockResponse(500)
-
-    monkeypatch.setattr(requests.Session, "request", mock_request)
-
-    p = UriPath("http://example.com/f.txt")
+    # The GET for the initial content in rewrite mode finds no file; the PUT
+    # that closes the stream fails.
+    transport = FakeTransport(
+        {("GET", "http://example.com/f.txt"): reply(404)}, default=reply(500)
+    )
+    p = UriPath("http://example.com/f.txt").with_transport(transport)
     stream = HttpAppendStream(p)
     stream.write(b"x")
 
@@ -613,17 +511,14 @@ def test_http_append_write_stream_marks_closed_on_failure(monkeypatch):
 
     # Second close() must be a no-op
     stream.close()
+    assert [s.method for s in transport.sent] == ["GET", "PUT"]
 
 
-def test_http_append_default_is_rewrite(monkeypatch):
+def test_http_append_default_is_rewrite():
     """Default append_mode should be 'rewrite'."""
     from pathlib_next.uri.schemes.http import HttpBackend
-    import requests
 
-    backend = HttpBackend(
-        session=requests.Session(), requests_args={}, write_method="PUT"
-    )
-    assert backend.append_mode == "rewrite"
+    assert HttpBackend(FakeTransport()).append_mode == "rewrite"
 
 
 # --- httpdav-scandir-stat-hint-fabricates-size ---

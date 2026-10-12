@@ -18,6 +18,7 @@ from .http import (
     HttpPath,
     _UploadStream,
     _path_error,
+    _raise_for_status,
     _response_reader,
     _server_size,
     _split_userinfo,
@@ -120,7 +121,7 @@ def _raise_for_multistatus(resp, path) -> None:
     """RFC 4918 9.6.1/9.9.4: DELETE and MOVE answer 207 when a member of
     the collection could not be processed -- a partial failure, not a
     success."""
-    failures = _multistatus_failures(resp.content)
+    failures = _multistatus_failures(resp.read())
     if failures == []:
         return
     detail = (
@@ -160,8 +161,7 @@ class DavPath(HttpPath):
     replacing `HttpPath`'s HTML-index scraping) and PUT/DELETE/MKCOL/MOVE
     (full write support). Requests go to the equivalent `http:`/`https:`
     URL (`_wire_uri()`); `as_uri()` still reports `dav:`/`davs:`. Reuses
-    `HttpPath`'s `HttpBackend` (session + requests_args) and the `http`
-    extra -- no new dependency.
+    `HttpPath`'s `HttpBackend` (transport + settings) -- no new dependency.
 
     `rmdir()` enforces pathlib's "must be empty" contract with a depth-1
     PROPFIND before DELETE (WebDAV `DELETE` is recursive by spec, RFC 4918,
@@ -203,16 +203,16 @@ class DavPath(HttpPath):
         }
         with _translate_http_errors(self):
             resp = self.backend.request(method, self._wire_uri(), **kwargs)
-            error = statuses.get(resp.status_code)
+            error = statuses.get(resp.status)
             if error is not None:
                 resp.close()
                 if isinstance(error, type):
                     # `(errno, strerror, filename)`, as pathlib raises it.
                     raise _path_error(error, self)
                 raise error(self)
-            if resp.status_code == 207 and method in ("DELETE", "MOVE"):
+            if resp.status == 207 and method in ("DELETE", "MOVE"):
                 _raise_for_multistatus(resp, self)
-            resp.raise_for_status()
+            _raise_for_status(resp)
         return resp
 
     def _propfind(self, depth="0"):
@@ -227,7 +227,7 @@ class DavPath(HttpPath):
             data=_PROPFIND_BODY,
         )
         try:
-            root = _ET.fromstring(resp.content)
+            root = _ET.fromstring(resp.read())
         except _ET.ParseError:
             root = None
         if root is None or root.tag != _MULTISTATUS:
@@ -235,7 +235,7 @@ class DavPath(HttpPath):
             # so `exists()`/`is_dir()` report False instead of leaking a SyntaxError subclass,
             # and a login page is not an empty directory.
             raise OSError(_errno.EIO, f"Invalid PROPFIND response for {self}")
-        return root, getattr(resp, "url", None) or self._wire_uri()
+        return root, resp.url or self._wire_uri()
 
     def stat(self, *, follow_symlinks=True, walk_up_last_modified=False):
         # `walk_up_last_modified` has nothing to do: the reply carries the

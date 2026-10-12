@@ -11,6 +11,7 @@ from ._gitrepo import (  # noqa: F401  (re-exported)
     InsecureTransportWarning,
     RepoBackend,
     _RepoApiPath,
+    _raise_for_status,
     _translate_repo_errors,
 )
 
@@ -29,7 +30,7 @@ class GitLabPath(_RepoApiPath):
     `tree` (directory) entries (`size=0` is truthful for a directory, not a
     placeholder) -- `blob` (file) entries get a real `stat()` lazily
     instead of guessing a size that could poison a caller trusting the
-    hint. No mtime. Requires the `http` extra (plain `requests`, no
+    hint. No mtime. Needs no third-party library (no
     python-gitlab SDK)."""
 
     __SCHEMES = ("gitlab",)
@@ -100,7 +101,7 @@ class GitLabPath(_RepoApiPath):
     def _request(self, method, url, **kwargs):
         with _translate_repo_errors(self):
             resp = self.backend.request(method, url, **kwargs)
-            resp.raise_for_status()
+            _raise_for_status(resp)
         return resp
 
     def _resolved_ref(self) -> str:
@@ -133,10 +134,10 @@ class GitLabPath(_RepoApiPath):
         try:
             with _translate_repo_errors(self):
                 resp = self.backend.request("HEAD", url, params=params)
-                if resp.status_code not in (405, 501):
-                    resp.raise_for_status()
+                if resp.status not in (405, 501):
+                    _raise_for_status(resp)
             size = _server_size(resp.headers.get("X-Gitlab-Size"))
-            if size is not None and resp.status_code < 300:
+            if size is not None and resp.status < 300:
                 return size
             meta = self._decode(self._request("GET", url, params=params), dict)
         except FileNotFoundError:
@@ -256,4 +257,4 @@ class GitLabPath(_RepoApiPath):
                     _errno.EISDIR, "Is a directory", str(self)
                 ) from None
             raise
-        return self._reader(resp.content)
+        return self._reader(resp.read())
