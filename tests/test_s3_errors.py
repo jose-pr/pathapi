@@ -313,6 +313,181 @@ def test_a_read_that_fails_in_the_body_reader_is_translated(moto_s3):
     assert info.value.__cause__ is None
 
 
+# --- every request an operation makes is translated -----------------------------------
+
+#: (SDK error, what a caller gets): the store's answer, and a connection that
+#: broke before it came.
+FAILURES = [
+    pytest.param(_reply("AccessDenied", 403), PermissionError, id="denied"),
+    pytest.param(
+        _botoexc.ConnectionClosedError(endpoint_url="http://u:pw@example.invalid/"),
+        ConnectionResetError,
+        id="reset",
+    ),
+]
+
+
+def _create_exclusively(path):
+    with path.open("xb") as stream:
+        stream.write(b"x")
+
+
+def _mkdir_without_conditional_writes(error):
+    """A `put_object` that refuses `IfNoneMatch` as unimplemented and fails
+    every plain write with `error`."""
+
+    def put_object(*args, **kwargs):
+        if "IfNoneMatch" in kwargs:
+            raise _reply("NotImplemented", 501, "PutObject")
+        raise error
+
+    return put_object
+
+
+def _second_listing_fails(error):
+    """A `list_objects_v2` that answers a `MaxKeys=1` probe and fails the
+    `MaxKeys=2` listing of the keys under a directory."""
+
+    def failing(self_client, **kwargs):
+        if kwargs.get("MaxKeys") == 2:
+            raise error
+        return self_client(**kwargs)
+
+    return failing
+
+
+#: name -> (uri, keys stored first, the client method that fails, what is done).
+#: Each is one request of one operation; the rest of the operation succeeds.
+OPERATIONS = {
+    "stat of a bucket": ("s3://bkt/", [], "head_bucket", lambda p: p.stat()),
+    "exclusive create": (
+        "s3://bkt/new.txt",
+        [],
+        "put_object",
+        _create_exclusively,
+    ),
+    "checksum": ("s3://bkt/a.txt", ["a.txt"], "head_object", lambda p: p.checksum()),
+    "unlink": ("s3://bkt/a.txt", ["a.txt"], "delete_object", lambda p: p.unlink()),
+    "rename source": (
+        "s3://bkt/a.txt",
+        ["a.txt"],
+        "head_object",
+        lambda p: p.rename("b.txt"),
+    ),
+    "rename copy": (
+        "s3://bkt/a.txt",
+        ["a.txt"],
+        "copy_object",
+        lambda p: p.rename("b.txt"),
+    ),
+    "recursive remove existence check": (
+        "s3://bkt/t",
+        ["t/a", "t/b"],
+        "head_object",
+        lambda p: p.rm(recursive=True),
+    ),
+    "recursive remove batch": (
+        "s3://bkt/t",
+        ["t/a", "t/b"],
+        "delete_objects",
+        lambda p: p.rm(recursive=True),
+    ),
+}
+
+
+@pytest.mark.parametrize("error,expected", FAILURES)
+@pytest.mark.parametrize("name", sorted(OPERATIONS))
+def test_a_failed_request_is_an_oserror_naming_the_path_and_changes_nothing(
+    moto_s3, name, error, expected
+):
+    uri, stored, failing, act = OPERATIONS[name]
+    for key in stored:
+        moto_s3.put_object(Bucket="bkt", Key=key, Body=b"x")
+    before = _keys(moto_s3)
+    path, _client = _path(moto_s3, uri, **{failing: _failing(error)})
+
+    with pytest.raises(expected) as info:
+        act(path)
+
+    assert info.value.filename == str(path)
+    assert info.value.__cause__ is None
+    assert info.value.__suppress_context__
+    assert "pw" not in str(info.value)
+    assert _keys(moto_s3) == before
+
+
+@pytest.mark.parametrize("error,expected", FAILURES)
+def test_a_marker_write_that_fails_after_conditional_writes_are_refused_is_translated(
+    moto_s3, error, expected
+):
+    path, _client = _path(
+        moto_s3,
+        "s3://bkt/d",
+        put_object=_mkdir_without_conditional_writes(error),
+    )
+
+    with pytest.raises(expected) as info:
+        path.mkdir()
+
+    assert info.value.filename == str(path)
+    assert info.value.__cause__ is None
+    assert _keys(moto_s3) == []
+
+
+@pytest.mark.parametrize("error,expected", FAILURES)
+def test_a_listing_that_fails_while_removing_a_directory_keeps_it(
+    moto_s3, error, expected
+):
+    moto_s3.put_object(Bucket="bkt", Key="d/", Body=b"")
+    real = moto_s3.list_objects_v2
+    failing = _second_listing_fails(error)
+    path, _client = _path(
+        moto_s3, "s3://bkt/d", list_objects_v2=lambda **kw: failing(real, **kw)
+    )
+
+    with pytest.raises(expected) as info:
+        path.rmdir()
+
+    assert info.value.filename == str(path)
+    assert _keys(moto_s3) == ["d/"]
+
+
+@pytest.mark.parametrize("error,expected", FAILURES)
+def test_a_batch_delete_that_fails_is_offered_translated_and_the_walk_goes_on(
+    moto_s3, error, expected
+):
+    moto_s3.put_object(Bucket="bkt", Key="t/a", Body=b"x")
+    path, _client = _path(moto_s3, "s3://bkt/t", delete_objects=_failing(error))
+    offered = []
+
+    path.rm(
+        recursive=True,
+        ignore_error=lambda failed, where: offered.append((type(failed), where))
+        or True,
+    )
+
+    assert offered == [(expected, path)]
+    assert _keys(moto_s3) == ["t/a"]
+
+
+@pytest.mark.parametrize("error,expected", FAILURES)
+def test_a_failed_existence_check_stops_a_recursive_remove_before_any_delete(
+    moto_s3, error, expected
+):
+    moto_s3.put_object(Bucket="bkt", Key="t/a", Body=b"x")
+    path, client = _path(moto_s3, "s3://bkt/t", head_object=_failing(error))
+    offered = []
+
+    path.rm(
+        recursive=True,
+        ignore_error=lambda failed, where: offered.append(type(failed)) or True,
+    )
+
+    assert offered == [expected]
+    assert "delete_objects" not in client.calls
+    assert _keys(moto_s3) == ["t/a"]
+
+
 # --- a batch delete that refuses single keys --------------------------------------
 
 
