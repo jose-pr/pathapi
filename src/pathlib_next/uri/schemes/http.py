@@ -32,6 +32,7 @@ from ._http._headers import check_headers as _check_headers
 from ._http._headers import check_url as _check_url
 from ._http._headers import has_header as _has_header
 from ._http._headers import merge_headers as _merge_headers
+from ._http._headers import peer_text
 
 DEFAULT_TIMEOUT = (10, 60)
 """`(connect, read)` timeout, in seconds, `HttpBackend` sends with every
@@ -92,7 +93,7 @@ def _translate_http_errors(path_obj, *, conflict=FileExistsError):
     except _HTTPStatusError as e:
         response = e.response
         status = response.status
-        reason = response.reason or ""
+        reason = peer_text(response.reason or "")
         if status in (404, 410):
             raise _path_error(FileNotFoundError, path_obj) from None
         elif status in (401, 403):

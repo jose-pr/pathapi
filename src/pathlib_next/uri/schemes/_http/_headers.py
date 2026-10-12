@@ -56,6 +56,20 @@ class Headers(_abc.Mapping):
         return f"Headers({list(self._spelling.values())!r})"
 
 
+def peer_text(text: object, limit: int = 120) -> str:
+    """`text` that came from the other end (a reason phrase, a `Location`, a
+    header value) as an error message may show it: characters a terminal or a
+    log would act on (controls, line and bidirectional separators) escaped, and
+    cut to `limit` characters."""
+    text = str(text)
+    cut = len(text) > limit
+    shown = "".join(
+        char if char.isprintable() else char.encode("unicode_escape").decode("ascii")
+        for char in text[:limit]
+    )
+    return shown + "..." if cut else shown
+
+
 def has_header(headers: "_abc.Mapping[str, str]", name: str) -> bool:
     key = name.lower()
     return any(field.lower() == key for field in headers)

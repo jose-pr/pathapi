@@ -8,7 +8,7 @@ import errno as _errno
 import re as _re
 import urllib.parse as _urlparse
 
-from ._headers import drop_header
+from ._headers import drop_header, peer_text
 from ._response import HTTPResponse
 
 MAX_REDIRECTS = 30
@@ -116,8 +116,8 @@ def redirect_location(url: str, resp: HTTPResponse) -> "str | None":
 
 
 def refused_redirect(method: str, url: str, resp: HTTPResponse, location, reason):
-    status = f"HTTP {resp.status} {resp.reason or ''}".rstrip()
-    where = shown(location) if location else "(none)"
+    status = f"HTTP {resp.status} {peer_text(resp.reason or '')}".rstrip()
+    where = peer_text(shown(location), 200) if location else "(none)"
     return OSError(
         _errno.EIO,
         f"{status} for {method} {shown(url)}: redirect to {where} "

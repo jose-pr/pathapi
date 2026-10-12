@@ -2236,7 +2236,10 @@ class HTTPResponse:
   `PermissionError`, 409 → `FileExistsError` (`FileNotFoundError` for
   writes), other → `OSError(EIO)` with the status. A transport's
   `TimeoutError` and `ConnectionError` are re-raised naming the path, with
-  no cause.
+  no cause. Text that came from the server and goes into a message (a reason
+  phrase, a `Location`, a rate-limit header, the `href` of a failed `DavPath`
+  member) is shown with control, line-separator and bidirectional characters
+  escaped (`\x1b` for ESC) and cut to 120 characters (200 for a URL).
 
 ### `DavPath` — `dav:`, `davs:` (`pathlib_next.uri.schemes.dav`)
 

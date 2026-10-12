@@ -16,6 +16,7 @@ from ._http import _follow
 from ._http._headers import check_headers as _check_headers
 from ._http._headers import check_url as _check_url
 from ._http._headers import merge_headers as _merge_headers
+from ._http._headers import peer_text
 from ._http._status import HTTPStatusError as _HTTPStatusError
 from ._http._status import json_body as _json_body
 
@@ -77,10 +78,10 @@ def _rate_limit_error(response, path_obj) -> "OSError | None":
     if response.status == 403 and remaining != "0" and retry_after is None:
         return None
     if retry_after is not None:
-        when = f"retry after {retry_after}s"
+        when = f"retry after {peer_text(retry_after, 40)}s"
     else:
         reset = headers.get("X-RateLimit-Reset", headers.get("RateLimit-Reset", "?"))
-        when = f"resets at {reset}"
+        when = f"resets at {peer_text(reset, 40)}"
     return OSError(
         _errno.EAGAIN,
         f"API rate limit exceeded (HTTP {response.status}) for {path_obj} ({when})",
@@ -101,7 +102,7 @@ def _translate_repo_errors(path_obj):
     except _HTTPStatusError as e:
         response = e.response
         status = response.status
-        reason = response.reason or ""
+        reason = peer_text(response.reason or "")
         limited = _rate_limit_error(response, path_obj)
         if limited is not None:
             raise limited from None
@@ -308,7 +309,7 @@ class _RepoApiPath(UriPath):
             return 0
         if isinstance(size, int) and not isinstance(size, bool) and size >= 0:
             return size
-        raise self._bad_reply(f"size {size!r}")
+        raise self._bad_reply(f"size {peer_text(repr(size), 60)}")
 
     def as_posix(self) -> str:
         # `user@host:path` would show the token when it is the user slot.

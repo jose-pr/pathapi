@@ -1234,3 +1234,40 @@ mutant(
     "tests/test_http_proxy.py::test_a_cidr_block_in_no_proxy_sends_an_ip_literal_host_direct",
     "a request to a host inside a NO_PROXY block goes to the proxy, which sees its Authorization",
 )
+_PEER = "tests/test_http_peer_text.py"
+
+mutant(
+    "http-peer-text-not-escaped",
+    f"{_HTTP_PKG}/_headers.py",
+    '        char if char.isprintable() else char.encode("unicode_escape").decode("ascii")\n',
+    "        char\n",
+    f"{_PEER}::test_peer_text_escapes_what_a_terminal_would_act_on",
+    "text from the peer keeps its control characters in an error message",
+)
+mutant(
+    "http-reason-phrase-unescaped",
+    "uri/schemes/http.py",
+    '        reason = peer_text(response.reason or "")\n',
+    '        reason = response.reason or ""\n',
+    (
+        f"{_PEER}::test_a_reason_phrase_is_shown_escaped",
+        f"{_PEER}::test_a_long_reason_phrase_is_cut",
+    ),
+    "an HTTP error's reason phrase reaches the message as the server sent it",
+)
+mutant(
+    "git-reason-phrase-unescaped",
+    "uri/schemes/_gitrepo.py",
+    '        reason = peer_text(response.reason or "")\n',
+    '        reason = response.reason or ""\n',
+    f"{_PEER}::test_the_reason_phrase_of_a_git_api_reply_is_shown_escaped",
+    "a git API error's reason phrase reaches the message as the server sent it",
+)
+mutant(
+    "http-refused-redirect-location-unbounded",
+    f"{_HTTP_PKG}/_follow.py",
+    '    where = peer_text(shown(location), 200) if location else "(none)"\n',
+    '    where = shown(location) if location else "(none)"\n',
+    f"{_PEER}::test_a_redirect_that_is_refused_is_shown_cut_and_with_an_escaped_reason",
+    "a refused redirect's message holds the whole Location",
+)

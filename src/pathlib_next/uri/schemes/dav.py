@@ -12,6 +12,7 @@ from ... import FileStat
 from .. import Uri
 from ..source import compose_uri
 from . import _httpdate
+from ._http._headers import peer_text
 from .http import (
     _EXCLUSIVE_CREATE,
     _IDENTITY_ENCODING,
@@ -125,7 +126,10 @@ def _raise_for_multistatus(resp, path) -> None:
     if failures == []:
         return
     detail = (
-        ", ".join(f"{href} (HTTP {code})" for href, code in failures)
+        ", ".join(
+            f"{peer_text(href, 200)} (HTTP {code})" for href, code in failures[:10]
+        )
+        + (f" and {len(failures) - 10} more" if len(failures) > 10 else "")
         if failures
         else "unparseable 207 Multi-Status reply"
     )
