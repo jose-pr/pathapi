@@ -982,3 +982,18 @@ def test_a_member_name_with_a_nul_is_refused_and_the_archive_is_unchanged(tmp_pa
     assert not (root / f"a{nul}b").exists()
     _release()
     assert archive.read_bytes() == before
+
+
+def test_renaming_to_a_name_that_escapes_the_archive_is_refused_and_changes_nothing(
+    tmp_path,
+):
+    nul = chr(0)
+    archive = tmp_path / "a.zip"
+    _write_zip(archive, [("top.txt", "top")])
+    before = archive.read_bytes()
+    root = UriPath(_zip_uri(archive))
+    with pytest.raises(ValueError, match="escapes the archive root"):
+        (root / "top.txt").rename(f"a{nul}b")
+    _release()
+    assert archive.read_bytes() == before
+    assert (root / "top.txt").read_text() == "top"
