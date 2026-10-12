@@ -104,10 +104,9 @@ def _translate_http_errors(path_obj, *, conflict=FileExistsError):
     `conflict` is what a 409 means: for a write (PUT, MKCOL, MOVE) RFC 4918
     uses 409 for a missing parent collection, so writers pass
     FileNotFoundError."""
-    # `from None`: a requests exception can carry a URL (a proxy URL from
-    # the environment included) with credentials in it, and a chained cause
-    # is printed by every formatted traceback and `logging.exception`. The
-    # status code/reason or the exception type stay in the message instead.
+    # `from None`: a requests exception can carry a URL (a proxy URL from the
+    # environment included) with credentials, and a chained cause is printed by every
+    # traceback. The status or the exception type stays in the message.
     try:
         yield
     except _req.exceptions.HTTPError as e:
@@ -351,18 +350,9 @@ class _DirectoryListingParser(_html_parser.HTMLParser):
         )
 
     def _is_ancestor_href(self, href):
-        # With a `base_url`, anything but a direct child is skipped.
-        # An absolute href is normally the "up a level" link -- Apache/
-        # nginx don't always render it as "../" (e.g. "/files/" from
-        # "/files/sub/"), and `_aherf2filename()` only looks at the href's
-        # last path segment, not the anchor's text, so that case isn't
-        # caught by the Parent Directory/../ name check above. But some
-        # reverse-proxied or absolute-URL-configured servers render EVERY
-        # entry as an absolute href, not just the parent link -- a blanket
-        # `startswith('/')` filter would then silently drop the whole
-        # listing. Scope the filter to hrefs outside the current listing's
-        # own path instead (falls back to the old blanket behavior if the
-        # listing had no parseable "Index of ..." <title>).
+        # With a `base_url`, anything but a direct child is skipped: the parent link is
+        # not always "../" (it may be the absolute "/files/"), yet a server that renders
+        # every entry as an absolute href must keep its listing, so the filter is scoped.
         if self.base_url:
             return not self._is_child_href(href)
         if not href.startswith("/"):
@@ -871,10 +861,9 @@ class HttpBackend(_ty.NamedTuple):
         url, auth = _split_userinfo(uri if isinstance(uri, str) else uri.as_uri(False))
         args = {**self.requests_args, **kwargs}
         if self.requests_args.get("headers") and kwargs.get("headers"):
-            # Merged key by key: the caller's `with_session(headers=...)`
-            # (an auth token, say) must survive a request that sends its
-            # own headers (PROPFIND `Depth`, MOVE `Destination`); the
-            # request's own values win on a shared key.
+            # Merged key by key: the caller's `with_session(headers=...)` (an auth token) must
+            # survive a request that sends its own (PROPFIND `Depth`, MOVE `Destination`);
+            # the request's values win on a shared key.
             args["headers"] = {**self.requests_args["headers"], **kwargs["headers"]}
         args.setdefault("timeout", DEFAULT_TIMEOUT)
         if (
@@ -913,10 +902,9 @@ class HttpPath(UriPath):
         return _DerivedHttpBackend(_req.Session(), {})
 
     def _listdir(self) -> list[_FileEntry]:
-        # The slash form first: a server redirects a directory's slash-less
-        # URL to it, which costs a round trip per listing. One that answers
-        # 404 for it (a file, or a server that serves the bare path only) is
-        # asked again for the path as given.
+        # The slash form first: a server redirects a directory's slash-less URL to it, at a
+        # round trip per listing. One that answers 404 for it (a file, or a server that
+        # serves the bare path only) is asked again for the path as given.
         slashed = self if self.path.endswith("/") else self.with_path(self.path + "/")
         try:
             req = self._get(slashed)
@@ -986,21 +974,15 @@ class HttpPath(UriPath):
         # `_listdir()`'s single GET already carries type/size/mtime for
         # every child -- reuse it instead of `iterdir()` + a HEAD per child.
         for entry in self._listdir():
-            # Directory-listing entries for subdirectories conventionally
-            # carry a trailing "/" (e.g. htmllistparse's FileEntry.name ==
-            # "sub/"). Without stripping it, the child's own .path would end
-            # in "/" too, and Pathname.name derives from segments[-1] --
-            # which is "" for a trailing-slash path, so every subdirectory
-            # entry silently got name == "".
+            # A subdirectory entry carries a trailing "/" (htmllistparse's name is "sub/"):
+            # strip it, or the child's path ends in "/" and `Pathname.name` (the last segment)
+            # is "".
             is_dir = entry.name.endswith("/")
             name = entry.name.removesuffix("/")
             if not _utils.is_safe_child_name(name):
-                # A listing is untrusted input: wsgidav's table renders its
-                # parent row as `<a href="..">`, and a `<pre>` index can
-                # carry `./`. Yielding "." or ".." as a child made
-                # `child.unlink()` DELETE the parent collection (the client
-                # normalizes `/d/..` to `/`) and `walk()` loop forever.
-                # Filtered here so every parser branch is covered.
+                # A listing is untrusted: wsgidav renders its parent row as `<a href="..">` and a
+                # `<pre>` index can carry `./`. "." or ".." as a child would make `unlink()` DELETE
+                # the parent collection and `walk()` loop forever. Filtered here for every parser.
                 continue
             if is_dir:
                 stat = FileStat(
@@ -1013,19 +995,16 @@ class HttpPath(UriPath):
                     is_dir=False,
                 )
             else:
-                # No exact byte count or no date in the listing (the stdlib
-                # `<ul>` index, a "1.2K" column): the entry is a file, but a
-                # size or time here would be made up, so the hint is
+                # No exact byte count or no date in the listing (the stdlib `<ul>` index, a "1.2K"
+                # column): the entry is a file, but a size or time would be made up, so the hint is
                 # type-only and `stat()` asks the server.
                 stat = FileStat(is_dir=False, size_known=False)
             yield name, stat
 
     def _is_dir(self, resp: _req.Response):
-        # Judged on the FINAL response, after redirects: a redirect itself
-        # is no directory signal (http->https, CDN and "latest" download
-        # links all redirect to files).
-        # The path of that URL: a query or fragment does not make a
-        # directory a file.
+        # Judged on the FINAL response, after redirects (http->https, CDN and "latest"
+        # download links redirect to files), by the path of that URL: a query or fragment
+        # does not make a directory a file.
         return _urlparse.urlsplit(resp.url).path.endswith(("/", "/..", "/."))
 
     def stat(self, *, follow_symlinks=True, walk_up_last_modified=False):
@@ -1071,10 +1050,8 @@ class HttpPath(UriPath):
                 resp = self.backend.request("HEAD", target, headers=_IDENTITY_ENCODING)
                 resp.close()
                 if resp.status_code == 405:
-                    # Mirror the pre-redirect loop's HEAD-405 fallback --
-                    # without this, a server/proxy that rejects HEAD
-                    # everywhere (not just pre-redirect) surfaced
-                    # PermissionError for an existing, redirect-only path.
+                    # The HEAD-405 fallback again after a redirect: a server or proxy that rejects HEAD
+                    # everywhere would otherwise raise PermissionError for an existing path.
                     resp = self.backend.request(
                         "GET", target, stream=True, headers=_IDENTITY_ENCODING
                     )
@@ -1133,13 +1110,9 @@ class HttpPath(UriPath):
         return HttpWriteStream(self, exclusive=mode == "x")
 
     def unlink(self, missing_ok=False):
-        # A server that honours DELETE on a collection (WebDAV, RFC 4918)
-        # removes the whole tree, while pathlib's unlink() never removes a
-        # directory -- refuse one. Limitation: over http: this relies on the
-        # HEAD-based `stat()` heuristic, which cannot see every collection
-        # (a wsgidav `/d/` answers HEAD with a plain 200 and reads as a
-        # file); a child from `iterdir()` carries its listing's is_dir hint,
-        # so that route is covered. Use `dav:` for reliable detection.
+        # A server that honours DELETE on a collection (WebDAV, RFC 4918) removes the whole
+        # tree, and unlink() never removes a directory: refuse one. Over http: this uses the
+        # HEAD `stat()` heuristic, which misses some collections (see `dav:` for reliable ones).
         if self.is_dir():
             raise IsADirectoryError(
                 _errno.EISDIR, _os.strerror(_errno.EISDIR), str(self)
@@ -1158,11 +1131,9 @@ class HttpPath(UriPath):
             resp.raise_for_status()
 
     def rmdir(self):
-        # An empty directory's listing and a file whose body happens to
-        # parse to zero entries are indistinguishable from `_listdir()`
-        # alone -- without this check, rmdir() on a *file* silently
-        # DELETEd it instead of raising NotADirectoryError like
-        # os.rmdir()/pathlib.Path.rmdir() do.
+        # An empty directory's listing and a file whose body parses to zero entries look
+        # alike from `_listdir()`: without this check rmdir() of a file would DELETE it
+        # instead of raising NotADirectoryError.
         if not self.is_dir():
             raise NotADirectoryError(self)
         # `_scandir()`, not the raw `_listdir()`: a listing's own "."/".."
