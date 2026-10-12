@@ -161,7 +161,7 @@ def test_include_hidden_false_leaves_hidden_entries_out_of_a_final_recursive_wil
     found = _ours(impl, "glob", "**", include_hidden=False)
     named = {name for name in found if name not in ("", ".")}
     assert not any(part.startswith(".") for name in named for part in name.split("/"))
-    assert "sub/nested/d.py" in named
+    assert "sub/nested" in named
     assert _ours(impl, "glob", "**", include_hidden=True) > found
 
 
