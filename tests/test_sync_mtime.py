@@ -12,7 +12,7 @@ import pytest
 
 from pathlib_next import LocalPath
 from pathlib_next.mempath import MemPath
-from pathlib_next.utils.stat import FileStat
+from pathlib_next import FileStat
 from pathlib_next.utils.sync import PathAndStat, PathSyncer, SyncEvent
 from pathlib_next.utils.sync import _quick_check_in_sync, _same_mtime
 

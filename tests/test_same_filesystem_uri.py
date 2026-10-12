@@ -11,7 +11,7 @@ import pytest
 
 from pathlib_next.path import _contains, _same_file
 from pathlib_next.uri import UriPath, _DerivedBackend
-from pathlib_next.utils.stat import FileStat
+from pathlib_next import FileStat
 from pathlib_next.utils.sync import PathSyncer, _paths_overlap
 
 #: An IP literal (TEST-NET-1): `PathSyncer` asks whether a URI is local, and

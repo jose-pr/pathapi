@@ -411,13 +411,13 @@ def test_sftppath_operations():
 
         def stat(self, path):
             self.actions.append(("stat", path))
-            from pathlib_next.utils.stat import FileStat
+            from pathlib_next import FileStat
 
             return FileStat(is_dir=True)
 
         def lstat(self, path):
             self.actions.append(("lstat", path))
-            from pathlib_next.utils.stat import FileStat
+            from pathlib_next import FileStat
 
             return FileStat(is_dir=False)
 
@@ -599,7 +599,7 @@ class _RegularFileSftpClient(_FakeSftpClient):
     def stat(self, path):
         import stat as stat_module
 
-        from pathlib_next.utils.stat import FileStat
+        from pathlib_next import FileStat
 
         return FileStat(st_mode=stat_module.S_IFREG | 0o644, st_size=len(b"x"))
 
@@ -1129,7 +1129,7 @@ def test_pathsyncer_sftp_falls_back_to_streaming_when_backend_unsupported(
             self._content = content
 
         def stat(self, path):
-            from pathlib_next.utils.stat import FileStat
+            from pathlib_next import FileStat
 
             return FileStat(is_dir=False)
 
@@ -1384,7 +1384,7 @@ class _LinkAndRenameClient(_FakeSftpClient):
     def _attr(self, path):
         import stat as stat_module
 
-        from pathlib_next.utils.stat import FileStat
+        from pathlib_next import FileStat
 
         entry = self.entries.get(path)
         if entry is None:

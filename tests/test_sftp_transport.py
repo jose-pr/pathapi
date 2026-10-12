@@ -719,7 +719,7 @@ def test_copy_works_without_asyncssh_installed():
         sys.modules["asyncssh"] = None  # a paramiko-only ('sftp' extra) install
         from pathlib_next.mempath import MemPath
         from pathlib_next.uri.schemes import sftp as pkg
-        from pathlib_next.utils.stat import FileStat
+        from pathlib_next import FileStat
 
         class Client:
             def stat(self, path):

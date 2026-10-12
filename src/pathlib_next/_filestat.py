@@ -3,15 +3,25 @@ from __future__ import annotations
 import stat as _stat
 import typing as _ty
 
-from .. import utils as _utils
-from ..protocols import FileStatLike as _FStat
+from .protocols import FileStatLike as _FStat
 
 if _ty.TYPE_CHECKING:
     from os import stat_result as _os_stat
 
-    from ..path import Path
+    from .path import Path
 
 __all__ = ["FileStat"]
+
+
+def sizeof_fmt(num: _ty.Union[int, float]) -> str:
+    for unit in ("", "K", "M", "G", "T", "P", "E", "Z"):
+        if abs(num) < 1024:
+            if unit:
+                return "%3.1f%s" % (num, unit)
+            else:
+                return str(int(num))
+        num /= 1024.0
+    return "%.1f%s" % (num, "Y")
 
 
 class FileStat(_FStat):
@@ -100,7 +110,7 @@ class FileStat(_FStat):
         return "<%s mode=%o, size=%s, mtime=%d>" % (
             type(self).__name__,
             self.st_mode,
-            _utils.sizeof_fmt(self.st_size),
+            sizeof_fmt(self.st_size),
             self.st_mtime,
         )
 

@@ -28,7 +28,7 @@ import asyncssh.packet as _packet
 
 from ... import Source
 from .... import utils as _utils
-from ....utils.stat import FileStat
+from .... import FileStat
 from . import _checkfile, _errors
 from ._sshconfig import _DEFAULT_SSH_CONFIG, _check_host, _check_proxy_user
 

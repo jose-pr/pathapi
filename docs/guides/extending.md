@@ -45,7 +45,7 @@ deletes when `rename()` is missing) or raise `NotImplementedError`:
 
 | Method | Contract |
 | --- | --- |
-| `stat(*, follow_symlinks=True)` | a `FileStatLike`; `utils.stat.FileStat(st_mode=None, st_size=0, st_mtime=0, is_dir=False)` is ready-made. Raise `FileNotFoundError` for a missing path. |
+| `stat(*, follow_symlinks=True)` | a `FileStatLike`; `FileStat(st_mode=None, st_size=0, st_mtime=0, is_dir=False)` is ready-made. Raise `FileNotFoundError` for a missing path. |
 | `iterdir()` | yield child instances; raise `FileNotFoundError`/`NotADirectoryError` like pathlib. Required for any listing: `copy(recursive=True)` and `for child in path` call it, and the default `_scandir()` is built on it. |
 | `_scandir()` | optional addition: yield `(name, FileStat or None)` when the listing already carries metadata. `walk()`, `glob()`, `rm(recursive=True)` and `PathSyncer` use it instead of a `stat()` per child. The stat is non-following; `None` means "unknown", and `FileStat(is_dir=False, size_known=False)` means "a file, size and time unknown" (a listing that knows a type and not a size: `walk()`, `glob()` and `rm(recursive=True)` use it, `stat()` of the child asks again, `PathSyncer` re-stats it). Skip a name that is not one path component (`""`, `.`, `..`, or one containing `/` or NUL; `utils.is_safe_child_name()` decides): a server chooses its listing, and a joined `..` leaves the directory. |
 | `_open(mode, buffering)` | a **binary** stream. `open()` validates the mode and passes a canonical `"r"`, `"w"`, `"x"` or `"a"`, optionally with `"+"` (never `"b"`/`"t"`); raise `NotImplementedError` for a mode you do not support. `read_text()`, `write_bytes()`, `copy()`, `touch()` all derive from it. |
@@ -140,7 +140,7 @@ import errno
 import os
 
 from pathlib_next.uri import UriPath
-from pathlib_next.utils.stat import FileStat
+from pathlib_next import FileStat
 
 
 class MyPath(UriPath):

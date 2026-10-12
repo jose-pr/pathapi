@@ -24,7 +24,7 @@ else:
 
 from .. import utils as _utils
 from ..path import Path, Pathname, _name_stem, _name_suffix
-from ..utils.stat import FileStat
+from .. import FileStat
 from .query import Query
 from .source import (
     _ERRORS,

@@ -10,7 +10,7 @@ import pytest
 import pathlib_next
 
 from pathlib_next.mempath import MemPath, MemPathBackend
-from pathlib_next.utils.stat import FileStat
+from pathlib_next import FileStat
 
 
 class Counting(MemPath):

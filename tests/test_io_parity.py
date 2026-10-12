@@ -12,7 +12,7 @@ from capabilities import requires_posix_modes
 import pathlib_next
 from pathlib_next.mempath import MemPath
 from pathlib_next.uri import UriPath
-from pathlib_next.utils.stat import FileStat
+from pathlib_next import FileStat
 from pathlib_next.utils.sync import PathSyncer
 
 # --- touch() on a generic backend -----------------------------------------

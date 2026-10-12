@@ -15,7 +15,7 @@ pytest.importorskip("uritools")
 
 from pathlib_next.mempath import MemPath
 from pathlib_next.uri import UriPath
-from pathlib_next.utils.stat import FileStat
+from pathlib_next import FileStat
 from pathlib_next.utils.sync import PathAndStat, PathSyncer
 from pathlib_next.utils.sync import _quick_check_in_sync
 

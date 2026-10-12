@@ -16,7 +16,7 @@ import pytest
 
 import pathlib_next
 from pathlib_next.mempath import MemPath
-from pathlib_next.utils.stat import FileStat
+from pathlib_next import FileStat
 from pathlib_next.utils.sync import PathAndStat, PathSyncer, SyncEvent
 
 IS_WINDOWS = sys.platform == "win32"

@@ -18,7 +18,7 @@ import pytest
 from pathlib_next import LocalPath
 from pathlib_next.mempath import MemPath
 from pathlib_next.utils import make_archive, unpack_archive
-from pathlib_next.utils.stat import FileStat
+from pathlib_next import FileStat
 
 PAYLOAD = bytes(range(256)) * 40  # 10240 bytes
 

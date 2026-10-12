@@ -464,7 +464,7 @@ def test_sibling_prefix_is_not_an_overlap(tmp_path):
 import errno
 import stat as stat_module
 
-from pathlib_next.utils.stat import FileStat
+from pathlib_next import FileStat
 
 
 def _events():

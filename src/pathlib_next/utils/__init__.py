@@ -25,7 +25,6 @@ __all__ = [
     "notimplemented",
     "parsedate",
     "sha256",
-    "sizeof_fmt",
     "unpack_archive",
 ]
 
@@ -195,17 +194,6 @@ def parsedate(date: _ty.Union[str, _time.struct_time, tuple, int, float, None]):
     if offset is None and len(date) > 9:
         offset = date[9]
     return _calendar.timegm(tuple(date)[:6]) - (offset or 0)
-
-
-def sizeof_fmt(num: _ty.Union[int, float]) -> str:
-    for unit in ("", "K", "M", "G", "T", "P", "E", "Z"):
-        if abs(num) < 1024:
-            if unit:
-                return "%3.1f%s" % (num, unit)
-            else:
-                return str(int(num))
-        num /= 1024.0
-    return "%.1f%s" % (num, "Y")
 
 
 def notimplemented(method):

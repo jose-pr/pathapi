@@ -5,7 +5,7 @@ from base64 import b64decode as _b64decode
 
 import uritools as _uritools
 
-from ...utils.stat import FileStat
+from ... import FileStat
 from .. import UriPath
 from ..source import ERRORS
 

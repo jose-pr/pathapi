@@ -381,7 +381,7 @@ class DictScopePath(UriPath):
         return {}
 
     def stat(self, *, follow_symlinks=True):
-        from pathlib_next.utils.stat import FileStat
+        from pathlib_next import FileStat
 
         if self.path in self.store:
             return FileStat(st_mode=0o100644, st_size=len(self.store[self.path]))

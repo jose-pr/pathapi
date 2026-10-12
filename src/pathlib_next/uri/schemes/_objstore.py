@@ -21,7 +21,7 @@ import typing as _ty
 
 from ... import utils as _utils
 from ...path import check_follow, copy_error_predicate
-from ...utils.stat import FileStat
+from ... import FileStat
 from .. import UriPath as _UriPath
 
 _state = _threading.local()

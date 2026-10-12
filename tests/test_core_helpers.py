@@ -8,7 +8,7 @@ import pytest
 
 import pathlib_next
 from pathlib_next import utils
-from pathlib_next.utils.stat import FileStat
+from pathlib_next import FileStat
 
 # --- LRU ------------------------------------------------------------------
 

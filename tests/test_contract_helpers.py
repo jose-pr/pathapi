@@ -25,7 +25,7 @@ from pathlib_next.testing import (
     ReadPathContract,
     populate_fixture_tree,
 )
-from pathlib_next.utils.stat import FileStat
+from pathlib_next import FileStat
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 

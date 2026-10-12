@@ -30,6 +30,13 @@ try:
 except _metadata.PackageNotFoundError:  # a source tree that is not installed
     __version__ = "0+unknown"
 
+from .fspath import LocalPath, PosixPathname, WindowsPathname
+from .path import FsPathLike, Path, PathLike, Pathname, PurePathLike
+from .protocols import BinaryOpen, Chmod, Stat
+from .utils import glob as glob
+from .utils import sync as sync
+from ._filestat import FileStat
+
 _uri_unavailable: "ImportError | None" = None
 try:
     from .uri import Uri as Uri
@@ -64,11 +71,3 @@ def __getattr__(name: str):
             f"module {__name__!r} has no attribute {name!r}: {_uri_unavailable}"
         ) from _uri_unavailable
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
-from .fspath import LocalPath, PosixPathname, WindowsPathname
-from .path import FsPathLike, Path, PathLike, Pathname, PurePathLike
-from .protocols import BinaryOpen, Chmod, Stat
-from .utils import glob as glob
-from .utils import sync as sync
-from .utils.stat import FileStat

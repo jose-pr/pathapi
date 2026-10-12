@@ -11,7 +11,7 @@ import typing as _ty
 import urllib.parse as _urlparse
 
 from ... import utils as _utils
-from ...utils.stat import FileStat
+from ... import FileStat
 from .. import DerivedBackend, UriPath
 from ._extras import import_or_stub as _import_or_stub
 

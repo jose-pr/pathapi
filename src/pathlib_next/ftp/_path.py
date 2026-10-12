@@ -15,7 +15,7 @@ from .._tree import TreePath
 from ..utils import as_mode as _as_mode
 from ..utils import is_safe_child_name as _is_safe_child_name
 from ..utils._commit import CommitOnClose
-from ..utils.stat import FileStat
+from .._filestat import FileStat
 from ._backend import (
     DEFAULT_PORT,
     DEFAULT_TIMEOUT,

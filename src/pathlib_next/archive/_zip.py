@@ -12,7 +12,7 @@ import zipfile as _zipfile
 import zlib as _zlib
 from contextlib import contextmanager as _contextmanager
 
-from ..utils.stat import FileStat
+from .._filestat import FileStat
 from ._backend import _ArchiveBackend, _LazyReadFile, _local_outer_path, _spool
 from ._snapshot import NO_LINK as _NO_LINK
 from ._snapshot import _Snapshot

@@ -4,7 +4,7 @@ import base64 as _base64
 import errno as _errno
 
 from ... import utils as _utils
-from ...utils.stat import FileStat
+from ... import FileStat
 from ._gitrepo import (  # noqa: F401  (re-exported)
     InsecureTransportWarning,
     RepoBackend,

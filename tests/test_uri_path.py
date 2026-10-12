@@ -2,7 +2,7 @@ import pytest
 
 from pathlib_next.uri import Source, Uri, UriPath
 from pathlib_next.uri.schemes.file import FileUri
-from pathlib_next.utils.stat import FileStat
+from pathlib_next import FileStat
 
 
 def test_scheme_dispatch_file():

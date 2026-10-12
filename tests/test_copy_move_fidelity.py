@@ -16,7 +16,7 @@ from capabilities import requires_posix_modes
 
 from pathlib_next import LocalPath
 from pathlib_next.mempath import MemPath
-from pathlib_next.utils.stat import FileStat
+from pathlib_next import FileStat
 
 posix_only = requires_posix_modes
 

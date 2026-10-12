@@ -26,7 +26,7 @@ from . import utils as _utils
 from .protocols import BinaryOpen, Chmod, Stat
 from .protocols.io import _ASK_STAT
 from .utils import glob as _glob
-from .utils.stat import FileStat
+from ._filestat import FileStat
 
 __all__ = [
     "FsPathLike",

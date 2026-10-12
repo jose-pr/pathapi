@@ -10,7 +10,7 @@ import warnings
 import zipfile
 
 from . import _is_safe_name, is_windows_flavoured
-from .stat import FileStat
+from .._filestat import FileStat
 
 if _ty.TYPE_CHECKING:
     from ..path import Path

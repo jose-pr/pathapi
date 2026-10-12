@@ -98,10 +98,8 @@ EXPORTS = {
         "notimplemented",
         "parsedate",
         "sha256",
-        "sizeof_fmt",
         "unpack_archive",
     },
-    "pathlib_next.utils.stat": {"FileStat"},
     "pathlib_next.utils.glob": {
         "NonRelativePatternError",
         "RECURSIVE",

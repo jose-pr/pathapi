@@ -1,7 +1,7 @@
 import pytest
 import unittest.mock
 from pathlib_next.mempath import MemPath
-from pathlib_next.utils.stat import FileStat
+from pathlib_next import FileStat
 
 
 def test_rm_ignore_error_callable_false():

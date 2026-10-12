@@ -8,7 +8,7 @@ from io import IOBase
 from urllib.parse import quote as _urlquote
 
 from .path import Path, Pathname, _os_error
-from .utils.stat import FileStat
+from ._filestat import FileStat
 
 
 class MemPathBackend(dict):

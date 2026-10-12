@@ -8,7 +8,7 @@ import xml.etree.ElementTree as _ET
 
 from ... import utils as _utils
 from ...path import check_follow
-from ...utils.stat import FileStat
+from ... import FileStat
 from .. import Uri
 from ..source import compose_uri
 from .http import (

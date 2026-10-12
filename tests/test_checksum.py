@@ -10,7 +10,7 @@ import pytest
 from pathlib_next.mempath import MemPath
 from pathlib_next.protocols.checksum import NativeChecksum
 from pathlib_next.utils import checksum as checksum_utils
-from pathlib_next.utils.stat import FileStat
+from pathlib_next import FileStat
 from pathlib_next.utils.sync import PathSyncer
 
 

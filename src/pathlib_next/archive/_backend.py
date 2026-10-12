@@ -9,7 +9,7 @@ import threading as _threading
 import weakref as _weakref
 
 from ..path import Path, _local_file
-from ..utils.stat import FileStat
+from .._filestat import FileStat
 from ._snapshot import _Snapshot
 
 _registry_lock = _threading.Lock()

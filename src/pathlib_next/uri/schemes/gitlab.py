@@ -5,7 +5,7 @@ import itertools as _itertools
 import urllib.parse as _urlparse
 
 from ... import utils as _utils
-from ...utils.stat import FileStat
+from ... import FileStat
 from .http import _server_size
 from ._gitrepo import (  # noqa: F401  (re-exported)
     InsecureTransportWarning,

@@ -10,7 +10,7 @@ try:
 except ImportError:  # pragma: no cover - a Python built without lzma
     _LZMAError = _zlib.error
 
-from ..utils.stat import FileStat
+from .._filestat import FileStat
 from ._backend import _ArchiveBackend, _LazyReadFile, _local_outer_path, _spool
 from ._names import _normalize_member_name
 

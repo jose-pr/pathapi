@@ -116,7 +116,7 @@ def test_stat_adapter_filename_from_readdir_entry():
 
 
 def test_filestat_from_stat_adapter_roundtrip():
-    from pathlib_next.utils.stat import FileStat
+    from pathlib_next import FileStat
 
     attrs = _attrs(type=asyncssh.FILEXFER_TYPE_DIRECTORY, permissions=0o40755, size=0)
     adapted = backend_mod._StatAdapter(attrs)

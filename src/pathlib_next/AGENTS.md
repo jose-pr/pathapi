@@ -1296,7 +1296,7 @@ class PathAndStat:
 `refresh(follow_symlink=True)`; `is_*` attributes delegate to the stat
 (always-`False` callables when missing).
 
-### `stat` (`pathlib_next.utils.stat`)
+### `FileStat` (`pathlib_next`)
 
 ```python
 class FileStat:
@@ -1392,7 +1392,6 @@ def as_error_predicate(on_error) -> OfferedOnce: ...
 class OfferedOnce:
     def __call__(self, error, path) -> bool: ...
 def notimplemented(method): ...
-def sizeof_fmt(num) -> str: ...
 def parsedate(date): ...
 
 class LRU:
@@ -1437,7 +1436,6 @@ UNCHANGED = None
   passes it down never offers one failure twice.
 - **`notimplemented()`** — decorator; calling raises
   `NotImplementedError("Method not implemented: <name>")`.
-- **`sizeof_fmt()`** — `1536` → `"1.5K"`.
 - **`parsedate()`** — UTC epoch seconds from an HTTP date
   string (zone offset applied, none = UTC), a `struct_time`/tuple (UTC minus
   any offset), or a number (returned unchanged); `None` or an unparseable

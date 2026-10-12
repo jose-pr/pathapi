@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pathlib as _pathlib
 
-from ..utils.stat import FileStat
+from .._filestat import FileStat
 from ._names import _normalize_member_name
 
 MAX_LINKS = 40

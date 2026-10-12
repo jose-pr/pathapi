@@ -6,7 +6,7 @@
 
 ::: pathlib_next.utils.sync
 
-::: pathlib_next.utils.stat
+::: pathlib_next.FileStat
 
 ::: pathlib_next.utils.checksum
 

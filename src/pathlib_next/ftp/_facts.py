@@ -5,7 +5,7 @@ import stat as _stat
 import time as _time
 
 from ..utils import is_safe_child_name as _is_safe_child_name
-from ..utils.stat import FileStat
+from .._filestat import FileStat
 
 # Reply codes meaning "command not implemented" (RFC 959): the server lacks
 # the command, as opposed to refusing it for this path.

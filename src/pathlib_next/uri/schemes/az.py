@@ -10,7 +10,7 @@ import time as _time
 import typing as _ty
 
 from ... import utils as _utils
-from ...utils.stat import FileStat
+from ... import FileStat
 from .. import Uri
 from . import _objstore as _store
 from ._extras import import_client as _import_client
