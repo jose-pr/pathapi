@@ -155,6 +155,16 @@ def test_include_hidden_false_filters_and_skips_hidden_dirs(impl):
     }
 
 
+def test_include_hidden_false_leaves_hidden_entries_out_of_a_final_recursive_wildcard(
+    impl,
+):
+    found = _ours(impl, "glob", "**", include_hidden=False)
+    named = {name for name in found if name not in ("", ".")}
+    assert not any(part.startswith(".") for name in named for part in name.split("/"))
+    assert "sub/nested/d.py" in named
+    assert _ours(impl, "glob", "**", include_hidden=True) > found
+
+
 def test_missing_or_file_base_selects_nothing(tree, impl):
     for base in (impl / "missing", impl / "a.txt"):
         for pattern in ("*", "**", "**/*.py", "x/*"):
