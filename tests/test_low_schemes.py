@@ -4,13 +4,13 @@ propstat groups. Every server is an in-process loopback handler."""
 
 import errno
 import http.server
-import importlib.util
 import io
 import tarfile
 import zipfile
 
 import pytest
 
+from http_fakes import spy_on_sends
 from pathlib_next.uri import UriPath
 from pathlib_next.uri.schemes.archive import _split_archive_path
 
@@ -111,12 +111,6 @@ def test_outer_archive_still_reads(nested_zip):
 # --- HTTP ------------------------------------------------------------------
 
 
-#: The HTTP/WebDAV tests need the `http` extra; the archive tests above do not.
-needs_http = pytest.mark.skipif(
-    importlib.util.find_spec("requests") is None, reason="requires requests"
-)
-
-
 def _handler(routes, **methods):
     """A handler answering GET from `routes` (path -> (status, headers,
     body)) and any other method from `methods` (name -> callable(handler))."""
@@ -144,20 +138,14 @@ def _handler(routes, **methods):
 # --- httpdav-iterdir-on-a-file ------------------------------------------------
 
 
-@needs_http
-def test_iterdir_on_a_non_html_file_raises_without_reading_it(serve_http, monkeypatch):
+def test_iterdir_on_a_non_html_file_raises_without_reading_it(
+    serve_http, monkeypatch, http_transport_kind
+):
     body = b"<a href='x'>x</a>" * 20000
     routes = {"/big.bin": (200, {"Content-Type": "application/octet-stream"}, body)}
-    import requests
-
-    streamed = []
-    real = requests.Session.request
-
-    def request(self, method, url, **kwargs):
-        streamed.append(kwargs.get("stream"))
-        return real(self, method, url, **kwargs)
-
-    monkeypatch.setattr(requests.Session, "request", request)
+    streamed = spy_on_sends(
+        monkeypatch, lambda method, url, **kwargs: kwargs.get("stream")
+    )
     with serve_http(_handler(routes)) as base:
         with pytest.raises(NotADirectoryError) as excinfo:
             list(UriPath(f"{base}/big.bin").iterdir())
@@ -168,7 +156,6 @@ def test_iterdir_on_a_non_html_file_raises_without_reading_it(serve_http, monkey
     assert streamed == [True, True]
 
 
-@needs_http
 def test_iterdir_on_a_text_file_of_the_real_server_raises(http_server):
     with pytest.raises(NotADirectoryError):
         list(UriPath(f"{http_server}/a.txt").iterdir())
@@ -178,7 +165,6 @@ def test_iterdir_on_a_text_file_of_the_real_server_raises(http_server):
     ]
 
 
-@needs_http
 def test_html_page_links_to_other_hosts_are_not_children(serve_http):
     page = (
         b"<html><body>"
@@ -195,7 +181,6 @@ def test_html_page_links_to_other_hosts_are_not_children(serve_http):
 # --- httpdav-listing-scope-uses-title -------------------------------------------
 
 
-@needs_http
 def test_listing_behind_a_prefix_is_scoped_by_the_request_url(serve_http):
     listing = (
         b"<html><head><title>Index of /pub</title></head><body><pre>"
@@ -213,7 +198,6 @@ def test_listing_behind_a_prefix_is_scoped_by_the_request_url(serve_http):
     assert children["sub"].is_dir()
 
 
-@needs_http
 def test_table_listing_skips_foreign_and_non_child_hrefs(serve_http):
     listing = (
         b"<html><body><table>"
@@ -228,7 +212,6 @@ def test_table_listing_skips_foreign_and_non_child_hrefs(serve_http):
         assert [c.name for c in UriPath(f"{base}/d/").iterdir()] == ["a.txt"]
 
 
-@needs_http
 def test_parser_without_base_url_keeps_title_scoping():
     from pathlib_next.uri.schemes.http import _DirectoryListingParser
 
@@ -257,7 +240,6 @@ def _reply(status):
     return handle
 
 
-@needs_http
 def test_put_409_missing_parent_is_file_not_found(serve_http):
     with serve_http(_handler({}, PUT=_reply(409))) as base:
         p = UriPath(f"{base}/nodir/f.txt")
@@ -267,7 +249,6 @@ def test_put_409_missing_parent_is_file_not_found(serve_http):
     assert excinfo.value.filename == str(p)
 
 
-@needs_http
 def test_410_gone_is_file_not_found_and_errors_carry_errno(serve_http):
     routes = {"/gone": (410, {}, b""), "/secret": (403, {}, b"")}
     with serve_http(_handler(routes)) as base:
@@ -282,7 +263,6 @@ def test_410_gone_is_file_not_found_and_errors_carry_errno(serve_http):
     assert denied.value.errno == errno.EACCES
 
 
-@needs_http
 def test_dav_statuses_carry_errno_and_filename(serve_http):
     from pathlib_next.uri.schemes.dav import DavPath
 
@@ -345,7 +325,6 @@ def _propfind(self):
     self.wfile.write(body)
 
 
-@needs_http
 def test_dav_reads_every_successful_propstat(serve_http):
     from pathlib_next.uri.schemes.dav import DavPath
 

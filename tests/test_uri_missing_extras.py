@@ -49,16 +49,21 @@ def _run(code: str, blocked=()) -> subprocess.CompletedProcess:
     )
 
 
+#: URLs that need no client library: they build, join and compare with
+#: `requests` hidden, and are sent by the built-in HTTP transport.
+_HTTP_URLS = [
+    "http://h/x",
+    "https://h/x",
+    "dav://h/x",
+    "davs://h/x",
+    "github://github.com/o/r/dir/f.txt",
+    "gitlab://gitlab.com/o/r/dir/f.txt",
+    "git://github.com/o/r/dir/f.txt",
+    "git+gitlab://gitlab.com/o/r/dir/f.txt",
+]
+
 #: scheme URL, modules to hide, the extra its message must name.
 _CASES = [
-    ("http://h/x", ["requests"], "http"),
-    ("https://h/x", ["requests"], "http"),
-    ("dav://h/x", ["requests"], "http"),
-    ("davs://h/x", ["requests"], "http"),
-    ("github://github.com/o/r/dir/f.txt", ["requests"], "http"),
-    ("gitlab://gitlab.com/o/r/dir/f.txt", ["requests"], "http"),
-    ("git://github.com/o/r/dir/f.txt", ["requests"], "http"),
-    ("git+gitlab://gitlab.com/o/r/dir/f.txt", ["requests"], "http"),
     ("s3://b/k", ["botocore", "boto3"], "s3"),
     ("gs://b/k", ["google", "google.cloud", "google.cloud.storage"], "gs"),
     (
@@ -69,7 +74,10 @@ _CASES = [
 ]
 
 
-@pytest.mark.parametrize("url, blocked, extra", _CASES)
+@pytest.mark.parametrize(
+    "url, blocked, extra",
+    _CASES + [(url, ["requests"], "http") for url in _HTTP_URLS],
+)
 def test_a_path_without_its_client_library_does_pure_path_work(url, blocked, extra):
     result = _run(
         f"""
@@ -130,7 +138,7 @@ def test_the_error_names_the_missing_package():
         """
         from pathlib_next.uri import UriPath
         try:
-            UriPath("http://h/x").stat()
+            UriPath("http://h/x").with_session(None)
         except ImportError as error:
             print(error.name)
             print(error.__cause__ is not None)

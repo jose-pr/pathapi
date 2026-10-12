@@ -50,6 +50,8 @@ uri = [
     "netimps>=0.4.0,<0.5",
 ]
 http = [
+    # `http:`, `dav:`, `github:`, `gitlab:` and `git:` run on the standard library;
+    # this extra adds `requests` for `RequestsTransport`.
     # Before 2.18 the bundled urllib3 imports the ABCs from `collections`
     # (a DeprecationWarning on 3.9); 2.21 caps urllib3 below 1.25, which
     # botocore 1.36 cannot share.

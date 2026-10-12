@@ -27,8 +27,8 @@ keep the core and the URI layer under separate headings.
 | Extra | Installs | Needed for |
 | --- | --- | --- |
 | *(none)* | — | `Path`, `LocalPath`, `MemPath`, `FTPPath`, `ZipPath`, `TarPath`, `ArchivePath`, `sync`, `glob`, `checksum`, `providers`, `testing`, `uripath` on local paths |
-| `uri` | `uritools`, `netimps>=0.4.0,<0.5` | `pathlib_next.uri` and **every** URI scheme (`file:`, `data:`, `ftp(s):`, archives included) |
-| `http` | `requests` + `uri` | `http(s):`, `dav(s):`, `github:`, `gitlab:`, `git:` |
+| `uri` | `uritools`, `netimps>=0.4.0,<0.5` | `pathlib_next.uri` and the URI schemes that need no client library: `file:`, `data:`, `ftp(s):`, archives, and `http(s):`, `dav(s):`, `github:`, `gitlab:`, `git:` (HTTP runs on the standard library) |
+| `http` | `requests` + `uri` | `RequestsTransport` (`with_session()`, `PATHLIB_NEXT_HTTP_TRANSPORT=requests`): `~/.netrc`, certifi, SOCKS, digest/NTLM, cookies |
 | `sftp` | `paramiko` + `uri` | `sftp:` (paramiko backend) |
 | `sftp-async` | `asyncssh` + `uri` | `sftp:` (asyncssh backend) |
 | `s3` / `gs` / `az` | `boto3` / `google-cloud-storage` / `azure-storage-blob` + `uri` | `s3:` / `gs:` / `az:` |
@@ -2003,7 +2003,7 @@ what follows it are payload (`data:,a?b` reads `a?b`), while a `#` starts the
 fragment. Read-only single file: `open("r")` only,
 `stat().st_size` is the decoded size, listing → `NotADirectoryError`.
 
-### `HttpPath` — `http:`, `https:` (`pathlib_next.uri.schemes.http`, `http` extra)
+### `HttpPath` — `http:`, `https:` (`pathlib_next.uri.schemes.http`)
 
 ```python
 class HttpPath(UriPath):
@@ -2035,31 +2035,145 @@ DEFAULT_TIMEOUT = (10, 60)
 MAX_LISTING_BYTES = 8388608
 ```
 
-- `with_transport(transport, ...)` — installs an `HttpBackend` over any
-  transport (an object with `send()`); `with_session(session, ...)` — over a
-  `RequestsTransport` for a `requests.Session`: its `headers=` and
-  `timeout=` are the backend's, the other `requests_args` (`auth=`,
-  `verify=`, ...) go to every request, request-specific headers merge over
-  the backend's.
+HTTP needs no library beyond the `uri` extra: a path sends through a
+**transport**, by default the built-in `HTTPTransport` on `http.client`.
+
+```python
+class HTTPTransport:
+    def __init__(self, *, ssl_context=None, verify=True, proxies=None): ...
+    def send(
+        self, method, url, *, headers, body=None, timeout, stream=False,
+    ): ...
+    def close(self): ...
+
+class RequestsTransport:
+    def __init__(self, session=None, **requests_args): ...
+    def send(
+        self, method, url, *, headers, body=None, timeout, stream=False,
+    ): ...
+    def close(self): ...
+
+class HTTPResponse:
+    status: int
+    reason: str
+    headers: Mapping[str, str]
+    url: str
+    def __init__(
+        self, status, reason, headers, url, body=b"", *, decode=True,
+    ): ...
+    def read(self, size=-1): ...
+    def iter_bytes(self, chunk_size=65536): ...
+    def close(self): ...
+```
+
+- **The transport contract.** Any object with `send(method, url, *, headers,
+  body=None, timeout, stream=False) -> HTTPResponse` and `close()` is a
+  transport (a context manager is optional). `send()` makes exactly one
+  request: it follows no redirect, adds no credentials and retries nothing
+  but what is stated below. `body` is `None`, `bytes`, a binary file or an
+  iterable of `bytes` (never `str`: `TypeError`). `timeout` is seconds, a
+  `(connect, read)` pair or `None` (no limit); the read half bounds each wait
+  on the server, not the whole reply. With `stream=False` the body has been
+  read when `send()` returns; with `stream=True` it is read from the
+  response, which the caller closes (an unread rest of a body closes its
+  connection). A transport raises only `TimeoutError`, `ConnectionError`,
+  `ssl.SSLError`, `ValueError` (before anything is sent, for a header or URL
+  with a control character, a URL with credentials, or another scheme) or
+  else `OSError(EIO)`; no third-party exception and no URL or header value is
+  in its text.
+- **`HTTPResponse`**: `status`, `reason`, `headers` (read-only, names compare
+  without case, a name sent twice reads as `"a, b"` and `headers.get_all()`
+  lists them), `url` (the URL requested, without fragment; an empty path is
+  `/`), `read(size=-1)`, `iter_bytes(chunk_size)`, `close()` and a context
+  manager. A `gzip` or `deflate` body is decoded, in steps of at most 256
+  KiB of output per step, unless the request set an `Accept-Encoding` naming
+  a coding of its own (`identity` counts as none); `headers` stay as
+  received, so `Content-Length` counts the encoded bytes. A body that ends
+  before the length the server stated, a chunked body cut short, and a coded
+  body that is not valid are `OSError(EIO)`, never a shorter read. A
+  transport builds one from `bytes` or from an object with `read(amount)` and
+  `close()`; a fake transport in a test does the same.
+- **`HTTPTransport(ssl_context=None, verify=True, proxies=None)`** is
+  standard library only. `https:` is verified against `ssl_context`, else
+  against `ssl.create_default_context()` (the system trust store, not
+  certifi); `verify=False` is the one way to turn verification off, and
+  `ssl_context` wins over it. Each thread keeps one idle connection per
+  server (at most 8, closed when the thread ends or on `close()`), reused for
+  its next request. A request that fails before any byte of a reply on a
+  reused connection that the server had closed is sent once more on a new
+  connection **only** if it is `GET`, `HEAD`, `OPTIONS`, `PUT`, `DELETE` or
+  `PROPFIND` and its body is `None` or in memory; any other request uses an
+  idle connection only if it carried a reply within the last second. A
+  timeout is never retried. `stream=False` holds the whole body in memory;
+  read a body that may be large with `stream=True`.
+- **Proxies.** `proxies=None` reads the environment (`HTTP_PROXY`,
+  `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`, through `urllib.request`).
+  Otherwise `proxies` is indexed with the request URL (no fragment): it
+  returns `None` (direct), one proxy, or an iterable of them to try in order
+  when a connection cannot be made (`None` in the order is a direct
+  attempt); `KeyError` means direct and the environment is not read; `{}`
+  sends everything direct. A proxy is a `str` URL or any object with a `url`
+  attribute, so a `proxylib` map works as it is:
+  `HTTPTransport(proxies=proxylib.ProxyMap("http://proxy:3128"))` (the library
+  does not import `proxylib`). A plain `dict` may use the keys `requests`
+  does (`"http"`, `"https"`, `"all"`, `"scheme://host"`). Only `http://`
+  proxies work: absolute-form requests for `http:` and `CONNECT` for
+  `https:`, with `Proxy-Authorization: Basic` from the proxy URL's userinfo
+  (sent to the proxy only); any other scheme (`socks5`, `https`) is
+  `OSError(EPROTONOSUPPORT)` naming the scheme and `RequestsTransport`. A
+  proxy that refuses `CONNECT` is a `ConnectionError` and the next proxy is
+  not tried. Proxy credentials are in no message, `repr()` or traceback.
+- **`RequestsTransport(session=None, **requests_args)`** sends with a
+  `requests.Session` (a new one that `close()` closes, or yours, which it
+  leaves open); `requests` is imported on construction, and without it the
+  constructor raises `ImportError` naming `pip install "pathlib-next[http]"`.
+  `requests_args` (`auth=`, `verify=`, `proxies=`, `cert=`, ...) go to every
+  `session.request()`. It is the way to get what the built-in transport does
+  not do: `~/.netrc`, `REQUESTS_CA_BUNDLE`/`CURL_CA_BUNDLE` and the certifi
+  bundle, SOCKS proxies, digest/NTLM `auth`, cookies, mounted adapters.
+  What the session holds for authentication (`auth`, an `Authorization`
+  among its headers, `~/.netrc`) is used for the server of the first request
+  only; a request to any other server carries just the `Authorization` it
+  was given.
+- **Choosing the transport.** `path.with_transport(transport, headers=None,
+  timeout=(10, 60), write_method="PUT", append_mode="rewrite")` installs a
+  backend over any transport (the caller closes it). `path.with_session(session,
+  ...)` is the same over `RequestsTransport(session, **requests_args)`; its
+  `headers=` and `timeout=` are the backend's, the other `requests_args` go
+  to the transport. Without either, a path's backend builds the built-in
+  transport on first use (`HttpBackend.close()` or leaving its `with` block
+  closes a transport the backend built); the environment variable
+  `PATHLIB_NEXT_HTTP_TRANSPORT` (`builtin` or `requests`) changes that
+  default for the process. `HttpBackend` is a class, no longer a named
+  tuple: `HttpBackend(transport=None, *, headers=None, timeout, write_method,
+  append_mode)`.
+- **What the backend does for every transport.** It follows redirects, adds
+  credentials and default headers (`User-Agent: pathlib-next`, `Accept: */*`),
+  applies the default timeout, and maps a status to a pathlib exception.
+  `headers` given to the backend go with every request; request-specific
+  headers merge over them by name (case-blind). A header value or URL with a
+  control character (CR and LF included) is `ValueError`, before anything is
+  sent.
 - Timeout: `DEFAULT_TIMEOUT = (10, 60)` (connect, read) unless given;
   `timeout=None` waits forever.
-- Redirects: `GET`/`HEAD`/`OPTIONS` follow them as `requests` does. Every
-  other request (`PROPFIND`, `write_method`, `PATCH`, `DELETE`, `MKCOL`,
-  `MOVE`) is sent with `allow_redirects=False`, and an `allow_redirects` in
-  `requests_args` or the call does not change that: a 307/308 (for
-  `PROPFIND` also a 301, 302 or 303) to the same scheme, host and port is
-  re-sent once with the same method, headers and body; any other 3xx,
-  another origin or a second redirect raises `OSError(EIO)` naming the
-  status and the `Location` (userinfo removed). A body that is not bytes or
-  `str` cannot be re-sent, so it raises too. A followed `GET`/`HEAD` redirect
-  to another host drops `Authorization` only (`requests`' rule): headers
-  other than `Authorization` from `with_session(headers=...)` (`X-Api-Key`,
-  a vendor token header) are sent to the new host as well, so keep a secret
-  in `Authorization` or `auth=`, or point the path at the final URL.
-- URL userinfo is sent as Basic `auth=` (not in the URL) unless
-  `requests_args`/`session.auth` set auth; it takes priority over `~/.netrc`.
-  Percent-escapes stand for octets, and those octets are the credential:
-  `caf%C3%A9` is sent as UTF-8 bytes, `%FF` as the byte `FF`.
+- Redirects: `GET`/`HEAD`/`OPTIONS` follow up to 30 (a `303` becomes a
+  `GET`); a `Location` that is not `http:` or `https:` is not followed. A
+  redirect that changes the scheme, host or port drops `Authorization` for
+  every later hop, and nothing else: headers other than `Authorization` from
+  `with_transport(headers=...)` (`X-Api-Key`, a vendor token header) are
+  sent to the new host as well, so keep a secret in `Authorization`, or
+  point the path at the final URL. Every other request
+  (`PROPFIND`, `write_method`, `PATCH`, `DELETE`, `MKCOL`, `MOVE`) is sent
+  without following: a 307/308 (for `PROPFIND` also a 301, 302 or 303) to the
+  same scheme, host and port is re-sent once with the same method, headers
+  and body; any other 3xx, another origin or a second redirect raises
+  `OSError(EIO)` naming the status and the `Location` (userinfo and query
+  removed). A body that is not `bytes` cannot be re-sent, so it raises too.
+- URL userinfo is sent as `Authorization: Basic` (not in the URL) unless
+  `headers` or the call name an `Authorization`. Percent-escapes stand for
+  octets, and those octets are the credential: `caf%C3%A9` is sent as UTF-8
+  bytes, `%FF` as the byte `FF`. The built-in transport never reads
+  `~/.netrc`.
 - `stat()` — `HEAD`
   (`GET` on 405); a redirect is followed once, at its `Location`; a final
   URL whose path ends in `/` is a directory (a query or fragment does not
@@ -2100,16 +2214,18 @@ MAX_LISTING_BYTES = 8388608
   `rename()`, `chmod()`.
 - Status mapping: 404/410 → `FileNotFoundError`, 401/403/405/501 →
   `PermissionError`, 409 → `FileExistsError` (`FileNotFoundError` for
-  writes), other → `OSError(EIO)` with the status.
+  writes), other → `OSError(EIO)` with the status. A transport's
+  `TimeoutError` and `ConnectionError` are re-raised naming the path, with
+  no cause.
 
-### `DavPath` — `dav:`, `davs:` (`pathlib_next.uri.schemes.dav`, `http` extra)
+### `DavPath` — `dav:`, `davs:` (`pathlib_next.uri.schemes.dav`)
 
 ```python
 class DavPath(HttpPath):
     def stat(self, *, follow_symlinks=True, walk_up_last_modified=False): ...
 ```
 
-Same backend and `with_session()`. `stat()`/
+Same backend, `with_transport()` and `with_session()`. `stat()`/
 listing via `PROPFIND` (`stat()` takes `walk_up_last_modified=` and ignores
 it: the reply carries the modification time). A reply that is not a
 `multistatus` document, or that names neither the collection nor any
@@ -2580,7 +2696,7 @@ is `{"md5"}`), a property that a client can set and the service does not
 verify against the content in every case; a blob without one raises
 `NotImplementedError`.
 
-### `GitHubPath` — `github://[TOKEN@]host/owner/repo/path?ref=REF` (`pathlib_next.uri.schemes.github`, `pathlib_next.uri.schemes._gitrepo`, `http` extra)
+### `GitHubPath` — `github://[TOKEN@]host/owner/repo/path?ref=REF` (`pathlib_next.uri.schemes.github`, `pathlib_next.uri.schemes._gitrepo`)
 
 ```python
 class GitHubPath(UriPath):
@@ -2648,7 +2764,7 @@ write method raise `NotImplementedError`.
   HTML still reads, with the header). That rule has not been checked
   against the live service.
 
-### `GitLabPath` — `gitlab://[TOKEN@]host[:port]/owner/repo/path` (`pathlib_next.uri.schemes.gitlab`, `http` extra)
+### `GitLabPath` — `gitlab://[TOKEN@]host[:port]/owner/repo/path` (`pathlib_next.uri.schemes.gitlab`)
 
 ```python
 class GitLabPath(UriPath):
@@ -2812,7 +2928,18 @@ Windows too, where a closed pipe reports `EINVAL`).
 
 ## Environment variables
 
-The core reads none. The URI layer reads one.
+The core reads none. The URI layer reads two.
+
+### `PATHLIB_NEXT_HTTP_TRANSPORT` (URI layer)
+
+`builtin` (the default when unset) or `requests`: the transport that
+`http(s):`, `dav(s):`, `github:`, `gitlab:` and `git:` build for a backend that
+was not given one (`HTTPTransport`, or `RequestsTransport` over a new
+`requests.Session`). The value is case-sensitive, and an empty or unrecognised
+one raises `ValueError` naming the choices. It is read when a backend first
+needs its transport, once per backend, so a change reaches backends built
+afterwards; `requests` not installed raises `ImportError` naming the extra.
+`with_transport()` and `with_session()` do not read it.
 
 ### `PATHLIB_NEXT_SFTP_BACKEND` (URI layer)
 

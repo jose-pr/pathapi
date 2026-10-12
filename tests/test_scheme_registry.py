@@ -401,7 +401,7 @@ def test_a_scheme_whose_client_library_is_missing_stays_listed_and_fails_on_use(
         print(sorted(names & {"http", "https", "dav", "davs", "github", "gitlab"}))
         print(UriPath.scheme_class("http").__name__)
         try:
-            UriPath("http://h/x").stat()
+            UriPath("http://h/x").with_session(None)
         except ImportError as error:
             print(error)
         """,

@@ -29,6 +29,23 @@ def make_transport(kind, **arguments):
     return (HTTPTransport if kind == "builtin" else RequestsTransport)(**arguments)
 
 
+def spy_on_sends(monkeypatch, project=lambda method, url, **kwargs: (method, url)):
+    """A list that gains `project(method, url, **keywords)` for every request
+    either real transport sends, whichever the default transport is; the
+    requests still go to the server."""
+    from pathlib_next.uri.schemes.http import HTTPTransport, RequestsTransport
+
+    log = []
+    for cls in (HTTPTransport, RequestsTransport):
+
+        def spy(self, method, url, *args, _original=cls.send, **kwargs):
+            log.append(project(method, url, **kwargs))
+            return _original(self, method, url, *args, **kwargs)
+
+        monkeypatch.setattr(cls, "send", spy)
+    return log
+
+
 class Sent(typing.NamedTuple):
     """One call of `send()`."""
 

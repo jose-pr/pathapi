@@ -193,7 +193,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install package with only the uri extra
         # Exactly `pip install pathlib-next[uri]` plus the test runner: the
-        # URI layer, but NO scheme client (no requests, paramiko, boto3...).
+        # URI layer, but NO scheme client (no requests, paramiko, boto3...);
+        # HTTP runs on the standard library there.
         # Every other job installs all extras, so a defect that only appears
         # without a client library is invisible to them -- one lived from
         # 0.9.3 to 0.9.8 behind a green matrix, because `UriPath("sftp://h/x")
@@ -216,7 +217,13 @@ jobs:
             tests/test_providers.py \
             tests/test_filestat.py \
             tests/test_http_date.py \
-            tests/test_mempath.py
+            tests/test_mempath.py \
+            tests/test_http_transport.py \
+            tests/test_http_pool.py \
+            tests/test_http_proxy.py \
+            tests/test_http_tls.py \
+            tests/test_http_redirects.py \
+            tests/test_http_default.py
       - name: A pure-path join needs no scheme client
         # The specific shape the suite cannot assert from an all-extras
         # environment: spelling a path must not import anything.

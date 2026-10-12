@@ -121,6 +121,11 @@ class HTTPResponse:
     `decode=False` for a body it already decoded or that was not asked for
     in a coding."""
 
+    status: int
+    reason: str
+    headers: Headers
+    url: str
+
     def __init__(
         self,
         status: int,

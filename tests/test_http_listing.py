@@ -11,6 +11,7 @@ import pytest
 
 requests = pytest.importorskip("requests")
 
+from http_fakes import spy_on_sends
 from pathlib_next.uri import UriPath
 from pathlib_next.uri.schemes import http as http_module
 
@@ -346,17 +347,12 @@ def test_dav_listed_name_that_is_not_utf8_is_requested_as_listed(site):
 
 
 def test_listing_a_directory_without_a_slash_asks_for_the_slash_form(
-    http_server, monkeypatch
+    http_server, monkeypatch, http_transport_kind
 ):
     # The stdlib server answers `/sub` with a redirect to `/sub/`.
-    seen = []
-    real = requests.Session.request
-
-    def spy(self, method, url, *args, **kwargs):
-        seen.append((method, url[len(http_server) :]))
-        return real(self, method, url, *args, **kwargs)
-
-    monkeypatch.setattr(requests.Session, "request", spy)
+    seen = spy_on_sends(
+        monkeypatch, lambda method, url, **kwargs: (method, url[len(http_server) :])
+    )
     names = sorted(p.name for p in UriPath(f"{http_server}/sub").iterdir())
     assert names == ["c.py", "nested"]
     assert seen == [("GET", "/sub/")]

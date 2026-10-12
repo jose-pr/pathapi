@@ -13,7 +13,7 @@ TRANSPORT_ENV = "PATHLIB_NEXT_HTTP_TRANSPORT"
 """Names the transport a backend builds for itself: `builtin` or `requests`.
 Read when that transport is first needed; unset means `DEFAULT_TRANSPORT`."""
 
-DEFAULT_TRANSPORT = "requests"
+DEFAULT_TRANSPORT = "builtin"
 
 CHOICES = ("builtin", "requests")
 

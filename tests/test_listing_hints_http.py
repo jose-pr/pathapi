@@ -8,25 +8,22 @@ import json
 
 import pytest
 
-requests = pytest.importorskip("requests")
-
+from http_fakes import spy_on_sends
 from pathlib_next.uri import UriPath
 from pathlib_next.uri.schemes.github import RepoBackend
 from pathlib_next.uri.schemes.gitlab import GitLabPath
 
 
 @pytest.fixture
-def sent(monkeypatch):
-    """`[(method, path)]` of every request made through `requests`."""
-    log = []
-    real = requests.Session.request
-
-    def spy(self, method, url, *args, **kwargs):
-        log.append((method, "/" + url.split("/", 3)[3] if url.count("/") >= 3 else "/"))
-        return real(self, method, url, *args, **kwargs)
-
-    monkeypatch.setattr(requests.Session, "request", spy)
-    return log
+def sent(monkeypatch, http_transport_kind):
+    """`[(method, path)]` of every request sent, by either transport."""
+    return spy_on_sends(
+        monkeypatch,
+        lambda method, url, **kwargs: (
+            method,
+            "/" + url.split("/", 3)[3] if url.count("/") >= 3 else "/",
+        ),
+    )
 
 
 def _gitlab(server, path=""):
