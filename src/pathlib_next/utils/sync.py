@@ -21,11 +21,9 @@ from . import glob as _glob
 
 _logger = _logging.getLogger("pathlib_next.sync")
 
-#: Sentinel identifying `PathSyncer`'s own default checksum policy (native
-#: digest preferred, streaming fallback) so `sync()` can special-case it --
-#: a caller-supplied `checksum` callable is always invoked exactly as
-#: before (single path in, value out, compared with `==`). See
-#: `_default_checksums_match()`.
+#: `PathSyncer`'s own default checksum policy (native digest preferred, streaming
+#: fallback), which `sync()` special-cases (`_default_checksums_match()`); a
+#: caller-supplied `checksum` is called as given, one path in, value out, with `==`.
 _DEFAULT_ALGORITHM = "md5"
 
 
@@ -42,10 +40,8 @@ def _default_checksum(entry: "PathAndStat") -> str:
 def _shared_native_algorithm(source: Path, target: Path) -> "str | None":
     """Pick an algorithm both sides advertise via
     `NativeChecksum.supported_checksums()` (see `protocols/checksum.py`),
-    preferring `_DEFAULT_ALGORITHM` ("md5") when both sides support it --
-    matches `PathSyncer`'s pre-existing default algorithm, so the common
-    case (both sides only ever supported md5) picks the same algorithm as
-    before this helper existed. Returns `None` if either side has no
+    preferring `_DEFAULT_ALGORITHM` ("md5") when both sides support it,
+    `PathSyncer`'s default algorithm. Returns `None` if either side has no
     `supported_checksums` at all (a `NativeChecksum` implementation isn't
     required to override the advisory method -- the base default already
     returns `frozenset()`, indistinguishable here from "doesn't implement
@@ -113,7 +109,7 @@ def _is_local(path) -> bool:
 
     `Uri.is_local()` does a real (`lru_cache`d) hostname resolution
     (`Source.is_local()`, see `uri/source.py`, backed by
-    `netimps.resolve()` since 2026-07-29) -- a hostname that genuinely
+    `netimps.resolve()`) -- a hostname that genuinely
     doesn't resolve anywhere correctly returns `False` (non-local), not an
     exception, but a transport-level failure in the resolver chain itself
     (all backends erroring, e.g. no network at all) can still raise
@@ -578,8 +574,8 @@ class PathSyncer(object):
     `"preserve"` (default) creates a matching symlink on `target` with the
     same raw, unresolved target string `readlink()` returned (dangling
     links and relative targets included -- never resolved/validated);
-    `"reject"` raises `NotImplementedError` instead (the only behavior
-    before this kwarg existed). If `target` can't create symlinks at all
+    `"reject"` raises `NotImplementedError` instead. If `target` can't
+    create symlinks at all
     (most backends -- only `LocalPath` and `SftpPath` currently implement
     `symlink_to()`), `"preserve"` mode raises `NotImplementedError` too,
     through the same `ignore_error`/`hook()` machinery as every other
@@ -669,13 +665,9 @@ class PathSyncer(object):
         preserve_mtime: bool = True,
         follow_mounts: bool = True,
     ) -> None:
-        # `None` (the default) resolves to `_default_checksum` -- a sentinel
-        # `sync()` recognizes (via `is`) to route through
-        # `_default_checksums_match()` instead of two independent calls, so
-        # the native-vs-streaming decision can be coordinated across BOTH
-        # sides at once. A caller-supplied callable is stored and used
-        # as-is (`checksum(target) == checksum(source)`, unchanged from
-        # before this feature).
+        # `None` resolves to `_default_checksum`, which `sync()` recognizes (via `is`) to
+        # decide native versus streaming across BOTH sides at once. A caller-supplied
+        # callable is used as-is: `checksum(target) == checksum(source)`.
         if checksum is None:
             checksum = _default_checksum
         self.checksum = checksum
@@ -695,11 +687,9 @@ class PathSyncer(object):
         self.follow_mounts = follow_mounts
 
     def log(self, msg: str, *args: object):
-        # Overridable hook: a subclass overrides `log` to route sync
-        # progress elsewhere (the class has `__slots__`, so an instance
-        # cannot be assigned one). `*args` are passed to the logger lazily
-        # (stdlib %-style) so formatting is skipped entirely unless
-        # something is actually listening at INFO.
+        # Overridable hook: a subclass routes sync progress elsewhere (the class has
+        # `__slots__`, so an instance cannot be assigned one). `*args` go to the logger
+        # lazily, so formatting is skipped unless something listens at INFO.
         _logger.info(msg, *args)
 
     def hook(
@@ -713,10 +703,9 @@ class PathSyncer(object):
         *,
         always_run: bool = False,
     ):
-        # `ignore_error` lets sync() pass down a per-call policy override;
-        # None keeps the instance-level policy (the only behavior before).
-        # `always_run` runs `do` during a dry run too (the traversal steps,
-        # which only read and recurse) while still reporting `dry_run`.
+        # `ignore_error` passes a per-call policy down; None keeps the instance's.
+        # `always_run` runs `do` in a dry run too (the traversal steps, which only read
+        # and recurse) while still reporting `dry_run`.
         if ignore_error is None:
             ignore_error = self.ignore_error
         if do and (always_run or not dry_run):
@@ -834,11 +823,9 @@ class PathSyncer(object):
                 # `_sweep()` removes the stale ones.
                 continue
             elif not follow:
-                # `None` means "stat unknown" (FTP's NLST fallback), not
-                # "missing": ask the path itself before remove_missing can
-                # treat the entry as gone. So does a stat that knows the type
-                # and not the size (GitLab blobs, an HTTP index without sizes):
-                # the comparison and the copy read the size and the time.
+                # `None` means "stat unknown" (FTP's NLST fallback), not "missing": ask the path
+                # before remove_missing can treat the entry as gone. So does a stat that knows
+                # the type and not the size (GitLab blobs, an HTTP index without sizes).
                 if stat is None or not getattr(stat, "size_known", True):
                     stat = FileStat.from_path(child, follow_symlink=False)
                 children.append((name, PathAndStat.from_stat(child, stat)))
@@ -946,11 +933,6 @@ class PathSyncer(object):
         `(error, source, target, event)` arity as the constructor's; `None`
         (the default) means "use the policy given to `__init__`".
 
-        The default used to be the bool `False`, which both shadowed a
-        constructor-supplied policy and was *called* directly by the symlink
-        branch (`TypeError: 'bool' object is not callable`). Passing a
-        callable explicitly behaves exactly as before.
-
         The root call is checked before anything is touched: a `source`
         that does not exist raises `FileNotFoundError`, and a `source` and
         `target` of the same implementation where one contains the other
@@ -999,11 +981,9 @@ class PathSyncer(object):
                 if not isinstance(source, PathAndStat)
                 else source
             )
-            # `follow_symlinks` describes the SOURCE traversal. Below the
-            # root, a target entry is always lstat'd so a link inside the
-            # destination is replaced rather than followed out of it. The
-            # root target is the one the caller named, and keeps the
-            # caller's setting.
+            # `follow_symlinks` describes the SOURCE traversal. Below the root a target entry
+            # is always lstat'd, so a link inside the destination is replaced, not followed
+            # out of it; the root target is the caller's and keeps their setting.
             target = (
                 PathAndStat(
                     target, follow_symlink=self.follow_symlinks if root else False
@@ -1088,10 +1068,9 @@ class PathSyncer(object):
                 if not target.exists() and not target.is_symlink():
                     target.path.symlink_to(raw_target, is_directory)
                     return
-                # Type mismatch or a stale link: create the new link under a
-                # temporary sibling first, so a runtime refusal (no symlink
-                # privilege on Windows, a server permission error) fails
-                # before the existing entry is removed.
+                # Type mismatch or a stale link: create the new link under a temporary sibling
+                # first, so a refusal at run time (no symlink privilege on Windows, a server
+                # permission error) fails before the existing entry is removed.
                 temp = _temp_sibling(target.path)
                 temp.symlink_to(raw_target, is_directory)
                 # Once the old entry is removed the temporary link is the
@@ -1164,11 +1143,9 @@ class PathSyncer(object):
             if target.is_file():
 
                 def compare():
-                    # quick_check: cheap metadata-only pre-check for
-                    # non-local pairs (see class docstring) -- a match skips
-                    # checksumming entirely; a mismatch always falls through
-                    # to a real checksum comparison, never concludes
-                    # "changed" on its own.
+                    # quick_check: a cheap metadata-only pre-check for non-local pairs (see the class
+                    # docstring); a match skips checksumming, a mismatch always falls through to a
+                    # real checksum comparison and never concludes `changed` on its own.
                     if (
                         self.quick_check
                         and (not _is_local(source.path) or not _is_local(target.path))
@@ -1176,10 +1153,8 @@ class PathSyncer(object):
                     ):
                         return True
                     if checksum is _default_checksum:
-                        # Route through the paired native-vs-streaming
-                        # policy (see class docstring) instead of two
-                        # independent single-path calls -- only this branch
-                        # can coordinate "both native or both streamed".
+                        # Through the paired native-versus-streaming policy (see the class docstring):
+                        # only this branch can coordinate "both native or both streamed".
                         return _default_checksums_match(source, target)
                     return checksum(target) == checksum(source)
 
@@ -1246,14 +1221,9 @@ class PathSyncer(object):
                 ):
                     return
         elif source.is_dir():
-            # A symlink inside the destination is replaced by a real
-            # directory: listing, writing or removing through it would act
-            # on whatever it points at. unlink() removes only the link.
-            # A junction is another directory's second name and is replaced
-            # the same way; rmdir() removes the junction itself. Any other
-            # non-directory (a FIFO, socket or device) is replaced the same
-            # way. The root target is the caller's choice and is used as
-            # given.
+            # A symlink, junction, FIFO, socket or device inside the destination is replaced
+            # by a real directory, as writing or removing through a link would act on its
+            # target (unlink() / rmdir() remove the link itself). The root is used as given.
             binding = (
                 not root
                 and target.is_dir()
@@ -1302,10 +1272,8 @@ class PathSyncer(object):
 
                 target._stat = None
 
-            # A directory that did not exist (or was only just created, or
-            # in a dry run only would have been) has no children: nothing to
-            # list or remove, and every child target is known to be missing.
-            # Listing it anyway crashed every dry run over a new directory.
+            # A directory that did not exist (or only now exists, or only would in a dry
+            # run) has no children: nothing to list or remove, every child target is missing.
             target_absent = not target.exists()
             if target_absent:
                 if self.hook(
@@ -1323,10 +1291,9 @@ class PathSyncer(object):
             target_entries_cache = None
 
             def target_entries():
-                # The existing target directory's children, listed once and
-                # described by their own (non-following) stat: they serve the
-                # removal check, the stat of each child that is synced and the
-                # sweep. A failure is raised to the first caller only.
+                # The existing target directory's children, listed once with their own
+                # (non-following) stat for the removal check, the stat of each synced child and
+                # the sweep. A failure is raised to the first caller only.
                 nonlocal target_entries_cache
                 if target_entries_cache is None:
                     target_entries_cache = ()
@@ -1338,10 +1305,9 @@ class PathSyncer(object):
                 return target_entries_cache
 
             def unsafe_name(name, source_entry, target_entry, event):
-                # Names come from a listing the destination does not
-                # control; one that is not a single component inside
-                # `target` ("..", or "\\"/":" on a Windows target) must
-                # never be joined onto it. Reported, not silently skipped.
+                # A listed name that is not a single component inside `target` (`..`, or a
+                # backslash or colon on a Windows target) is never joined onto it; it is
+                # reported, not silently skipped.
                 if _utils.is_safe_child_name(name, windows=windows_target):
                     return False
                 error = ValueError(
@@ -1471,10 +1437,9 @@ class PathSyncer(object):
                 always_run=True,
             )
         else:
-            # Not a file, directory or symlink: a FIFO, socket or device (or
-            # a stat without a file type). Nothing sensible can be copied,
-            # and treating it as a directory replaced a same-named target
-            # file with an empty directory and then failed to list it.
+            # Not a file, directory or symlink: a FIFO, socket or device (or a stat without
+            # a file type). Nothing sensible can be copied; treating it as a directory
+            # would replace a same-named target file with an empty directory.
             self.hook(source, target, SyncEvent.Skipped, dry_run, None, _ignore_error)
             return
 
