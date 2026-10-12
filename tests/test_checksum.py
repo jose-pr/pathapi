@@ -135,7 +135,7 @@ def test_native_helper_returns_none_for_path_without_protocol():
 
 
 def test_shared_native_algorithm_prefers_md5_when_both_advertise_it():
-    from pathlib_next.sync import _shared_native_algorithm
+    from pathlib_next.sync._compare import _shared_native_algorithm
 
     source = _NativeChecksumMemPath("/a.txt")
     source.write_text("x")
@@ -148,7 +148,7 @@ def test_shared_native_algorithm_prefers_md5_when_both_advertise_it():
 
 
 def test_shared_native_algorithm_none_when_no_overlap():
-    from pathlib_next.sync import _shared_native_algorithm
+    from pathlib_next.sync._compare import _shared_native_algorithm
 
     source = _NativeChecksumMemPath("/a.txt")
     source.write_text("x")
@@ -160,7 +160,7 @@ def test_shared_native_algorithm_none_when_no_overlap():
 
 
 def test_shared_native_algorithm_none_when_either_side_lacks_advertisement():
-    from pathlib_next.sync import _shared_native_algorithm
+    from pathlib_next.sync._compare import _shared_native_algorithm
 
     source = _NativeChecksumMemPath("/a.txt")
     source.write_text("x")

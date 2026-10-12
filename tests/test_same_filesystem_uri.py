@@ -13,7 +13,8 @@ from pathlib_next.path import _same_file
 from pathlib_next.providers import contains
 from pathlib_next.uri import UriPath, _DerivedBackend
 from pathlib_next import FileStat
-from pathlib_next.sync import PathSyncer, _paths_overlap
+from pathlib_next.sync import PathSyncer
+from pathlib_next.sync._paths import _paths_overlap
 
 #: An IP literal (TEST-NET-1): `PathSyncer` asks whether a URI is local, and
 #: a host NAME would go to DNS, which the suite blocks.

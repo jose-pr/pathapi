@@ -1361,7 +1361,7 @@ import re
 import time
 
 from pathlib_next.mempath import MemPathBackend
-from pathlib_next.sync import _is_leftover, _temp_sibling
+from pathlib_next.sync._replace import _is_leftover, _temp_sibling
 
 DAY = 24 * 60 * 60
 
@@ -1873,7 +1873,7 @@ def _mem_tree():
     ],
 )
 def test_overlap_sees_one_mempath_tree_under_another_spelling(spelling, overlap):
-    from pathlib_next.sync import _paths_overlap
+    from pathlib_next.sync._paths import _paths_overlap
 
     backend, root = _mem_tree()
     other = MemPath(spelling, backend=backend)
