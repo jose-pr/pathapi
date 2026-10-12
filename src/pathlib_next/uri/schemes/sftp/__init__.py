@@ -208,19 +208,9 @@ def _same_config(a, b) -> bool:
     )
 
 
-# --- backend selection -----------------------------------------------------
-# Precedence, highest to lowest (each layer only consulted if the one above
-# doesn't apply): explicit `backend=` kwarg on construction (already how
-# UriPath backend propagation works, unchanged) > `SftpPath._default_backend_cls`
-# class attribute > `PATHLIB_NEXT_SFTP_BACKEND` env var > auto-detect
-# (asyncssh if importable, else paramiko).
-#
-# BOTH backends are imported lazily (`_probe_asyncssh`/`_probe_paramiko`): merely
-# importing this scheme -- which happens for every `sftp:` URL and for
-# `from ...sftp import SftpPath` -- must not require *either* SSH library. In
-# particular an asyncssh-only install (the `sftp-async` extra, no paramiko) must
-# be able to import and use `SftpPath`; eagerly importing `._paramiko` here broke
-# exactly that.
+# --- backend selection: `backend=` > `SftpPath._default_backend_cls` >
+# `PATHLIB_NEXT_SFTP_BACKEND` > auto-detect (asyncssh, else paramiko). Both are
+# probed lazily: importing this scheme must need neither SSH library.
 
 _ENV_VAR = "PATHLIB_NEXT_SFTP_BACKEND"
 _BACKEND_REGISTRY: "dict[str, type[BaseSftpBackend]]" = {}
@@ -230,10 +220,8 @@ _resolved_backend_cls: "type[BaseSftpBackend] | None" = None
 
 
 def _probe_asyncssh() -> None:
-    # Lazy and only-once: a caller that forces PATHLIB_NEXT_SFTP_BACKEND=
-    # paramiko (or never triggers backend resolution at all) never imports
-    # asyncssh -- scheme loading already avoids paying for heavy unused
-    # imports elsewhere (entry-point plugin discovery), this preserves that.
+    # Lazy and only once: a caller that forces PATHLIB_NEXT_SFTP_BACKEND=paramiko,
+    # or never resolves a backend, never imports asyncssh.
     global _asyncssh_probed
     if _asyncssh_probed:
         return
@@ -306,10 +294,8 @@ def _resolve_default_backend_cls(reload: bool = False) -> "type[BaseSftpBackend]
 
 
 def __getattr__(name: str):
-    # PEP 562 lazy module attributes: referencing `AsyncsshSftpBackend`,
-    # `SftpBackend` (paramiko), or `_DEFAULT_SSH_CONFIG` via
-    # `from .sftp import ...` imports the relevant backend only at that point --
-    # importing the scheme module itself pulls in neither SSH library.
+    # PEP 562 lazy attributes: `AsyncsshSftpBackend`, `SftpBackend` (paramiko) and
+    # `_DEFAULT_SSH_CONFIG` import their backend only when referenced.
     if name == "AsyncsshSftpBackend":
         from ._asyncssh import AsyncsshSftpBackend
 
@@ -345,10 +331,9 @@ class SftpPath(UriPath):
         backend: BaseSftpBackend
 
     def __new__(cls, *args, ssh_config=_UNSET_SSH_CONFIG, **kwargs):
-        # A direct `SftpPath(url, ssh_config=...)` parses lazily and never
-        # passes its keywords to `_init()`, so capture the value here. Without
-        # one, `_init()` takes it from the join segment the path inherits its
-        # backend from, once the path knows its endpoint.
+        # A direct `SftpPath(url, ssh_config=...)` parses lazily and never passes its
+        # keywords to `_init()`, so capture the value here; without one, `_init()` takes
+        # it from the join segment the backend is inherited from.
         inst = super().__new__(cls, *args, **kwargs)
         if isinstance(inst, SftpPath):
             inst._config = ssh_config
@@ -491,14 +476,9 @@ class SftpPath(UriPath):
         for attr in attrs:
             name = attr.filename
             if not _utils.is_safe_child_name(name):
-                # A listing is untrusted input: the server chooses these
-                # names. One that is not a single component inside this
-                # directory -- "..", or anything with a "/" -- must never
-                # become a child path, or `rm(recursive=True)` deletes
-                # outside the tree it was given and a recursive copy reads
-                # from outside it. `dav:`/`http:` filter their listings the
-                # same way; this covers both SFTP backends, since each
-                # client's `listdir_attr()` arrives here.
+                # A listing is untrusted: a name that is not a single component of this
+                # directory ("..", anything with "/") must never become a child, or rm(recursive)
+                # deletes outside the tree. Both backends' `listdir_attr()` arrive here.
                 continue
             yield name, FileStat.from_stat(attr)
 
@@ -580,11 +560,9 @@ class SftpPath(UriPath):
                 _track_unclosed(file)
             return file
         except OSError as error:
-            # SFTPv3 has no dedicated "already exists" status code -- an
-            # O_EXCL ("x" mode) failure comes back as a generic failure,
-            # not the ENOENT-mapped FileNotFoundError already raised
-            # correctly for a genuinely missing file/parent. True on both
-            # backends against a real-world (v3) server.
+            # SFTPv3 has no "already exists" status: an O_EXCL ("x") failure comes back as
+            # a generic failure, unlike the genuinely missing file or parent, which maps to
+            # FileNotFoundError. True on both backends against a v3 server.
             if "x" in mode and not self._unreachable(error) and self.exists():
                 raise FileExistsError(
                     _errno.EEXIST, _os.strerror(_errno.EEXIST), str(self)
@@ -621,12 +599,9 @@ class SftpPath(UriPath):
         *,
         follow_symlinks: bool = True,
     ) -> None:
-        # SFTPv3 setstat carries uid/gid as a numeric pair only -- there is
-        # no name resolution on the wire, and no way to send just one of
-        # them: the protocol's UIDGID flag sets both. So a partial change
-        # has to read the current value for the field being left alone,
-        # which is why chown() canonicalizes None rather than making every
-        # backend invent its own sentinel.
+        # SFTPv3 setstat carries uid/gid as a numeric pair, both or neither (one UIDGID
+        # flag), with no name resolution: a partial change reads the current value of the
+        # field left alone, so chown() canonicalizes None instead of each backend inventing one.
         if isinstance(uid, str) or isinstance(gid, str):
             raise NotImplementedError("sftp chown() requires numeric uid/gid")
         if not follow_symlinks:
@@ -725,21 +700,9 @@ class SftpPath(UriPath):
             raise translated from error
 
     def rename(self, target: "SftpPath | Uri | str"):
-        # base Path.rename is the notimplemented stub -- this was never
-        # called under its old name `_rename`, so every move() fell back to
-        # copy+unlink. `target.path`, not as_posix(): Uri.as_posix() prefixes
-        # "host:" for the sftp wire protocol, which only wants the raw path.
-        # A plain str target is resolved relative to self's *parent*
-        # (sibling rename -- "rename this file to a new name in the same
-        # directory"), not to self itself (which would join it as a child)
-        # -- and is taken as a literal path rather than re-parsed as a URI,
-        # which used to truncate "rn?b.txt" to "rn" on the wire (see
-        # `Uri._rename_target`).
-        #
-        # Replaces an existing target (POSIX rename semantics) through the
-        # `posix-rename@openssh.com` extension where the server has it;
-        # plain SFTPv3 RENAME refuses to overwrite with a generic failure,
-        # which is raised as FileExistsError when the target exists.
+        # `target.path`, not as_posix() (which prefixes "host:"). A str target is a literal
+        # sibling name, not re-parsed as a URI (`Uri._rename_target`). An existing target
+        # is replaced via `posix-rename@openssh.com`; plain v3 RENAME refuses (FileExistsError).
         target = self._rename_target(target)
         self._rename_on_wire(target)
         # pathlib returns the new path.
@@ -775,10 +738,8 @@ class SftpPath(UriPath):
                 except NotImplementedError:
                     _mark_posix_rename_unsupported(client)
                 except OSError as error:
-                    # A refusal that names its cause is the answer, unless a
-                    # directory stands at `target`: `Path.replace()` checks
-                    # those before it removes anything and says which error
-                    # it is on any server.
+                    # A refusal that names its cause is the answer, unless a directory stands at
+                    # `target`: `Path.replace()` checks those before it removes anything.
                     if error.errno is not None and not self._is_directory_at(target):
                         raise
                 else:
@@ -843,35 +804,15 @@ class SftpPath(UriPath):
     def _symlink_to(
         self, target: "SftpPath | Uri", target_is_directory: bool = False
     ) -> None:
-        # The backend primitive only -- `Path.symlink_to()` owns the
-        # str->path normalization and the `force=` unlink-then-symlink
-        # sequence, so this stays one wire call.
-        #
-        # `.path`, not as_posix(): Uri.as_posix() prefixes "host:" for the
-        # sftp wire protocol, which only wants the raw path -- same reason
-        # rename() above uses it, and what keeps a relative target from
-        # becoming "host:real.txt".
-        #
-        # target_is_directory is a Windows-local-filesystem-only hint
-        # (pathlib.Path.symlink_to() signature parity) -- accepted and
-        # ignored, same as every other non-local scheme. Core SFTPv3
-        # operation on both backends, no capability gate needed. Both
-        # libraries' symlink() already auto-correct for OpenSSH's
-        # well-known swapped wire argument order internally.
+        # The primitive only: `Path.symlink_to()` owns the str normalization and `force=`.
+        # `.path`, not as_posix() (which prefixes "host:", as in rename()). The Windows
+        # target_is_directory hint is accepted and ignored, as for any non-local scheme.
         self._sftpclient.symlink(target.path, self.path)
 
     def readlink(self) -> "SftpPath":
-        # Returns the raw target string, unresolved -- relative targets
-        # stay relative (mirrors pathlib.Path.readlink()'s
-        # `self.with_segments(os.readlink(self))`). Do NOT resolve against
-        # self.parent: unlike rename()'s destination argument, this is a
-        # *result*, and resolving it would silently diverge from pathlib
-        # on the one method whose entire job is reporting the stored
-        # target as-is.
-        #
-        # Verbatim either way (no dot-segment folding). A relative target
-        # carries no host: with this path's authority it had no printable
-        # URI at all, so str()/repr()/== raised ValueError.
+        # The raw target string, unresolved and verbatim (no dot-segment folding), as
+        # pathlib's readlink(): it is a result, not a destination. A relative target has
+        # no host; with this path's authority it would have no printable URI.
         target = self._sftpclient.readlink(self.path)
         source = self.source if target.startswith("/") else _NO_SOURCE
         return self._from_parsed_parts(source, target, None, None)
@@ -956,10 +897,9 @@ class SftpPath(UriPath):
         if (
             not recursive
             or not self.backend.supports_tree
-            # The fan-out writes every destination file over THIS path's
-            # connection: only a target on the same host, and the same tree
-            # (two distinct supplied backends may reach different servers),
-            # may use it.
+            # The fan-out writes every destination file over THIS path's connection: only a
+            # target on the same host and tree (two supplied backends may reach different
+            # servers) may use it.
             or not isinstance(target, SftpPath)
             or not self._same_location(target)
             or not self._same_filesystem(target)
