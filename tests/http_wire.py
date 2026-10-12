@@ -7,6 +7,7 @@ from __future__ import annotations
 import datetime
 import ipaddress
 import pathlib
+import select
 import socket
 import ssl
 import threading
@@ -137,14 +138,15 @@ class Wire:
         self.script = script or (lambda request: response(body=b"ok"))
         self.tls = tls
         self.requests: "list[Request]" = []
-        self.connections = 0
+        self._connections = 0
+        self._taking = threading.Lock()
         self.closed: "list[int]" = []
         self.handshakes_failed = 0
         self._lock = threading.Lock()
         self._sockets: "list[socket.socket]" = []
         self._stop = threading.Event()
         self._listener = socket.create_server(("127.0.0.1", 0))
-        self._listener.settimeout(_POLL)
+        self._listener.setblocking(False)
         self.port = self._listener.getsockname()[1]
         self.host = "127.0.0.1"
         self._thread = threading.Thread(target=self._accept, daemon=True)
@@ -165,22 +167,38 @@ class Wire:
             self._stop, self._thread, self._listener, self._sockets, self._lock
         )
 
+    @property
+    def connections(self) -> int:
+        """How many connections the client has made. A connection waiting in
+        the kernel's queue is taken first, so a test asking "was one made?"
+        does not depend on the accept thread having run."""
+        self._take()
+        return self._connections
+
     def _accept(self):
         while not self._stop.is_set():
             try:
-                sock, _ = self._listener.accept()
-            except socket.timeout:
-                continue
-            except OSError:
+                select.select([self._listener], [], [], _POLL)
+            except (OSError, ValueError):
                 return
-            sock.settimeout(None)
-            with self._lock:
-                index = self.connections
-                self.connections += 1
-                self._sockets.append(sock)
-            threading.Thread(
-                target=self._serve, args=(sock, index), daemon=True
-            ).start()
+            self._take()
+
+    def _take(self):
+        """Accept every connection that is waiting, and start serving it."""
+        with self._taking:
+            while True:
+                try:
+                    sock, _ = self._listener.accept()
+                except OSError:  # nothing waiting, or the listener is closed
+                    return
+                sock.setblocking(True)
+                with self._lock:
+                    index = self._connections
+                    self._connections += 1
+                    self._sockets.append(sock)
+                threading.Thread(
+                    target=self._serve, args=(sock, index), daemon=True
+                ).start()
 
     def _serve(self, sock, index):
         try:
