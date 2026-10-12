@@ -576,11 +576,9 @@ class _ArchiveBackend:
         raise NotImplementedError
 
     def _close_handle(self):
-        # Drop the cached handle so the next operation (through any
-        # instance sharing this backend) reopens and sees the change. The
-        # snapshot is derived from that handle's entries, so it goes too:
-        # every mutation replaces the archive through `_replace_outer`,
-        # which closes the handle, and a changed file on disk reopens it.
+        # Drop the cached handle so the next operation (through any instance sharing this
+        # backend) reopens and sees the change. The snapshot derives from that handle's
+        # entries, so it goes too; every mutation replaces the archive (`_replace_outer`).
         handle = self._handle
         self._handle = None
         self._snapshot = None
@@ -758,11 +756,9 @@ class ArchiveUri(UriPath):
         self._inherit_backend(source)
         backend = kwargs.get("backend", None) or self._backend
         if backend is None:
-            # Fresh top-level construction (e.g. UriPath("zip:...!/...")).
-            # Split the original, still-encoded string when there is one:
-            # `path` has already been decoded (and dot-segment-normalized)
-            # as a whole, which merged the outer's query into ours and
-            # decoded the outer twice.
+            # A fresh top-level construction: split the original, still-encoded string when
+            # there is one; `path` was decoded and dot-normalized as a whole, which merged
+            # the outer's query into ours and decoded the outer twice.
             raw = self._raw_uris
             parsed = None
             if raw and len(raw) == 1 and isinstance(raw[0], str):
@@ -786,11 +782,9 @@ class ArchiveUri(UriPath):
             else:
                 backend = _get_backend(backend_cls, outer)
         else:
-            # Derived instance (with_segments/joinpath/_make_child_relpath)
-            # -- backend already known, `path` is already just the inner
-            # path (no "archive!/" prefix to strip). Member names never
-            # start with "/", but the generic `_make_child_relpath` joins a
-            # child of the root (path "") as "/name".
+            # A derived instance: the backend is known and `path` is already the inner path.
+            # Member names never start with "/", but the generic `_make_child_relpath` joins
+            # a child of the root as "/name".
             inner = path.lstrip("/")
         kwargs["backend"] = backend
         super()._init(source, inner, query, fragment, **kwargs)
@@ -1142,10 +1136,8 @@ class ArchiveUri(UriPath):
         if mode == "x" and self.exists():
             raise FileExistsError(self)
         self._check_parent()
-        # The raw name, so overwriting a member the archive spells "./f.txt"
-        # rewrites THAT entry instead of appending a second one that
-        # shadows it (and that `unlink()` would then delete, resurrecting
-        # the original).
+        # The raw name: overwriting a member the archive spells "./f.txt" rewrites THAT
+        # entry instead of appending a second one that shadows it.
         return self._write_stream(self._raw_name(self._member_for_write()))
 
     def _snapshot_or_empty(self) -> _Snapshot:
@@ -1317,11 +1309,9 @@ class ArchiveUri(UriPath):
         return super()._same_location(other)
 
     def rename(self, target: "ArchiveUri | Uri | str"):
-        # A plain str target is a sibling rename (relative to self's
-        # parent), matching sftp.py's/ftp.py's rename() semantics. An existing
-        # target is replaced as POSIX rename(2) does: a file replaces a file,
-        # a directory replaces an empty directory -- never a duplicate member.
-        # Returns the new path, as pathlib does.
+        # A plain str target is a sibling rename (relative to self's parent), as in sftp
+        # and ftp. An existing target is replaced as POSIX rename(2) does (a file over a
+        # file, a directory over an empty one), never a duplicate member. Returns the new path.
         self._require_writable()
         target = self._rename_target(target)
         old_path = self._member_for_write()
@@ -1369,11 +1359,9 @@ class ArchiveUri(UriPath):
                 raise NotADirectoryError(_errno.ENOTDIR, "Not a directory", str(target))
             if any(n != new_marker and n.startswith(new_marker) for n in names):
                 raise OSError(_errno.ENOTEMPTY, "Directory not empty", str(target))
-            # The backend renames by its own keys, and a prefix match on
-            # the normalized marker misses members spelled "./dir/x" --
-            # which silently renamed nothing, or split the directory in two
-            # when only some members carried the prefix. Hand it the exact
-            # raw-name mapping instead.
+            # The backend renames by its own keys, and a prefix match on the normalized marker
+            # misses members spelled "./dir/x" (renaming nothing, or splitting the directory):
+            # hand it the exact raw-name mapping.
             moving = [name for name in names if name.startswith(marker)]
             members = {
                 raw: new_marker + name[len(marker) :]
