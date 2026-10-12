@@ -14,9 +14,9 @@ _ASK_STAT = object()
 
 def _canonical_mode(mode, buffering, encoding, errors, newline) -> str:
     """`open()`'s mode validation (CPython `_io.open`), returning the mode
-    as kind + optional "+" + "b" for binary. A mode such as "rt" used to
-    reach `_open()` verbatim and fail as NotImplementedError, and "zz" or
-    "rw" raised NotImplementedError where `open()` raises ValueError."""
+    as kind + optional "+" + "b" for binary. A mode such as "rt" is
+    canonicalized before it reaches `_open()`, and an invalid one ("zz", "rw")
+    raises ValueError, as `open()` does."""
     if not isinstance(mode, str):
         raise TypeError(
             f"open() argument 'mode' must be str, not {type(mode).__name__}"

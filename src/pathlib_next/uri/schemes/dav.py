@@ -173,12 +173,9 @@ class DavPath(HttpPath):
     __slots__ = ()
 
     def _wire_uri(self) -> str:
-        # Keeps the userinfo: `HttpBackend.request` strips it from the URL
-        # it sends and turns it into `auth=`.
-        # Direct string assembly instead of
-        # uricompose() -- called on every DAV HTTP request, and every
-        # component here already came from this instance's own parsed
-        # source/path/query/fragment state. See source.py's _compose_uri.
+        # Keeps the userinfo: `HttpBackend.request` strips it from the URL it sends and
+        # turns it into `auth=`. Direct string assembly, not uricompose(), as this runs on
+        # every request and every part is this instance's own parsed state (`_compose_uri`).
         scheme = "https" if self.source.scheme == "davs" else "http"
         return compose_uri(
             scheme,
@@ -233,10 +230,9 @@ class DavPath(HttpPath):
         except _ET.ParseError:
             root = None
         if root is None or root.tag != _MULTISTATUS:
-            # A non-WebDAV endpoint or proxy answering 200 with HTML or some
-            # other XML: an I/O error, so `exists()`/`is_dir()` report False
-            # instead of leaking a SyntaxError subclass, and a login page is
-            # not an empty directory.
+            # A non-WebDAV endpoint or proxy answering 200 with HTML or other XML: an I/O error,
+            # so `exists()`/`is_dir()` report False instead of leaking a SyntaxError subclass,
+            # and a login page is not an empty directory.
             raise OSError(_errno.EIO, f"Invalid PROPFIND response for {self}")
         return root, getattr(resp, "url", None) or self._wire_uri()
 
@@ -350,10 +346,9 @@ class DavPath(HttpPath):
         )
 
     def unlink(self, missing_ok=False):
-        # WebDAV DELETE on a collection is recursive (RFC 4918), so a bare
-        # DELETE here removed a whole tree. pathlib's unlink() never removes
-        # a directory: check with a Depth:0 PROPFIND first. The recursive
-        # DELETE stays available through `rm(recursive=True)`.
+        # WebDAV DELETE on a collection is recursive (RFC 4918), and pathlib's unlink()
+        # never removes a directory: check with a Depth:0 PROPFIND first. The recursive
+        # DELETE stays available as `rm(recursive=True)`.
         try:
             root = self._propfind(depth="0")
         except FileNotFoundError:
@@ -377,13 +372,9 @@ class DavPath(HttpPath):
                 raise
 
     def rmdir(self):
-        # Same fix as HttpPath.rmdir():
-        # a PROPFIND Depth:1 on a non-collection resource returns only the
-        # "." entry describing itself, which _scandir() already filters
-        # out -- so a *file* looks exactly like an empty directory to
-        # _listdir() alone, and rmdir() on a file silently DELETEd it.
-        # stat(), not is_dir(): a missing path is FileNotFoundError, not
-        # NotADirectoryError.
+        # A PROPFIND Depth:1 on a non-collection returns only its own "." entry, which
+        # _scandir() filters, so a *file* looks like an empty directory to _listdir() and
+        # rmdir() would DELETE it. stat(), not is_dir(): a missing path is FileNotFoundError.
         if not self.stat().is_dir():
             raise NotADirectoryError(
                 _errno.ENOTDIR, _os.strerror(_errno.ENOTDIR), str(self)
@@ -438,10 +429,9 @@ class DavPath(HttpPath):
         moved = self._from_parsed_parts(
             self.source, target.path, target.query, target.fragment
         )
-        # No userinfo in the header: the credentials already travel as
-        # `auth=` (see `HttpBackend.request`), and a header value ends up in
-        # server and proxy logs. No fragment either: it is not part of a URL
-        # the server resolves.
+        # No userinfo in the header: the credentials already travel as `auth=` and a
+        # header value ends up in server and proxy logs. No fragment either: a server
+        # does not resolve it.
         dest = _split_userinfo(moved.with_fragment("")._wire_uri())[0]
         self._dav_request(
             "MOVE",
