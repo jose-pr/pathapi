@@ -282,6 +282,15 @@ def test_http_rmdir_ignores_dot_entries_in_listing(site):
     assert [r.path for r in site.sent("DELETE")] == ["/dir/"]
 
 
+def test_http_listing_leaves_out_a_name_that_is_not_a_safe_component(site):
+    # A NUL ends a name for most programs: "x<NUL>y" is not a child.
+    site.index("/d/", '<a href="x%00y">x</a>\n', '<a href="ok.txt">ok.txt</a>\n')
+
+    children = [child.name for child in UriPath(site.url("/d/")).iterdir()]
+
+    assert children == ["ok.txt"]
+
+
 @pytest.mark.parametrize("content_type", ["text/plain", "text/html"])
 def test_http_rmdir_on_file_raises_notadirectoryerror(site, content_type):
     # rmdir() on a *file* must raise NotADirectoryError (matching
