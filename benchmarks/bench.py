@@ -443,11 +443,60 @@ def benchmark_walk_glob_http():
                 "http: HttpPath walk() 20 files", walk_samples, group="http", calls=10
             )
 
+            _benchmark_http_transports(url)
+
             return statistics.median(glob_samples), statistics.median(walk_samples)
         finally:
             server.shutdown()
             server.server_close()
             thread.join(timeout=5)
+
+
+def _benchmark_http_transports(url):
+    """The same listing work and a run of small GETs, once per transport:
+    `HTTPTransport` (the default above) and `RequestsTransport`."""
+    from pathlib_next.uri.schemes.http import (
+        HttpPath,
+        HTTPTransport,
+        RequestsTransport,
+    )
+
+    transports = [("builtin", HTTPTransport)]
+    try:
+        import requests  # noqa: F401
+    except ImportError:
+        pass
+    else:
+        transports.append(("requests", RequestsTransport))
+    for name, make in transports:
+        transport = make()
+        try:
+            root = HttpPath(url).with_transport(transport)
+            list(root.walk())  # warm up
+            walk_samples = timeit.repeat(
+                lambda: list(root.walk()), number=10, repeat=_reps(3)
+            )
+            RECORDER.timing(
+                f"http: HttpPath walk() 20 files, {name} transport",
+                walk_samples,
+                group="http",
+                calls=10,
+            )
+            target = root / "dir_0" / "file_0.html"
+            target.read_bytes()
+            get_samples = timeit.repeat(
+                lambda: [target.read_bytes() for _ in range(50)],
+                number=1,
+                repeat=_reps(3),
+            )
+            RECORDER.timing(
+                f"http: 50 GETs of one small file, {name} transport",
+                get_samples,
+                group="http",
+                calls=50,
+            )
+        finally:
+            transport.close()
 
 
 def benchmark_http_directory_parser():
