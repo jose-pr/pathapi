@@ -22,7 +22,7 @@ from pathlib_next.uri import Uri, UriPath
 from pathlib_next.uri.schemes.data import DataUri
 from pathlib_next.uri.schemes.file import FileUri
 from pathlib_next.uri.source import Source
-from pathlib_next.utils import checksum
+from pathlib_next import checksum
 from pathlib_next import FileStat
 
 # --- open(): handle cleanup, mode validation, line buffering ----------------

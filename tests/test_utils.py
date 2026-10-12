@@ -128,21 +128,6 @@ def test_parsedate_tuple_with_offset_applies_it():
     assert utils.parsedate((2015, 10, 21, 9, 28, 0, 0, 1, -1, 7200)) == 1445412480
 
 
-def test_checksum_helpers(tmp_path):
-    from pathlib_next import LocalPath
-    from pathlib_next.utils import md5, sha256
-    import hashlib
-
-    p = LocalPath(tmp_path / "test.txt")
-    p.write_bytes(b"hello world")
-
-    expected_md5 = hashlib.md5(b"hello world").hexdigest()
-    expected_sha256 = hashlib.sha256(b"hello world").hexdigest()
-
-    assert md5(p) == expected_md5
-    assert sha256(p) == expected_sha256
-
-
 def test_archive_helpers(tmp_path):
     from pathlib_next import LocalPath
     from pathlib_next.utils import make_archive, unpack_archive

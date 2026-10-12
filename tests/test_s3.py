@@ -976,7 +976,7 @@ def test_checksum_of_a_single_part_object_is_its_md5_and_reads_no_byte(moto_s3):
 
 
 def test_checksum_refuses_the_etag_of_a_multipart_object(moto_s3):
-    from pathlib_next.utils import checksum as checksums
+    from pathlib_next import checksum as checksums
 
     _multipart_object(moto_s3, "big.bin")
     etag = moto_s3.head_object(Bucket="bkt", Key="big.bin")["ETag"]

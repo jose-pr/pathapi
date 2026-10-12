@@ -16,7 +16,7 @@ import uuid as _uuid
 from .. import utils as _utils
 from ..path import Path, _listing, _relation, _write_batch_of
 from .._filestat import FileStat
-from . import checksum as _checksum
+from .. import checksum as _checksum
 from . import glob as _glob
 
 _logger = _logging.getLogger("pathlib_next.sync")

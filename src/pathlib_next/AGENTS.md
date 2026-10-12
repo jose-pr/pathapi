@@ -1340,7 +1340,7 @@ placeholder (`from_stat()` copies the flag from a foreign stat that has one).
 on `FileNotFoundError`), `settime(value)`, `setmode(value, isdir=None)`,
 `items()`. `is_dir()`/`is_file()`/... are **methods**.
 
-### `checksum` (`pathlib_next.utils.checksum`)
+### `checksum` (`pathlib_next.checksum`)
 
 ```python
 def md5(path, chunk_size=65536) -> str: ...
@@ -1352,8 +1352,7 @@ def native(path, algorithm="md5") -> str | None: ...
 `md5()`, `sha256()`, `stream()`
 (streamed through `open("rb")`, `usedforsecurity=False`),
 `native()` (`None` when the protocol is
-missing or raises `NotImplementedError`). `md5`/`sha256` are also
-importable from `pathlib_next.utils`.
+missing or raises `NotImplementedError`).
 
 ### `archive` (`pathlib_next.utils.archive`)
 

@@ -1,6 +1,6 @@
 """Regression tests for the optional backend-native checksum protocol
 (`protocols/checksum.py::NativeChecksum`) and its wiring into
-`utils/checksum.py`/`utils/sync.py::PathSyncer`. SFTP-specific native/
+`checksum.py`/`sync.py::PathSyncer`. SFTP-specific native/
 fallback coverage lives in `tests/test_sftp.py`, following that module's
 `_FakeBackend` pattern.
 """
@@ -9,7 +9,7 @@ import pytest
 
 from pathlib_next.mempath import MemPath
 from pathlib_next.protocols.checksum import NativeChecksum
-from pathlib_next.utils import checksum as checksum_utils
+from pathlib_next import checksum as checksum_utils
 from pathlib_next import FileStat
 from pathlib_next.utils.sync import PathSyncer
 
@@ -510,3 +510,18 @@ def test_quick_check_zero_mtime_is_unknown_not_in_sync(source_mtime, target_mtim
     assert (target / "cfg.json").read_text() == '{"v": 2}'
     # Checksummed (both sides streamed), not trusted from metadata.
     assert (source / "cfg.json").open_calls[0] == "r"
+
+
+def test_checksum_helpers(tmp_path):
+    from pathlib_next import LocalPath
+    from pathlib_next.checksum import md5, sha256
+    import hashlib
+
+    p = LocalPath(tmp_path / "test.txt")
+    p.write_bytes(b"hello world")
+
+    expected_md5 = hashlib.md5(b"hello world").hexdigest()
+    expected_sha256 = hashlib.sha256(b"hello world").hexdigest()
+
+    assert md5(p) == expected_md5
+    assert sha256(p) == expected_sha256

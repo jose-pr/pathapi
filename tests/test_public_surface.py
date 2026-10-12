@@ -94,12 +94,11 @@ EXPORTS = {
         "is_safe_child_name",
         "is_windows_flavoured",
         "make_archive",
-        "md5",
         "notimplemented",
         "parsedate",
-        "sha256",
         "unpack_archive",
     },
+    "pathlib_next.checksum": {"md5", "native", "sha256", "stream"},
     "pathlib_next.utils.glob": {
         "NonRelativePatternError",
         "RECURSIVE",
@@ -114,7 +113,6 @@ EXPORTS = {
 ALSO_IMPORTABLE = {
     "pathlib_next.mempath": {"MemPath", "MemPathBackend", "MemFile"},
     "pathlib_next.utils.sync": {"PathSyncer", "SyncEvent", "PathAndStat"},
-    "pathlib_next.utils.checksum": {"md5", "sha256", "stream", "native"},
     "pathlib_next.utils.archive": {"make_archive", "unpack_archive"},
     "pathlib_next.testing": {
         "DIRECTORY_ERRORS",

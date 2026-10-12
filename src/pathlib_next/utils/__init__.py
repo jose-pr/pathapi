@@ -21,10 +21,8 @@ __all__ = [
     "is_safe_child_name",
     "is_windows_flavoured",
     "make_archive",
-    "md5",
     "notimplemented",
     "parsedate",
-    "sha256",
     "unpack_archive",
 ]
 
@@ -443,5 +441,4 @@ def is_safe_child_name(name: object, *, windows: bool = False) -> bool:
     return _is_safe_name(name, windows, True)
 
 
-from .checksum import md5 as md5, sha256 as sha256
 from .archive import make_archive as make_archive, unpack_archive as unpack_archive

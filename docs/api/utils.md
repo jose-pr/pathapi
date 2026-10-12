@@ -8,6 +8,6 @@
 
 ::: pathlib_next.FileStat
 
-::: pathlib_next.utils.checksum
+::: pathlib_next.checksum
 
 ::: pathlib_next.utils.archive
