@@ -634,10 +634,9 @@ class Uri(Pathname):
         a relative one is resolved against `self.parent` -- the documented
         sibling-rename semantics ("rename this to a new name in the same
         directory"), not against `self` itself. A `Uri` (of any scheme
-        class) is taken as given; anything else keeps the pre-existing
-        `Uri(...)` conversion, which is already lossless for
-        `PurePath`/`os.PathLike` (they are percent-encoded on the way in
-        and decoded back out).
+        class) is taken as given; anything else goes through `Uri(...)`,
+        which is lossless for `PurePath`/`os.PathLike` (they are
+        percent-encoded on the way in and decoded back out).
         """
         if isinstance(target, Uri):
             result = target
@@ -1518,7 +1517,7 @@ class UriPath(Uri, Path):
 
     def _scandir(self) -> "_ty.Iterator[_ty.Tuple[str, _ty.Optional[FileStat]]]":
         """Default: derives from `_listdir()` + one `stat()` per child (no
-        round-trip savings over the old `iterdir()`). Schemes whose listing
+        round-trip savings over `iterdir()`). Schemes whose listing
         call already returns metadata should override this directly instead
         (see docs/guides/extending.md) -- HttpPath/DavPath/SftpPath/FtpPath/
         S3Path all do. A name that is not one path component

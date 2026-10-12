@@ -1505,9 +1505,8 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         3.14's Path.copy() (added after this method); `overwrite` is our
         own extension (3.14 has no equivalent -- it always raises if the
         destination exists). `preserve_metadata` defaults to True here
-        (unlike 3.14's False) to match this method's pre-existing behavior
-        of always propagating st_mode; only st_mode is preserved, not
-        timestamps/xattrs -- full metadata preservation is not implemented.
+        (unlike 3.14's False): st_mode is propagated, but not
+        timestamps or xattrs -- full metadata preservation is not implemented.
         `ignore_error` accepts a bool or a callable. `True` ignores every
         error; `False` and `None` (the default) fail on the first error. A
         callable is invoked as `ignore_error(error)` and, as it always has

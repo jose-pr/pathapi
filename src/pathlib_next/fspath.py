@@ -308,15 +308,14 @@ class LocalPath(
     def stat(self, *, follow_symlinks=True):
         # pathlib.Path.stat() (next in MRO via WindowsPath/PosixPath) only
         # accepts follow_symlinks= on 3.10+; below that, lstat() is the
-        # (pre-existing, non-kwarg) equivalent for follow_symlinks=False.
+        # equivalent for follow_symlinks=False.
         if _HAS_FOLLOW_SYMLINKS:
             return _path.Path.stat(self, follow_symlinks=follow_symlinks)
         return _path.Path.stat(self) if follow_symlinks else _path.Path.lstat(self)
 
     def chmod(self, mode: int | str, *, follow_symlinks: bool = True):
         # Same follow_symlinks= 3.10+ gap as stat() above; lchmod() is the
-        # pre-existing equivalent (raises NotImplementedError itself on
-        # platforms without os.lchmod, e.g. Windows).
+        # equivalent (NotImplementedError itself where os.lchmod is missing).
         mode = _utils.as_mode(mode)
         if _HAS_FOLLOW_SYMLINKS:
             return _path.Path.chmod(self, mode, follow_symlinks=follow_symlinks)

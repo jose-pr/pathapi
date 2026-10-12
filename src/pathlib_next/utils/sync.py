@@ -552,11 +552,11 @@ class PathSyncer(object):
     a mismatch is merely wasteful, while a false "in sync" would be a
     correctness regression. An `st_mtime` of 0 on either side means
     "unknown" and never matches. Local-to-local pairs always skip this
-    pre-check (unchanged pre-existing behavior -- local reads are already
-    cheap, and this project's `copy(preserve_metadata=True)` doesn't
+    pre-check (local reads are already cheap, and
+    `copy(preserve_metadata=True)` doesn't
     guarantee mtime propagation on every path, see `docs/divergences.md`).
     Set `quick_check=False` to disable the pre-check entirely and always
-    checksum, matching pre-`quick_check` behavior for non-local pairs too.
+    checksum.
 
     `preserve_mtime=True` (the default) gives each file the sync copies the
     modification time the source reported, where the target's class can set one
