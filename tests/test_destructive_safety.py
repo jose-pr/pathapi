@@ -686,6 +686,8 @@ def test_recursive_rm_does_not_descend_into_a_mount_point(tmp_path, monkeypatch)
     (tmp_path / "tree" / "mounted" / "theirs.txt").write_text("NOT MINE")
     (tmp_path / "tree" / "own.txt").write_text("mine")
 
+    # A real mount point needs privileges, so `is_mount` is the one method of
+    # the library replaced here: the removal that must refuse it runs for real.
     real_is_mount = LocalPath.is_mount
 
     def fake_is_mount(self):
