@@ -2113,12 +2113,17 @@ class HTTPResponse:
   timeout is never retried. `stream=False` holds the whole body in memory;
   read a body that may be large with `stream=True`.
 - **Proxies.** `proxies=None` reads the environment (`HTTP_PROXY`,
-  `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`, through `urllib.request`).
+  `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`, through `urllib.request`, which
+  matches names and suffixes in `NO_PROXY`; a CIDR block there, such as
+  `10.0.0.0/8` or `fd00::/8`, also sends an IP-literal host direct, and a
+  host name is never resolved to be matched against one).
   Otherwise `proxies` is indexed with the request URL (no fragment): it
   returns `None` (direct), one proxy, or an iterable of them to try in order
   when a connection cannot be made (`None` in the order is a direct
-  attempt); `KeyError` means direct and the environment is not read; `{}`
-  sends everything direct. A proxy is a `str` URL or any object with a `url`
+  attempt, and an empty iterable is direct as well); `KeyError` means direct
+  and the environment is not read; `{}` sends everything direct (unlike
+  `requests`, which still reads the environment); an exception of the
+  provider other than `KeyError` reaches the caller as it is. A proxy is a `str` URL or any object with a `url`
   attribute, so a proxy resolver from another library works as it is, with
   none imported here:
 

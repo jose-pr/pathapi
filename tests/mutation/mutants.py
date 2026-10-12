@@ -1226,3 +1226,11 @@ mutant(
     ),
     "a server that answers with endless interim replies is waited on without limit",
 )
+mutant(
+    "http-no-proxy-cidr-ignored",
+    f"{_HTTP_PKG}/_proxies.py",
+    '        if _in_no_proxy_network(host, chosen.get("no", "")):\n',
+    "        if False:\n",
+    "tests/test_http_proxy.py::test_a_cidr_block_in_no_proxy_sends_an_ip_literal_host_direct",
+    "a request to a host inside a NO_PROXY block goes to the proxy, which sees its Authorization",
+)

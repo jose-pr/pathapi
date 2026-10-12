@@ -98,7 +98,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   | `~/.netrc` credentials | not read | put the credentials in the URL, or send `headers={"Authorization": ...}`, or use `with_session()` |
   | `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, the certifi bundle | the system trust store | `HTTPTransport(ssl_context=ssl.create_default_context(cafile=...))`, or `with_session(session, verify=...)` |
   | SOCKS and `https:` proxies | `OSError(EPROTONOSUPPORT)` naming the scheme | `with_session()` |
-  | proxies from `requests` settings | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` through `urllib.request` | `HTTPTransport(proxies=...)` |
+  | proxies from `requests` settings | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` through `urllib.request`, and a CIDR block in `NO_PROXY` for an IP-literal host | `HTTPTransport(proxies=...)` |
+  | `proxies={}` still read the proxy environment | `proxies={}` sends everything direct, and an empty answer from a provider is direct too | leave `proxies` unset to read the environment |
+  | `cert=` (a client certificate) | not available | `HTTPTransport(ssl_context=ctx)` with `ctx.load_cert_chain(...)`, or `with_session(session, cert=...)` |
+  | `br` and `zstd` bodies, when their libraries were installed | `gzip` and `deflate` only are asked for and decoded | send `Accept-Encoding` yourself and decode, or `with_session()` |
   | `session.auth` objects (digest, NTLM), mounted adapters, cookies | not available | `with_session(session)` |
   | `requests_args` of `with_session()` | unchanged there; `headers` and `timeout` belong to the backend | `with_transport(transport, headers=, timeout=)` |
   | `User-Agent: python-requests/x` | `User-Agent: pathlib-next` | pass `headers={"User-Agent": ...}` |

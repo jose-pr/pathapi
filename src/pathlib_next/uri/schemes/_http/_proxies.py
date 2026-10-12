@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64 as _base64
 import errno as _errno
+import ipaddress as _ipaddress
 import typing as _ty
 import urllib.parse as _urlparse
 import urllib.request as _urlrequest
@@ -77,6 +78,26 @@ def _from_provider(found: object) -> "list[ProxyAddress | None]":
     return chain or [None]
 
 
+def _in_no_proxy_network(host: str, no_proxy: str) -> bool:
+    """Whether `host`, an IP literal, is inside a CIDR block (`10.0.0.0/8`,
+    `fd00::/8`) listed in `no_proxy`: the form `requests` honours and
+    `urllib.request.proxy_bypass()` does not."""
+    try:
+        address = _ipaddress.ip_address(host.strip("[]").split("%", 1)[0])
+    except ValueError:
+        return False
+    for entry in no_proxy.split(","):
+        if "/" not in entry:
+            continue
+        try:
+            network = _ipaddress.ip_network(entry.strip(), strict=False)
+        except ValueError:
+            continue
+        if address.version == network.version and address in network:
+            return True
+    return False
+
+
 def _lookup(provider: _ty.Any, url: str, scheme: str, host: str) -> object:
     """`provider[url]`; for a plain `dict`, the keys `requests` uses for its
     `proxies` too (`scheme://host`, `scheme`, `all://host`, `all`), so a
@@ -98,8 +119,9 @@ def proxies_for(
     """The proxies to try for `url`, in order; `None` stands for no proxy.
 
     Without a `provider` the environment decides (`urllib.request.getproxies()`
-    and `proxy_bypass()`). A provider is indexed with the URL: `KeyError` means
-    no proxy, and the environment is not asked."""
+    and `proxy_bypass()`, and the CIDR blocks of `NO_PROXY` for an IP-literal
+    host). A provider is indexed with the URL: `KeyError` means no proxy, and
+    the environment is not asked; an empty answer is no proxy too."""
     if provider is None:
         chosen = _urlrequest.getproxies()
         value = chosen.get(scheme) or chosen.get("all")
@@ -110,6 +132,8 @@ def proxies_for(
                 return [None]
         except Exception:
             pass  # a bypass rule that cannot be read does not send it direct
+        if _in_no_proxy_network(host, chosen.get("no", "")):
+            return [None]
         return [_address(value)]
     try:
         found = _lookup(provider, url, scheme, host)

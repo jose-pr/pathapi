@@ -343,3 +343,68 @@ def test_proxy_credentials_are_in_no_repr(transport_for):
 def test_a_proxy_that_is_not_a_usable_url_is_a_value_error(transport_for, bad):
     with pytest.raises(ValueError):
         get(transport_for(Provider(bad)), "http://backend.test/f")
+
+
+# --- NO_PROXY with a CIDR block ---------------------------------------------------
+
+
+def _environment_proxy(monkeypatch, proxy, no_proxy):
+    monkeypatch.setenv("HTTP_PROXY", proxy.url)
+    monkeypatch.setenv("NO_PROXY", no_proxy)
+    monkeypatch.setenv("no_proxy", no_proxy)
+
+
+@pytest.mark.parametrize(
+    "no_proxy", ["127.0.0.0/8", "10.0.0.0/8, 127.0.0.0/8", "127.0.0.1/32"]
+)
+def test_a_cidr_block_in_no_proxy_sends_an_ip_literal_host_direct(
+    transport_for, monkeypatch, no_proxy
+):
+    with Proxy() as proxy, Wire() as wire:
+        _environment_proxy(monkeypatch, proxy, no_proxy)
+        assert get(transport_for(), wire.url + "/").read() == b"ok"
+    assert proxy.requests == [] and len(wire.requests) == 1
+    # And the origin saw no credential of the proxy's.
+    assert wire.requests[0].header("Proxy-Authorization") is None
+
+
+@pytest.mark.parametrize(
+    "no_proxy", ["10.0.0.0/8", "127.0.0.2/32", "not-a-network/8", "::1/128"]
+)
+def test_a_cidr_block_that_does_not_hold_the_host_leaves_it_to_the_proxy(
+    transport_for, monkeypatch, no_proxy
+):
+    with Proxy() as proxy:
+        _environment_proxy(monkeypatch, proxy, no_proxy)
+        assert get(transport_for(), "http://127.0.0.1:9/x").read() == b"via proxy"
+    assert [r.target for r in proxy.requests] == ["http://127.0.0.1:9/x"]
+
+
+def test_a_cidr_block_names_no_host_that_is_not_an_ip_literal(
+    transport_for, monkeypatch
+):
+    with Proxy() as proxy:
+        _environment_proxy(monkeypatch, proxy, "0.0.0.0/0")
+        # A name is never resolved to be matched against a block.
+        assert get(transport_for(), "http://backend.test/x").read() == b"via proxy"
+    assert len(proxy.requests) == 1
+
+
+@pytest.mark.parametrize(
+    "host, no_proxy, inside",
+    [
+        ("10.1.2.3", "10.0.0.0/8", True),
+        ("11.1.2.3", "10.0.0.0/8", False),
+        ("[::1]", "::1/128", True),
+        ("fd00::5", "fd00::/8", True),
+        ("::1", "127.0.0.0/8", False),
+        ("127.0.0.1", "fd00::/8", False),
+        ("fe80::1%25eth0", "fe80::/10", True),
+        ("127.0.0.1", "", False),
+        ("127.0.0.1", "127.0.0.1", False),
+    ],
+)
+def test_which_hosts_a_no_proxy_cidr_block_holds(host, no_proxy, inside):
+    from pathlib_next.uri.schemes._http._proxies import _in_no_proxy_network
+
+    assert _in_no_proxy_network(host, no_proxy) is inside
