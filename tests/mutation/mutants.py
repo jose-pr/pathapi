@@ -1050,7 +1050,7 @@ _HTTP_PKG = "uri/schemes/_http"
 mutant(
     "http-authorization-kept-across-origins",
     f"{_HTTP_PKG}/_follow.py",
-    '        if origin(location) != first:\n            headers = drop_header(headers, "Authorization")\n',
+    '        if origin(current) != home:\n            headers = drop_header(headers, "Authorization")\n',
     '        if False:\n            headers = drop_header(headers, "Authorization")\n',
     (
         "tests/test_http_redirects.py::test_authorization_is_dropped_by_a_redirect_to_another_port",
@@ -1270,4 +1270,23 @@ mutant(
     '    where = shown(location) if location else "(none)"\n',
     f"{_PEER}::test_a_redirect_that_is_refused_is_shown_cut_and_with_an_escaped_reason",
     "a refused redirect's message holds the whole Location",
+)
+mutant(
+    "http-redirect-reask-forgets-the-origin",
+    "uri/schemes/http.py",
+    "            method, location, sent, None, None, stream, timeout, first=url\n",
+    "            method, location, sent, None, None, stream, timeout, first=None\n",
+    (
+        "tests/test_http_redirect_origin.py::test_a_redirect_to_another_origin_does_not_carry_authorization",
+        "tests/test_http_redirect_origin.py::test_a_patch_mode_append_asks_the_other_origin_without_authorization",
+    ),
+    "stat() and what is built on it re-ask the redirect target as if it were the first origin, with Authorization",
+)
+mutant(
+    "http-redirect-reask-sends-the-backend-headers-again",
+    "uri/schemes/_http/_follow.py",
+    "        if origin(current) != home:\n",
+    "        if origin(current) != origin(url):\n",
+    "tests/test_http_redirect_origin.py::test_a_redirect_to_another_origin_does_not_carry_authorization",
+    "a re-request compares the redirect target with itself instead of with the origin it was asked for",
 )

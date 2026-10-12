@@ -148,15 +148,19 @@ def send_following(
     headers: "dict[str, str]",
     timeout,
     stream: bool,
+    first: "str | None" = None,
 ) -> HTTPResponse:
     """Send a request that carries no body and follow its redirects, up to
-    `MAX_REDIRECTS`. `Authorization` goes to the origin of the first URL only:
-    a redirect that changes the scheme, host or port drops it for every later
+    `MAX_REDIRECTS`. `Authorization` goes to the origin of `first` (the URL
+    the caller asked for; `url` when it is not given) and nowhere else: a
+    request to another scheme, host or port drops it, and for every later
     hop. A `303` becomes a `GET` (unless the request was a `HEAD`)."""
-    first = origin(url)
+    home = origin(first or url)
     current = url
     hops = 0
     while True:
+        if origin(current) != home:
+            headers = drop_header(headers, "Authorization")
         resp = transport.send(
             method, current, headers=headers, body=None, timeout=timeout, stream=stream
         )
@@ -172,8 +176,6 @@ def send_following(
                 f"more than {MAX_REDIRECTS} redirects from {shown(url)}",
             )
         _discard(resp)
-        if origin(location) != first:
-            headers = drop_header(headers, "Authorization")
         if resp.status == 303 and method != "HEAD":
             method = "GET"
         current = location

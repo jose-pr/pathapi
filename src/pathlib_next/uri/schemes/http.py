@@ -698,22 +698,6 @@ class HttpAppendStream(_UploadStream):
                 _raise_for_status(resp)
 
 
-def _redirect_target(uri: "HttpPath|str", resp) -> "HttpPath|str":
-    """The URL for `HttpBackend.request` that the redirect `resp`, the answer
-    to `uri`, leads to. Within the same scheme, host and port it keeps the
-    userinfo of `uri` (the credentials continue); `uri` itself when there is
-    no usable `Location`."""
-    full = uri if isinstance(uri, str) else uri.as_uri(False)
-    url = _split_userinfo(full)[0]
-    location = _follow.redirect_location(url, resp)
-    if location is None:
-        return uri
-    target = _urlparse.urlsplit(location)
-    if _origin(target) == _origin(_urlparse.urlsplit(url)):
-        target = target._replace(netloc=_urlparse.urlsplit(full).netloc)
-    return target.geturl()
-
-
 _UNSET = object()
 """The `timeout` of a call that did not give one: the backend's own."""
 
@@ -765,6 +749,50 @@ class HttpBackend(TransportOwner):
     def __repr__(self) -> str:
         return f"{type(self).__name__}(write_method={self.write_method!r})"
 
+    def _prepared(self, uri, headers) -> "tuple[str, dict]":
+        """The URL without userinfo, and the headers every request to `uri`
+        starts from: the base ones, the backend's, the call's, and the
+        `Authorization: Basic` that the userinfo stands for."""
+        url, auth = _split_userinfo(uri if isinstance(uri, str) else uri.as_uri(False))
+        sent = _merge_headers(_BASE_HEADERS, self.headers, headers)
+        if auth is not None and not _has_header(sent, "Authorization"):
+            sent["Authorization"] = _basic_authorization(auth)
+        return url, sent
+
+    def _dispatch(
+        self, method, url, sent, data, allow_redirects, stream, timeout, first=None
+    ) -> HTTPResponse:
+        _check_url(url)
+        _check_headers(sent)
+        if timeout is _UNSET:
+            timeout = self.timeout
+        if isinstance(data, str):
+            data = data.encode("utf-8")
+        transport = self.transport
+        if method.upper() in _FOLLOWED_METHODS and data is None:
+            if allow_redirects is False and first is None:
+                return transport.send(
+                    method, url, headers=sent, timeout=timeout, stream=stream
+                )
+            return _follow.send_following(
+                transport,
+                method,
+                url,
+                headers=sent,
+                timeout=timeout,
+                stream=stream,
+                first=first,
+            )
+        return _follow.send_once(
+            transport,
+            method,
+            url,
+            headers=sent,
+            body=data,
+            timeout=timeout,
+            stream=stream,
+        )
+
     def request(
         self,
         method,
@@ -782,33 +810,32 @@ class HttpBackend(TransportOwner):
         `allow_redirects=False` returns the first answer of a `GET`, `HEAD`
         or `OPTIONS` as it is. `ValueError` for a URL or header with a control
         character, before anything is sent."""
-        url, auth = _split_userinfo(uri if isinstance(uri, str) else uri.as_uri(False))
-        sent = _merge_headers(_BASE_HEADERS, self.headers, headers)
-        if auth is not None and not _has_header(sent, "Authorization"):
-            sent["Authorization"] = _basic_authorization(auth)
-        _check_url(url)
-        _check_headers(sent)
-        if timeout is _UNSET:
-            timeout = self.timeout
-        if isinstance(data, str):
-            data = data.encode("utf-8")
-        transport = self.transport
-        if method.upper() in _FOLLOWED_METHODS and data is None:
-            if allow_redirects is False:
-                return transport.send(
-                    method, url, headers=sent, timeout=timeout, stream=stream
-                )
-            return _follow.send_following(
-                transport, method, url, headers=sent, timeout=timeout, stream=stream
+        url, sent = self._prepared(uri, headers)
+        return self._dispatch(method, url, sent, data, allow_redirects, stream, timeout)
+
+    def redirect(
+        self,
+        method,
+        uri: "HttpPath|str",
+        resp: HTTPResponse,
+        *,
+        headers=None,
+        stream: bool = False,
+        timeout=_UNSET,
+    ) -> HTTPResponse:
+        """Send `method` to where `resp`, the answer to a request for `uri`,
+        redirects to, and follow what it redirects to in turn. The request
+        carries what `uri` is sent with, except that `Authorization` is left
+        off whenever it goes to another scheme, host or port than `uri`'s.
+        A redirect with no usable `Location` is `OSError(EIO)`."""
+        url, sent = self._prepared(uri, headers)
+        location = _follow.redirect_location(url, resp)
+        if location is None:
+            raise _follow.refused_redirect(
+                method, url, resp, None, "no usable Location"
             )
-        return _follow.send_once(
-            transport,
-            method,
-            url,
-            headers=sent,
-            body=data,
-            timeout=timeout,
-            stream=stream,
+        return self._dispatch(
+            method, location, sent, None, None, stream, timeout, first=url
         )
 
 
@@ -980,15 +1007,18 @@ class HttpPath(UriPath):
                     break
 
             if _follow.is_redirect(resp):
-                # Where the first answer pointed, not the same request again.
-                target = _redirect_target(uri, resp)
-                resp = self.backend.request("HEAD", target, headers=_IDENTITY_ENCODING)
+                # Where the first answer pointed, not the same request again;
+                # `redirect()` knows the origin that `Authorization` is for.
+                moved = resp
+                resp = self.backend.redirect(
+                    "HEAD", uri, moved, headers=_IDENTITY_ENCODING
+                )
                 resp.close()
                 if resp.status == 405:
                     # The HEAD-405 fallback again after a redirect: a server or proxy that rejects HEAD
                     # everywhere would otherwise raise PermissionError for an existing path.
-                    resp = self.backend.request(
-                        "GET", target, stream=True, headers=_IDENTITY_ENCODING
+                    resp = self.backend.redirect(
+                        "GET", uri, moved, stream=True, headers=_IDENTITY_ENCODING
                     )
                     resp.close()
             _raise_for_status(resp)

@@ -31,7 +31,6 @@ NOT_THE_CORES = {
     ("uri/schemes/dav.py", "_path"): "the path a stream is for",
     ("uri/schemes/http.py", "_path"): "the path a stream is for",
     ("uri/schemes/dav.py", "_replace"): "a stdlib named tuple's method",
-    ("uri/schemes/http.py", "_replace"): "a stdlib named tuple's method",
     ("uri/schemes/_gitrepo.py", "_replace"): "a `Source` named tuple's method",
 }
 

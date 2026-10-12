@@ -2179,10 +2179,13 @@ class HTTPResponse:
 - Redirects: `GET`/`HEAD`/`OPTIONS` follow up to 30 (a `303` becomes a
   `GET`); a `Location` that is not `http:` or `https:` is not followed. A
   redirect that changes the scheme, host or port drops `Authorization` for
-  every later hop, and nothing else: headers other than `Authorization` from
-  `with_transport(headers=...)` (`X-Api-Key`, a vendor token header) are
-  sent to the new host as well, so keep a secret in `Authorization`, or
-  point the path at the final URL. Every other request
+  every later hop, the asking again of `stat()`, `exists()`, `is_dir()`,
+  `unlink()`, `open("x")` and a patch-mode append included (also on a
+  redirect from `https:` to `http:`), and nothing else: headers other than
+  `Authorization` from `with_transport(headers=...)` (`X-Api-Key`, a vendor
+  token header, a cookie) are sent to the new host as well, even to a plain
+  `http:` one, so keep a secret in `Authorization`, or point the path at the
+  final URL. Every other request
   (`PROPFIND`, `write_method`, `PATCH`, `DELETE`, `MKCOL`, `MOVE`) is sent
   without following: a 307/308 (for `PROPFIND` also a 301, 302 or 303) to the
   same scheme, host and port is re-sent once with the same method, headers
