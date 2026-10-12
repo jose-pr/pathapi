@@ -186,23 +186,23 @@ def test_lru_still_evicts_the_oldest_over_a_positive_maxsize():
 
 
 @pytest.mark.parametrize("bad", [-1, 0o200000, 1 << 40, "07777777777777", "-1"])
-def test_as_mode_refuses_a_number_that_cannot_be_a_mode(bad):
+def test_parse_mode_refuses_a_number_that_cannot_be_a_mode(bad):
     with pytest.raises(ValueError):
-        providers.as_mode(bad)
+        providers.parse_mode(bad)
 
 
 @pytest.mark.parametrize("bad", [True, False])
-def test_as_mode_refuses_a_bool(bad):
+def test_parse_mode_refuses_a_bool(bad):
     with pytest.raises(TypeError):
-        providers.as_mode(bad)
+        providers.parse_mode(bad)
 
 
 @pytest.mark.parametrize(
     "good,expected",
     [(0, 0), (0o644, 0o644), ("0755", 0o755), (0o7777, 0o7777), (0o100644, 0o100644)],
 )
-def test_as_mode_keeps_a_mode_and_the_type_bits_of_a_st_mode(good, expected):
-    assert providers.as_mode(good) == expected
+def test_parse_mode_keeps_a_mode_and_the_type_bits_of_a_st_mode(good, expected):
+    assert providers.parse_mode(good) == expected
 
 
 def test_a_whole_st_mode_still_goes_through_chmod(tmp_path):
@@ -213,19 +213,19 @@ def test_a_whole_st_mode_still_goes_through_chmod(tmp_path):
 
 
 @pytest.mark.parametrize("bad", [(True, None), (None, False), (True, False)])
-def test_as_owner_refuses_a_bool(bad):
+def test_parse_owner_refuses_a_bool(bad):
     with pytest.raises(TypeError):
-        providers.as_owner(*bad)
+        providers.parse_owner(*bad)
 
 
 @pytest.mark.parametrize("bad", [(-2, None), (None, -7), (1 << 32, None)])
-def test_as_owner_refuses_an_id_that_cannot_exist(bad):
+def test_parse_owner_refuses_an_id_that_cannot_exist(bad):
     with pytest.raises(ValueError):
-        providers.as_owner(*bad)
+        providers.parse_owner(*bad)
 
 
-def test_as_owner_keeps_ids_names_and_the_unchanged_sentinels():
-    assert providers.as_owner(-1, 5) == (None, 5)
-    assert providers.as_owner(0, 0) == (0, 0)
-    assert providers.as_owner("root", None) == ("root", None)
-    assert providers.as_owner((1 << 32) - 1, -1) == ((1 << 32) - 1, None)
+def test_parse_owner_keeps_ids_names_and_the_unchanged_sentinels():
+    assert providers.parse_owner(-1, 5) == (None, 5)
+    assert providers.parse_owner(0, 0) == (0, 0)
+    assert providers.parse_owner("root", None) == ("root", None)
+    assert providers.parse_owner((1 << 32) - 1, -1) == ((1 << 32) - 1, None)

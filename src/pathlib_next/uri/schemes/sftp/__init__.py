@@ -585,7 +585,7 @@ class SftpPath(UriPath):
             raise
 
     def chmod(self, mode: int | str, *, follow_symlinks: bool = True):
-        mode = _providers.as_mode(mode)
+        mode = _providers.parse_mode(mode)
         if follow_symlinks:
             return self._sftpclient.chmod(self.path, mode)
         if not self.backend.supports_lchmod:

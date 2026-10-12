@@ -121,10 +121,10 @@ class Chmod(_ty.Protocol):
 
         Extension: `mode` may be a `str`, which is parsed as **octal**
         (`"0755"`, `"755"` and `0o755` all mean the same thing) -- see
-        `providers.as_mode()` for why the base is never left implicit.
+        `providers.parse_mode()` for why the base is never left implicit.
 
         Every implementation normalizes its argument through
-        `providers.as_mode()` on entry. Unlike `symlink_to`/`chown`, `chmod` is
+        `providers.parse_mode()` on entry. Unlike `symlink_to`/`chown`, `chmod` is
         overridden directly by each backend (each has real per-scheme logic
         -- version shims, capability gates, a `SITE CHMOD` command), so
         there is no single wrapper to hang the conversion on; the shared
@@ -186,10 +186,10 @@ class Chmod(_ty.Protocol):
         that can resolve one.
 
         Backends implement `_chown()` and receive an already-canonical pair
-        (see `providers.as_owner()`), so the "unchanged" semantics cannot drift
+        (see `providers.parse_owner()`), so the "unchanged" semantics cannot drift
         between schemes.
         """
-        uid, gid = _permissions.as_owner(uid, gid)
+        uid, gid = _permissions.parse_owner(uid, gid)
         if uid is None and gid is None:
             # Nothing to change -- don't spend a round trip (or make a
             # backend decide what an all-sentinel call means).

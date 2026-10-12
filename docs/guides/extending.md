@@ -52,7 +52,7 @@ deletes when `rename()` is missing) or raise `NotImplementedError`:
 | `_mkdir(mode)` | create this one directory: `FileExistsError` if it exists, `FileNotFoundError` if the parent is missing (`mkdir(parents=True)` relies on it). |
 | `unlink(missing_ok=False)`, `rmdir()` | pathlib's exceptions: `IsADirectoryError`, `NotADirectoryError`, `OSError(errno.ENOTEMPTY)`. |
 | `rename(target)` | return the new path. |
-| `chmod(mode, *, follow_symlinks=True)` | normalize with `providers.as_mode(mode)` so octal strings work. |
+| `chmod(mode, *, follow_symlinks=True)` | normalize with `providers.parse_mode(mode)` so octal strings work. |
 | `_symlink_to(target, target_is_directory=False)`, `readlink()` | `symlink_to(..., force=)` is derived; `target` is already a path object. |
 | `_chown(uid, gid, *, follow_symlinks=True)` | receives a canonical pair (`None` = unchanged); `chown()` is derived. |
 | `_utime(*, atime=None, mtime=None)` | set an existing entry's times, in seconds since the epoch (`None` = leave that one alone); whole seconds, or no access time, is fine. Raise `NotImplementedError` (the default) when the backend cannot set a time: `touch()` of an existing file then leaves it as it is, and `PathSyncer(preserve_mtime=True)` leaves the copy's own time. |

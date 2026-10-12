@@ -1065,7 +1065,7 @@ class Chmod(Protocol):
 ```
 
 `chmod()` (stub; every
-implementation normalizes through `providers.as_mode()`, so `"0755"` works),
+implementation normalizes through `providers.parse_mode()`, so `"0755"` works),
 `lchmod()`, `_chown()` (stub, receives a
 canonical pair) / `chown()` —
 `None` or `-1` leaves a field unchanged, `int` is an id, `str` a name; an
@@ -1381,8 +1381,8 @@ with `UserWarning`).
 ```python
 def is_safe_child_name(name, *, windows=False) -> bool: ...
 def is_windows_flavoured(path) -> bool: ...
-def as_mode(mode) -> int: ...
-def as_owner(uid, gid) -> Tuple[Optional[int], Optional[int]]: ...
+def parse_mode(mode) -> int: ...
+def parse_owner(uid, gid) -> Tuple[Optional[int], Optional[int]]: ...
 def as_error_handler(
     ignore_error, *, default=False,
 ) -> Callable[..., bool]: ...
@@ -1413,11 +1413,11 @@ UNCHANGED = None
   -> bool`, `invalidate(*args)` (discard + recompute), settable `maxsize`.
   `maxsize=None` is unbounded; `maxsize=0` (or less) stores nothing, so every
   call runs `func` and its result never reaches `on_evict`.
-- **`as_mode()`** — `int` passes through; `str` is octal (optional
+- **`parse_mode()`** — `int` passes through; `str` is octal (optional
   `0o`), any non-octal digit → `ValueError`. A `bool` → `TypeError`; a number
   below 0 or above `0o177777` (the 16 bits of a `st_mode`, type bits
   included) → `ValueError`.
-- **`as_owner()`** — `-1` → `None`;
+- **`parse_owner()`** — `-1` → `None`;
   `str` names pass through; a `bool` → `TypeError`, an id outside
   0..2**32-1 → `ValueError`. **`UNCHANGED = None`**.
 - **`as_error_handler()`** — a

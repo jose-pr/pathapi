@@ -316,7 +316,7 @@ class LocalPath(
     def chmod(self, mode: int | str, *, follow_symlinks: bool = True):
         # Same follow_symlinks= 3.10+ gap as stat() above; lchmod() is the
         # equivalent (NotImplementedError itself where os.lchmod is missing).
-        mode = _permissions.as_mode(mode)
+        mode = _permissions.parse_mode(mode)
         if _HAS_FOLLOW_SYMLINKS:
             return _path.Path.chmod(self, mode, follow_symlinks=follow_symlinks)
         return (

@@ -5,14 +5,14 @@ from __future__ import annotations
 import operator as _operator
 import typing as _ty
 
-__all__ = ["UNCHANGED", "as_mode", "as_owner"]
+__all__ = ["UNCHANGED", "parse_mode", "parse_owner"]
 
 
 #: A `st_mode` is 16 bits: four of file type, twelve of permissions.
 _MODE_MASK = 0o177777
 
 
-def as_mode(mode: _ty.Union[int, str]) -> int:
+def parse_mode(mode: _ty.Union[int, str]) -> int:
     """Normalize a permission `mode` to an int, parsing `str` as **octal**.
 
     `chmod("0755")` is the spelling everyone actually writes a mode in --
@@ -65,7 +65,7 @@ UNCHANGED = None
 _ID_MAX = 0xFFFFFFFF
 
 
-def as_owner(
+def parse_owner(
     uid: _ty.Union[int, str, None], gid: _ty.Union[int, str, None]
 ) -> "_ty.Tuple[_ty.Optional[int], _ty.Optional[int]]":
     """Normalize a `chown()` uid/gid pair to canonical `int | None`.

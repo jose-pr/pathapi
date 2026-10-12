@@ -12,7 +12,7 @@ import urllib.parse as _urlparse
 import weakref as _weakref
 
 from .._tree import TreePath
-from .._permissions import as_mode as _as_mode
+from .._permissions import parse_mode as _parse_mode
 from .._names import is_safe_child_name as _is_safe_child_name
 from .._commit import CommitOnClose
 from .._filestat import FileStat
@@ -566,7 +566,7 @@ class FTPPath(TreePath):
         # FileNotFoundError.
         if not follow_symlinks:
             raise NotImplementedError("chmod(follow_symlinks=False)")
-        mode = _as_mode(mode)
+        mode = _parse_mode(mode)
         try:
             self._call("voidcmd", f"SITE CHMOD {mode:o} {self._wirepath}")
         except _ftplib.error_perm as error:

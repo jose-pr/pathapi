@@ -14,7 +14,7 @@ from ._errorpolicy import (
 )
 from ._lru import LRU
 from ._names import is_safe_child_name, is_windows_flavoured
-from ._permissions import UNCHANGED, as_mode, as_owner
+from ._permissions import UNCHANGED, parse_mode, parse_owner
 from ._stubs import notimplemented
 from .path import contains
 
@@ -25,12 +25,12 @@ __all__ = [
     "UNCHANGED",
     "as_error_handler",
     "as_error_predicate",
-    "as_mode",
-    "as_owner",
     "check_follow",
     "contains",
     "copy_error_predicate",
     "is_safe_child_name",
     "is_windows_flavoured",
     "notimplemented",
+    "parse_mode",
+    "parse_owner",
 ]

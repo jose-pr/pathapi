@@ -200,38 +200,38 @@ def test_rm_ignore_error_callable_true_suppresses():
 # drifting between backends.
 
 
-def test_as_mode_parses_string_as_octal():
+def test_parse_mode_parses_string_as_octal():
     from pathlib_next import providers
 
     # The whole point: "0755" is base 8, never base 10. int("0755") would be
     # 755 == 0o1363, a different *and valid* mode -- so a wrong answer here
     # sets plausible-but-unintended permissions and nothing raises.
-    assert providers.as_mode("0755") == 0o755
-    assert providers.as_mode("755") == 0o755
-    assert providers.as_mode("0o755") == 0o755
-    assert providers.as_mode(0o755) == 0o755
-    assert providers.as_mode("0644") != 644
+    assert providers.parse_mode("0755") == 0o755
+    assert providers.parse_mode("755") == 0o755
+    assert providers.parse_mode("0o755") == 0o755
+    assert providers.parse_mode(0o755) == 0o755
+    assert providers.parse_mode("0644") != 644
 
 
 @pytest.mark.parametrize("bad", ["0899", "abc", "", "7 5", "-755"])
-def test_as_mode_rejects_non_octal(bad):
+def test_parse_mode_rejects_non_octal(bad):
     from pathlib_next import providers
 
     with pytest.raises(ValueError):
-        providers.as_mode(bad)
+        providers.parse_mode(bad)
 
 
-def test_as_owner_canonicalizes_unchanged_sentinels():
+def test_parse_owner_canonicalizes_unchanged_sentinels():
     from pathlib_next import providers
 
     # -1 (os.chown's spelling) and None both mean "leave unchanged".
-    assert providers.as_owner(None, None) == (None, None)
-    assert providers.as_owner(-1, -1) == (None, None)
-    assert providers.as_owner(-1, 1000) == (None, 1000)
+    assert providers.parse_owner(None, None) == (None, None)
+    assert providers.parse_owner(-1, -1) == (None, None)
+    assert providers.parse_owner(-1, 1000) == (None, 1000)
     # uid 0 is root, not "unset" -- a falsy check would drop it.
-    assert providers.as_owner(0, 0) == (0, 0)
+    assert providers.parse_owner(0, 0) == (0, 0)
     # Names pass through for backends that can resolve them.
-    assert providers.as_owner("root", "wheel") == ("root", "wheel")
+    assert providers.parse_owner("root", "wheel") == ("root", "wheel")
 
 
 def test_chown_with_no_changes_does_not_reach_the_backend():
