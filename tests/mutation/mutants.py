@@ -1352,3 +1352,11 @@ mutant(
     f"{_LIMITS}::test_the_backend_reads_a_reply_whole_only_up_to_the_limit",
     "request(stream=False) reads a reply to its end whatever its size",
 )
+mutant(
+    "http-exchange-runs-under-the-connect-timeout",
+    f"{_HTTP_PKG}/_builtin.py",
+    "                sock.settimeout(read_timeout)\n",
+    "                sock.settimeout(connect_timeout)\n",
+    "tests/test_http_transport.py::test_a_server_that_never_answers_is_a_timeout_after_the_read_timeout",
+    "the wait for a reply is bounded by the connect half of the timeout",
+)

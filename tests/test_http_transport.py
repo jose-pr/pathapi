@@ -7,7 +7,7 @@ import errno
 import gzip
 import io
 import socket
-import time
+import threading
 import tracemalloc
 import zlib
 
@@ -459,14 +459,38 @@ def test_a_body_that_is_text_is_refused(http_transport):
 # --- timeouts ----------------------------------------------------------------
 
 
+@pytest.fixture
+def socket_timeouts(monkeypatch):
+    """Every timeout the calling thread sets on a socket, in order. What a
+    transport asks of the socket is what bounds a wait, so a test reads it
+    here instead of timing the wait."""
+    seen = []
+    caller = threading.get_ident()
+    real = socket.socket.settimeout
+
+    def settimeout(self, value):
+        if threading.get_ident() == caller:
+            seen.append(value)
+        return real(self, value)
+
+    monkeypatch.setattr(socket.socket, "settimeout", settimeout)
+    return seen
+
+
 def test_a_server_that_never_answers_is_a_timeout_after_the_read_timeout(
-    http_transport,
+    http_transport, socket_timeouts
 ):
     with Wire(lambda r: Hang()) as wire:
-        started = time.monotonic()
+        socket_timeouts.clear()  # the wire's own listener set one
         with pytest.raises(TimeoutError):
             send(http_transport, wire.url + "/", timeout=(5, 0.3))
-    assert time.monotonic() - started < 4
+        # The server got the whole request, so the connection was made and
+        # the wait that ran out was the one for an answer: it was bounded by
+        # the read half, and the connect half was only ever asked of the
+        # connection.
+        assert [(r.method, r.target) for r in wire.requests] == [("GET", "/")]
+    assert socket_timeouts[0] == 5
+    assert set(socket_timeouts[1:]) == {0.3}
 
 
 def test_a_body_that_stalls_is_a_timeout_when_it_is_read(http_transport):
