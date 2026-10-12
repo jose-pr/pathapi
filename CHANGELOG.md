@@ -271,10 +271,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   because 3.12 reads every literal from the listing. `native=True` (the
   default) follows 3.12 there; other versions and `native=False` still join a
   literal as typed. Nothing to change for a caller.
-- **On Windows with Python 3.13 and later `glob("name/")` selects a dangling
-  directory symlink**, as pathlib does. `LocalPath` selected nothing for it;
-  a trailing separator on a literal is now tested the way pathlib tests it.
-  Other platforms and versions are unchanged.
+- **From Python 3.13 `glob("name/")` tests the literal as pathlib does**, with
+  `os.path.lexists(name + os.sep)`, so the platform decides what a link is
+  there: on Windows a dangling directory symlink is selected, on macOS a link
+  to a file is. `LocalPath` selected nothing for either. Linux and earlier
+  versions are unchanged.
 - **`GsPath.rm(recursive=True)` deletes in batches.** It sent one `DELETE` per
   blob; it now queues them in batch requests of 100 (a prefix of 250 blobs is
   3 requests), offers each key the batch refused to `ignore_error` once with its

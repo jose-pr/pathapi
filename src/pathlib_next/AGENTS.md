@@ -257,10 +257,10 @@ Base class for I/O paths.
   An explicit `case_sensitive` compares literals against the listing too
   and yields the name as stored, and so does 3.12 without it (3.12 lists
   every literal; later versions join it as typed); `.` and `..` stay
-  literal. From 3.13 on Windows a final literal with a trailing separator is
-  tested as `os.path.lexists(name + os.sep)`, so a dangling directory link
-  is selected (`LocalPath` and stdlib paths; `native=False` tests it by
-  following the link). A pattern with
+  literal. From 3.13 a final literal with a trailing separator is
+  tested as `os.path.lexists(name + os.sep)`, so the platform decides: Windows
+  selects a dangling directory link, macOS a link to a file (`LocalPath` and
+  stdlib paths; `native=False` tests it by following the link). A pattern with
   no component (`.`) is a `ValueError`; `rglob(".")` selects every entry
   below.
   - **`pattern=None`** expands the pattern THIS PATH CARRIES

@@ -55,9 +55,9 @@ _FINAL_LITERAL_IS_NOT_FOLLOWED = _sys.version_info >= (3, 12)
 #: stored name where the filesystem ignores case. Other versions join it as typed.
 _LITERALS_ARE_LISTED = _sys.version_info[:2] == (3, 12)
 #: From 3.13 a final literal with a trailing separator is tested as `lexists(name +
-#: os.sep)`, which Windows' lstat does not follow for a directory link: a dangling one
-#: is selected there.
-_DIRONLY_LITERAL_IS_LEXISTS = _os.name == "nt" and _sys.version_info >= (3, 13)
+#: os.sep)`. What that answers for a link is the platform's: Windows does not follow a
+#: directory link there, macOS follows a link to a file.
+_DIRONLY_LITERAL_IS_LEXISTS = _sys.version_info >= (3, 13)
 
 #: Symlinks one descent may pass through when `recurse_symlinks=True` and the
 #: backend's stat carries no identity to tell a loop by: what the operating
@@ -708,7 +708,7 @@ def _child(directory: _Globable, name: str, stat=None) -> _Globable:
 
 def _names_a_directory(path: _Globable, lexists: bool) -> bool:
     """Whether the literal `path`, given with a trailing separator, is a
-    directory. `lexists` is pathlib 3.13+'s test on Windows (see
+    directory. `lexists` is pathlib 3.13+'s test (see
     `_DIRONLY_LITERAL_IS_LEXISTS`), made on the file `path` is; any other path
     is a directory when it follows to one."""
     if lexists and isinstance(path, _pathlib.Path):
