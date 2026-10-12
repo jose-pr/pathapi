@@ -15,6 +15,7 @@ import zipfile
 
 import pytest
 
+from capabilities import requires_uri_extra
 from pathlib_next import LocalPath
 from pathlib_next.mempath import MemPath
 from pathlib_next.archive import detect_format, make_archive, unpack_archive
@@ -76,6 +77,7 @@ def test_a_zip_member_holds_what_was_read_whatever_stat_says(claimed):
         assert archive.read("data.bin") == PAYLOAD
 
 
+@requires_uri_extra
 def test_a_tar_of_an_http_file_served_without_a_length_holds_all_its_bytes():
     from pathlib_next.uri import UriPath
 

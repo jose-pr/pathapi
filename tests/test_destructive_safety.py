@@ -13,7 +13,7 @@ import pathlib
 import subprocess
 
 import pytest
-from capabilities import can_make_junctions, requires_junctions
+from capabilities import can_make_junctions, requires_junctions, requires_uri_extra
 
 import pathlib_next
 from pathlib_next.mempath import MemPath
@@ -50,6 +50,7 @@ def test_copy_directory_without_recursive_leaves_target_intact(tmp_path):
     assert target.read_text() == "PRECIOUS"
 
 
+@requires_uri_extra
 def test_copy_http_404_source_leaves_local_target_intact(http_server, tmp_path):
     from pathlib_next.uri import UriPath
 

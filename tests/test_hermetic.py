@@ -20,6 +20,7 @@ import pytest
 
 import conftest
 import hermetic
+from capabilities import requires_uri_extra
 from hermetic import NetworkAccessBlocked, ProcessSpawnBlocked
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
@@ -278,6 +279,7 @@ def test_a_proxy_in_the_developers_shell_is_not_used_for_a_loopback_server(
     assert requests.get(f"{http_server}/a.txt", timeout=10).text == "a"
 
 
+@requires_uri_extra
 def test_a_proxy_in_the_developers_shell_is_not_used_by_the_built_in_transport(
     http_server, monkeypatch
 ):
