@@ -26,7 +26,7 @@ keep the core and the URI layer under separate headings.
 
 | Extra | Installs | Needed for |
 | --- | --- | --- |
-| *(none)* | — | `Path`, `LocalPath`, `MemPath`, `utils`, `testing`, `uripath` on local paths |
+| *(none)* | — | `Path`, `LocalPath`, `MemPath`, `FTPPath`, `utils`, `testing`, `uripath` on local paths |
 | `uri` | `uritools`, `netimps>=0.4.0,<0.5` | `pathlib_next.uri` and **every** URI scheme (`file:`, `data:`, `ftp(s):`, archives included) |
 | `http` | `requests` + `uri` | `http(s):`, `dav(s):`, `github:`, `gitlab:`, `git:` |
 | `sftp` | `paramiko` + `uri` | `sftp:` (paramiko backend) |
@@ -41,8 +41,10 @@ keep the core and the URI layer under separate headings.
 `import pathlib_next` exposes `Path`, `Pathname`, `LocalPath`,
 `PosixPathname`, `WindowsPathname`, `FileStat`, the protocols `Stat`, `Chmod`,
 `BinaryOpen`, `FsPathLike`, the aliases `PathLike`/`PurePathLike`, and the modules
-`glob` (`utils.glob`) and `sync` (`utils.sync`). `MemPath` lives in
-`pathlib_next.mempath`; `pathlib_next.testing` is never imported implicitly.
+`glob` (`utils.glob`) and `sync` (`utils.sync`). `FTPPath` is exported too,
+imported on first use so that `import pathlib_next` loads neither `ftplib`
+nor `ssl`. `MemPath` lives in `pathlib_next.mempath`; `pathlib_next.testing`
+is never imported implicitly.
 
 The root, `path`, `fspath`, `protocols` (and its `fs`, `io`, `checksum`),
 `utils`, `utils.stat` and `utils.glob` declare `__all__` with exactly the names
@@ -668,6 +670,141 @@ Storage: `dict` value = directory,
 `bytearray` (`MemFile`, carrying `mtime`, which `copy`, `deepcopy` and
 `pickle` keep on every version) = file. Pass one instance as `backend=` to
 share a tree; each root `MemPath()` otherwise gets its own.
+
+## FTP (`pathlib_next.ftp`)
+
+Standard library only (`ftplib`, `ssl`); needs no extra and no URI.
+`pathlib_next.FTPPath` is the same class, imported on first use.
+
+### `FTPPath`
+
+```python
+class FTPPath(Path):
+    backend
+    def __init__(
+        self, *segments, backend=None, host=None, port=21, user=None,
+        password=None, tls=False, timeout=30.0, ssl_context=None, verify=True,
+    ) -> None: ...
+```
+
+A `Path` for a directory tree on an FTP server. Nothing connects when a path
+is built.
+
+- **Construction.** `FTPPath("/pub/x", host="h", user="u", tls=True)` builds
+  the path's own `FTPBackend` from the endpoint keywords (the same as
+  `FTPBackend`'s). `backend=` instead shares one connection cache between
+  paths built separately, or plugs in a `BaseFTPBackend` of your own. Giving
+  `backend=` together with any endpoint keyword is a `TypeError`, and so is
+  giving neither (unless a segment is an `FTPPath`, whose backend is kept).
+  Segments are `str`, `FTPPath` or a pure path; an absolute segment restarts
+  the join, empty and `.` segments collapse. Every path derived from one
+  (`/`, `joinpath`, `parent`, `with_name`, `iterdir`, `relative_to`) keeps its
+  backend.
+- **Names.** The tree has no working directory: `pub/x` and `/pub/x` name one
+  file, read from the server root, and `/` is sent for the root (never an
+  empty argument, which a server reads as its working directory). `..` is
+  sent as written.
+- **Text forms.** `str()` is the path alone. `repr()` names the endpoint
+  (`FTPPath('/pub/x', host='h', port=21)`, plus `user=` and `tls=True` when
+  set) and never a password. `as_uri()` is `ftp://[user@]host[:port]/path`
+  (`ftps:` with `tls`), without a password; `NotImplementedError` on a
+  backend that is not an `FTPBackend`.
+- **Identity.** `==` compares the names only (as `MemPath` does); two paths are
+  one tree (`copy()`, `move()` and `PathSyncer` ask) when they share a backend
+  object or their backends have equal `endpoint`s. `_node_key()` follows the
+  same rule and applies `..` to the text. A pickle holds the text and the
+  backend, which carries no connection and a password only if it was given
+  one; `copy.copy` and `copy.deepcopy` share the backend.
+- **Behavior.** Everything under "What a path does" below, which `FtpPath`
+  (`ftp:`/`ftps:`) shares.
+
+### `FTPBackend`, `BaseFTPBackend`
+
+```python
+DEFAULT_PORT = 21
+DEFAULT_TIMEOUT = 30.0
+IDLE_PROBE_SECONDS = 1.0
+
+class Endpoint(NamedTuple):
+    host: str
+    port: int
+    user: str | None
+    tls: bool
+
+class BaseFTPBackend:
+    endpoint
+    def client(self) -> ftplib.FTP: ...
+
+class FTPBackend(BaseFTPBackend):
+    host
+    port
+    user
+    password
+    tls
+    timeout
+    ssl_context
+    verify
+    def __init__(
+        self, host, port=21, *, user=None, password=None, tls=False,
+        timeout=30.0, ssl_context=None, verify=True,
+    ) -> None: ...
+    def close(self) -> None: ...
+    def __enter__(self) -> FTPBackend: ...
+    def __exit__(self, *exc_info) -> None: ...
+```
+
+- `FTPBackend` is the connections to one server and account. A thread opens
+  its control connection on first use and keeps it, so paths that share a
+  backend share a connection per thread; connections are cached per (backend,
+  endpoint, thread) in an LRU of 128, closed on eviction and when their thread
+  ends. A connection that carried a command within the last
+  `IDLE_PROBE_SECONDS` is used as it is; one idle for longer, or not yet used,
+  is probed with `NOOP` and replaced when dead.
+- `port` defaults to 21; `tls=True` is explicit FTPS on that same port (port
+  990 is never assumed) with `PROT P`. The certificate and host name are
+  verified with `ssl.create_default_context()` before `USER`/`PASS` are sent;
+  `ssl_context` (e.g. `ssl.create_default_context(cafile=...)`) wins over
+  `verify`; `verify=False` accepts any certificate. Data connections reuse the
+  TLS session. No `user` logs in as `anonymous`. `timeout` bounds connect,
+  replies and transfers (`None` = forever).
+- `close()` closes every control connection the backend holds, whichever
+  thread opened it; one a command is running on closes when that command
+  ends. It is harmless twice and before any use, and a later use connects
+  afresh. Leaving a `with` block calls it. A `ValueError` for an empty `host`.
+- `BaseFTPBackend.client()` is what to override to supply connections: a new
+  connected, logged-in `ftplib.FTP`. `endpoint`, when set, is a hashable value
+  naming the server and account (`FTPBackend`'s is an `Endpoint`, which holds
+  no password); without one only the same backend object is the same tree.
+
+### What a path does
+
+- A listing uses `MLSD` (UTC `modify`; mode from `unix.mode` or the `perm`
+  fact); `stat()` uses `MLST` of the entry itself where the server's `FEAT`
+  lists it (one reply on the control connection, `FEAT` asked once per
+  connection), else the parent's `MLSD`; a server without `MLSD` falls back
+  to `NLST` for a listing and `SIZE`/`CWD` for a stat. A `size` fact that is
+  not a plain non-negative number is unknown (`st_size` 0). A listing is
+  read whole inside the guarded call: a transient `4xx` reply is
+  `OSError(EAGAIN)`, a name the client cannot decode is `OSError(EILSEQ)`
+  for that directory only, and a listing that dies mid-transfer drops the
+  connection, so the next request reconnects. `stat()` of another entry in
+  a directory that holds an undecodable name is answered by `MLST`, or on a
+  server with `MLSD` and no `MLST` by `SIZE`/`CWD` (after a reconnect).
+- Reads download the whole file into memory; `"w"`/`"x"`/`"a"` (`APPE`)/
+  `"r+"` buffer in memory and upload on close (`"x"` checks then writes).
+- `_utime()` sends `MFMT` (the modification time, UTC, whole seconds; the
+  access time cannot be set) when the server's `FEAT` lists it (asked once
+  per connection), else raises `NotImplementedError` without sending it.
+- `rename()` on the same server (a `str` target is a sibling name; a path of
+  another server is `NotImplementedError`, so `move()` copies). Whether an
+  existing target is replaced is the server's: a POSIX one replaces it, a
+  Windows one answers `550 File exists`, which is `FileExistsError` when the
+  target is there (a reply that names a permission problem stays
+  `PermissionError`). `chmod()` via `SITE CHMOD` (`NotImplementedError`,
+  chained to the server's reply, when the server lacks it or refuses it, or
+  `follow_symlinks=False`).
+- Errors are the `OSError` family: a refused login is `PermissionError`, a
+  connection that cannot be made or drops is `ConnectionError`.
 
 ## Protocols (`pathlib_next.protocols`)
 
@@ -1810,35 +1947,17 @@ class BaseFtpBackend:
 - Paths without `backend=` share one default `FtpBackend()`. Connections
   are cached per (backend, source, tls, thread) (LRU of 128, closed on
   eviction, and closed when their thread ends). A connection that carried
-  a command within the last `schemes.ftp.IDLE_PROBE_SECONDS` (1 second) is
-  used as it is; one idle for longer, or not yet used, is probed with `NOOP`
-  and replaced when dead.
-- A listing uses `MLSD` (UTC `modify`; mode from `unix.mode` or the `perm`
-  fact); `stat()` uses `MLST` of the entry itself where the server's `FEAT`
-  lists it (one reply on the control connection, `FEAT` asked once per
-  connection), else the parent's `MLSD`; a server without `MLSD` falls back
-  to `NLST` for a listing and `SIZE`/`CWD` for a stat. A `size` fact that is
-  not a plain non-negative number is unknown (`st_size` 0). A listing is
-  read whole inside the guarded call: a transient `4xx` reply is
-  `OSError(EAGAIN)`, a name the client cannot decode is `OSError(EILSEQ)`
-  for that directory only, and a listing that dies mid-transfer drops the
-  connection, so the next request reconnects. `stat()` of another entry in
-  a directory that holds an undecodable name is answered by `MLST`, or on a
-  server with `MLSD` and no `MLST` by `SIZE`/`CWD` (after a reconnect).
+  a command within the last `schemes.ftp.IDLE_PROBE_SECONDS` (1 second, the
+  `pathlib_next.ftp` constant) is used as it is; one idle for longer, or not
+  yet used, is probed with `NOOP` and replaced when dead.
+- `FtpPath` is a `UriPath` over `pathlib_next.ftp.FTPPath`: the listing,
+  stat, reads, writes, `rename()`, `chmod()` and `_utime()` are those
+  described under "What a path does" in the FTP section, and an `OSError`
+  names the URI. Its URI-only parts are the endpoint (the `Source` and the
+  scheme's `tls`) and the backend rules above.
 - An empty path (`ftp://host`) is the root, as `ftp://host/` is: `/` is
   sent in every command that takes a path, never an empty argument (which a
   server reads as its working directory).
-- Reads download the whole file into memory; `"w"`/`"x"`/`"a"` (`APPE`)/
-  `"r+"` buffer in memory and upload on close (`"x"` checks then writes).
-- `_utime()` sends `MFMT` (the modification time, UTC, whole seconds; the
-  access time cannot be set) when the server's `FEAT` lists it (asked once
-  per connection), else raises `NotImplementedError` without sending it.
-- `rename()` on the same server. Whether an existing target is replaced
-  is the server's: a POSIX one replaces it, a Windows one answers `550 File
-  exists`, which is `FileExistsError` when the target is there (a reply that
-  names a permission problem stays `PermissionError`). `chmod()` via `SITE
-  CHMOD` (`NotImplementedError`, chained to the server's reply, when the
-  server lacks it or refuses it, or `follow_symlinks=False`).
 
 ### `SftpPath` — `sftp:` (`pathlib_next.uri.schemes.sftp`, `sftp` or `sftp-async` extra)
 

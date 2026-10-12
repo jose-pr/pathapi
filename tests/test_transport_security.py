@@ -36,6 +36,7 @@ from pathlib_next.uri import Source, UriPath
 from pathlib_next.uri.schemes import _gitrepo
 from pathlib_next.uri.schemes import http as http_scheme
 from pathlib_next.uri.schemes.dav import DavPath
+from pathlib_next.ftp import FTPBackend
 from pathlib_next.uri.schemes.ftp import FtpBackend, FtpPath
 from pathlib_next.uri.schemes.github import GitHubPath
 from pathlib_next.uri.schemes.gitlab import GitLabPath
@@ -646,7 +647,7 @@ def test_ftps_custom_ssl_context_verifies_against_its_ca(ftps_server):
 
 
 def test_ftps_default_context_verifies():
-    context = FtpBackend()._tls_context()
+    context = FTPBackend("host", tls=True)._tls_context()
     assert context.verify_mode == ssl.CERT_REQUIRED
     assert context.check_hostname is True
 

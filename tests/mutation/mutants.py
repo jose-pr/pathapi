@@ -495,15 +495,15 @@ mutant(
 )
 mutant(
     "ftps-data-connection-unencrypted",
-    "uri/schemes/ftp.py",
-    "            if tls:\n                client.prot_p()\n",
+    "ftp/_backend.py",
+    "            if self.tls:\n                client.prot_p()\n",
     "            if False:\n                client.prot_p()\n",
     "tests/test_transport_security.py::test_ftps_verify_false_opt_out_accepts",
     "ftps: data connections are no longer encrypted",
 )
 mutant(
     "ftps-certificate-verification-off",
-    "uri/schemes/ftp.py",
+    "ftp/_backend.py",
     "        if not self.verify:\n            context.check_hostname = False\n",
     "        if True:\n            context.check_hostname = False\n",
     "tests/test_transport_security.py::test_ftps_self_signed_rejected_by_default_before_password",

@@ -66,8 +66,14 @@ def _files(directory: pathlib.Path):
 
 
 def core_sources() -> dict[str, str]:
-    """Every module that is not a scheme, the command line or the test helpers."""
-    skipped = (PACKAGE / "uri" / "schemes", PACKAGE / "tools")
+    """Every module that is not a scheme, a provider package (`ftp`, `archive`),
+    the command line or the test helpers."""
+    skipped = (
+        PACKAGE / "uri" / "schemes",
+        PACKAGE / "tools",
+        PACKAGE / "ftp",
+        PACKAGE / "archive",
+    )
     return {
         p.relative_to(PACKAGE).as_posix(): p.read_text(encoding="utf-8")
         for p in _files(PACKAGE)

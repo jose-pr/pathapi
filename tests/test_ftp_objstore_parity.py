@@ -18,7 +18,8 @@ from waits import wait_until
 
 from pathlib_next import LocalPath
 from pathlib_next.uri import UriPath
-from pathlib_next.uri.schemes import ftp as ftp_mod
+from pathlib_next.ftp import _backend as ftp_mod
+from pathlib_next.ftp._facts import facts_to_filestat
 from pathlib_next.uri.schemes.ftp import FtpBackend, FtpPath
 
 # --- FTP loopback servers ------------------------------------------------------
@@ -289,12 +290,12 @@ def test_ftp_mlsd_perm_fact_is_a_known_mode(ftp_factory, tmp_path):
 
 
 def test_ftp_mlsd_unix_mode_fact_is_used():
-    st = FtpPath("ftp://host/x")._facts_to_filestat(
+    st = facts_to_filestat(
         {"type": "file", "size": "1", "unix.mode": "0755", "perm": "r"}
     )
     assert st.mode_known
     assert st.st_mode == stat.S_IFREG | 0o755
-    st = FtpPath("ftp://host/x")._facts_to_filestat({"type": "dir"})
+    st = facts_to_filestat({"type": "dir"})
     assert not st.mode_known
 
 

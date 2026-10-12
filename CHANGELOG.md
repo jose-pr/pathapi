@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **`pathlib_next.ftp`: `FTPPath` and `FTPBackend`, an FTP tree that needs no
+  URI and no extra.** `FTPPath("/pub/x", host="h", user="u", tls=True)` builds
+  the path's own `FTPBackend`; `FTPPath("/pub/x", backend=backend)` shares one
+  connection cache between paths built separately (or plugs in a
+  `BaseFTPBackend` of your own), and giving both is a `TypeError`. Nothing
+  connects until the first operation. `FTPBackend(host, port=21, *, user,
+  password, tls, timeout, ssl_context, verify)` keeps a control connection per
+  thread, is a context manager, and `close()` ends every connection it holds.
+  `str()` is the remote path, `repr()` names the endpoint and never shows a
+  password, and two paths are one tree when they share a backend or name the
+  same host, port, account and security. `ftp:` and `ftps:` paths now run on
+  this class: their behavior is unchanged, and an error still names the URI.
+  `pathlib_next.FTPPath` is imported on first use, so `import pathlib_next`
+  still loads neither `ftplib` nor `ssl`.
 - **`UriPath.schemes()` and `UriPath.scheme_class(name)` read the scheme
   registry.** `schemes()` returns the registered names, sorted: every class
   defined so far, every built-in scheme and every `pathlib_next.schemes` entry

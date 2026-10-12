@@ -153,8 +153,8 @@ def test_ftpbackend_client_source_port_overrides_default(monkeypatch):
 def test_ftpclient_cached_across_accesses():
     backend = _FakeBackend()
     p = _ftp("ftp://host/a", backend=backend)
-    c1 = p._ftpclient
-    c2 = p._ftpclient
+    c1 = p._core_path._ftpclient
+    c2 = p._core_path._ftpclient
     assert c1 is c2
     assert backend.client_calls == 1
 
@@ -162,14 +162,14 @@ def test_ftpclient_cached_across_accesses():
 def test_ftpclient_recreated_when_noop_fails():
     backend = _FakeBackend()
     p = _ftp("ftp://host/a", backend=backend)
-    c1 = p._ftpclient
+    c1 = p._core_path._ftpclient
 
     def failing_noop(cmd):
         raise OSError("broken pipe")
 
     c1.voidcmd = failing_noop
     backend._client = _FakeFtpClient()  # what a fresh connect would return
-    c2 = p._ftpclient
+    c2 = p._core_path._ftpclient
     assert c2 is not c1
     assert backend.client_calls == 2
 
@@ -179,7 +179,7 @@ def test_ftps_scheme_requests_tls():
     calls = []
     backend.client = lambda source, tls: (calls.append(tls), _FakeFtpClient())[1]
     p = FtpPath("ftps://host/a", backend=backend)
-    p._ftpclient
+    p._core_path._ftpclient
     assert calls == [True]
 
 
@@ -188,7 +188,7 @@ def test_ftp_scheme_no_tls():
     calls = []
     backend.client = lambda source, tls: (calls.append(tls), _FakeFtpClient())[1]
     p = FtpPath("ftp://host/a", backend=backend)
-    p._ftpclient
+    p._core_path._ftpclient
     assert calls == [False]
 
 

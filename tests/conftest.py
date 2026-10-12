@@ -252,7 +252,7 @@ def _close_cached_ftp_connections():
     yield
     import sys
 
-    ftp = sys.modules.get("pathlib_next.uri.schemes.ftp")
+    ftp = sys.modules.get("pathlib_next.ftp._backend")
     if ftp is not None:
         for key in list(ftp._CACHED_CLIENTS.cache):
             ftp._CACHED_CLIENTS.discard(*key)

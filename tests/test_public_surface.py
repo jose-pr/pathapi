@@ -27,6 +27,7 @@ EXPORTS = {
     "pathlib_next": {
         "BinaryOpen",
         "Chmod",
+        "FTPPath",
         "FileStat",
         "FsPathLike",
         "LocalPath",
@@ -52,6 +53,15 @@ EXPORTS = {
         "copy_error_predicate",
     },
     "pathlib_next.fspath": {"LocalPath", "PosixPathname", "WindowsPathname"},
+    "pathlib_next.ftp": {
+        "BaseFTPBackend",
+        "DEFAULT_PORT",
+        "DEFAULT_TIMEOUT",
+        "Endpoint",
+        "FTPBackend",
+        "FTPPath",
+        "IDLE_PROBE_SECONDS",
+    },
     "pathlib_next.protocols": {
         "BinaryOpen",
         "Chmod",

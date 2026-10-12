@@ -6,7 +6,7 @@ import pytest
 
 pytest.importorskip("uritools")
 
-from pathlib_next.uri.schemes import ftp as ftp_mod
+from pathlib_next.ftp import _backend as ftp_mod
 from pathlib_next.uri.schemes.ftp import FtpBackend, FtpPath
 
 from ftp_loopback import LoopbackFtp
