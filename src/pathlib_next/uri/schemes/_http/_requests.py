@@ -4,6 +4,7 @@ proxies, `~/.netrc`, digest or NTLM authentication, cookies, mounted adapters.""
 from __future__ import annotations
 
 import errno as _errno
+import http.client as _client
 import ssl as _ssl
 import threading as _threading
 import typing as _ty
@@ -12,6 +13,7 @@ from .._extras import import_client
 from ._follow import origin
 from ._headers import (
     Headers,
+    check_body,
     check_headers,
     check_method,
     check_url,
@@ -76,8 +78,10 @@ class _Body:
         self._received = 0
 
     def read(self, amount: int) -> bytes:
+        raw = self._response.raw
         try:
-            chunk = self._response.raw.read(amount)
+            # urllib3 2 can return what has arrived; 1.x fills the amount.
+            chunk = getattr(raw, "read1", raw.read)(amount)
         except Exception as error:
             raise _read_failure(error) from None
         if chunk:
@@ -104,6 +108,15 @@ def _read_failure(error: Exception) -> BaseException:
     if isinstance(error, OSError) and type(error).__module__ == "builtins":
         return error
     return OSError(_errno.EIO, f"the response could not be read ({name})")
+
+
+def _header_pairs(response) -> "list[tuple[str, str]]":
+    """The headers of `response`, a name sent twice as two pairs (`requests`
+    joins them in its own mapping)."""
+    raw = getattr(getattr(response, "raw", None), "headers", None)
+    if hasattr(raw, "getlist"):
+        return [(name, value) for name in raw for value in raw.getlist(name)]
+    return list(response.headers.items())
 
 
 class RequestsTransport:
@@ -155,6 +168,14 @@ class RequestsTransport:
             found = _find(error, _ssl.SSLError)
             return found if found is not None else _ssl.SSLError("TLS error")
         if isinstance(error, exceptions.ConnectionError):
+            malformed = _find(error, _client.HTTPException)
+            if malformed is not None and not isinstance(
+                malformed, _client.RemoteDisconnected
+            ):
+                return OSError(
+                    _errno.EIO,
+                    f"the response is not valid HTTP ({type(malformed).__name__})",
+                )
             return ConnectionError(f"connection failed ({type(error).__name__})")
         if isinstance(
             error,
@@ -183,6 +204,7 @@ class RequestsTransport:
         own proxies, trust store and authentication apply."""
         method = check_method(method)
         check_url(url)
+        check_body(body)
         sent = dict(check_headers(headers))
         decode = wants_decoding(sent.items())
         if not has_header(sent, "Accept-Encoding"):
@@ -233,7 +255,7 @@ class RequestsTransport:
         result = HTTPResponse(
             response.status_code,
             response.reason,
-            Headers(response.headers.items()),
+            Headers(_header_pairs(response)),
             getattr(response, "url", None) or plain,
             _Body(response, expected),
             decode=decode,

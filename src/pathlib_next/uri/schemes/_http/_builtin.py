@@ -14,6 +14,7 @@ from . import _pool
 from ._headers import (
     Target,
     bracket,
+    check_body,
     check_headers,
     check_method,
     check_url,
@@ -139,18 +140,7 @@ class _Payload:
     """The request body, and whether it can be sent twice."""
 
     def __init__(self, body):
-        if body is None or isinstance(body, (bytes, bytearray, memoryview)):
-            self.repeatable = True
-        elif isinstance(body, str):
-            raise TypeError("the request body is bytes, not text")
-        elif hasattr(body, "read"):
-            self.repeatable = False
-        elif isinstance(body, (list, tuple)):
-            self.repeatable = all(isinstance(p, (bytes, bytearray)) for p in body)
-        elif hasattr(body, "__iter__"):
-            self.repeatable = False
-        else:
-            raise TypeError("the request body is bytes, a file or an iterable of bytes")
+        self.repeatable = check_body(body)
         self.value = body
 
 

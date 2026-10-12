@@ -69,7 +69,11 @@ def _from_provider(found: object) -> "list[ProxyAddress | None]":
         return [None]
     if isinstance(found, str) or hasattr(found, "url"):
         return [_address(found)]
-    chain = [None if item is None else _address(item) for item in found]
+    try:
+        items = list(found)
+    except TypeError:
+        raise ValueError("a proxy is a URL or an object with a url") from None
+    chain = [None if item is None else _address(item) for item in items]
     return chain or [None]
 
 

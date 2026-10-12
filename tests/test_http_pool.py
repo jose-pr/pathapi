@@ -1,0 +1,289 @@
+"""How the built-in transport reuses connections: one idle connection per
+thread and server, a resend only for a request that can be sent twice, and
+every connection closed when its thread ends or the transport is closed."""
+
+import gc
+import io
+import threading
+
+import pytest
+
+from http_wire import Drop, Reply, Wire, response
+from pathlib_next.uri.schemes._http import _builtin, _pool
+from pathlib_next.uri.schemes.http import HTTPTransport
+from waits import wait_until
+
+TIMEOUT = (5, 5)
+
+
+def get(transport, url, **kwargs):
+    return transport.send("GET", url, headers={}, timeout=TIMEOUT, **kwargs)
+
+
+def send(transport, method, url, **kwargs):
+    return transport.send(method, url, headers={}, timeout=TIMEOUT, **kwargs)
+
+
+@pytest.fixture
+def transport():
+    with HTTPTransport() as transport:
+        yield transport
+
+
+def closing_after_each_reply(request):
+    """Answers, then closes the connection without having said so."""
+    return Reply(response(body=b"ok"), close=True)
+
+
+# --- reuse ------------------------------------------------------------------
+
+
+def test_requests_in_one_thread_to_one_server_share_a_connection(transport):
+    with Wire() as wire:
+        for _ in range(3):
+            assert get(transport, wire.url + "/").read() == b"ok"
+    assert wire.connections == 1
+    assert [r.connection for r in wire.requests] == [0, 0, 0]
+
+
+def test_a_reply_never_read_to_its_end_does_not_hold_its_connection(transport):
+    with Wire(lambda r: response(body=b"x" * 200000)) as wire:
+        first = get(transport, wire.url + "/", stream=True)
+        first.read(10)
+        first.close()
+        get(transport, wire.url + "/").read()
+    assert wire.connections == 2
+
+
+def test_a_reply_read_to_its_end_gives_its_connection_back(transport):
+    with Wire(lambda r: response(body=b"x" * 200000)) as wire:
+        with get(transport, wire.url + "/", stream=True) as first:
+            assert len(first.read()) == 200000
+        get(transport, wire.url + "/").read()
+    assert wire.connections == 1
+
+
+def test_two_replies_open_at_once_use_two_connections(transport):
+    with Wire(lambda r: response(body=b"x" * 200000)) as wire:
+        a = get(transport, wire.url + "/", stream=True)
+        b = get(transport, wire.url + "/", stream=True)
+        assert len(a.read()) == len(b.read()) == 200000
+    assert wire.connections == 2
+
+
+def test_a_server_that_says_close_is_not_reused(transport):
+    def script(request):
+        return response(headers={"Connection": "close"}, body=b"ok")
+
+    with Wire(script) as wire:
+        get(transport, wire.url + "/").read()
+        get(transport, wire.url + "/").read()
+    assert wire.connections == 2
+
+
+def test_different_servers_get_different_connections(transport):
+    with Wire() as one, Wire() as two:
+        get(transport, one.url + "/").read()
+        get(transport, two.url + "/").read()
+        get(transport, one.url + "/").read()
+    assert (one.connections, two.connections) == (1, 1)
+
+
+# --- a connection the server dropped -------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "method", ["GET", "HEAD", "OPTIONS", "PUT", "DELETE", "PROPFIND"]
+)
+def test_a_repeatable_request_is_sent_again_on_a_new_connection(transport, method):
+    with Wire(closing_after_each_reply) as wire:
+        send(
+            transport,
+            method,
+            wire.url + "/f",
+            body=b"data" if method == "PUT" else None,
+        ).read()
+        wait_until(lambda: 0 in wire.closed)
+        reply = send(
+            transport,
+            method,
+            wire.url + "/f",
+            body=b"data" if method == "PUT" else None,
+        )
+        assert reply.status == 200
+    assert wire.connections == 2
+    assert [r.method for r in wire.requests] == [method, method]
+
+
+@pytest.mark.parametrize("method", ["POST", "PATCH", "MKCOL", "MOVE"])
+def test_a_request_that_cannot_be_repeated_is_not_sent_again(transport, method):
+    with Wire(closing_after_each_reply) as wire:
+        send(transport, method, wire.url + "/f", body=b"data").read()
+        wait_until(lambda: 0 in wire.closed)
+        with pytest.raises(ConnectionError):
+            send(transport, method, wire.url + "/f", body=b"data")
+    # The second request was never delivered, and no new connection was made
+    # to deliver it a second time.
+    assert wire.connections == 1
+    assert len(wire.requests) == 1
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        lambda: io.BytesIO(b"from a file"),
+        lambda: (piece for piece in (b"in ", b"pieces")),
+    ],
+    ids=["file", "iterator"],
+)
+def test_a_body_that_cannot_be_sent_twice_is_not_sent_again(transport, body):
+    with Wire(closing_after_each_reply) as wire:
+        send(transport, "PUT", wire.url + "/f", body=b"first").read()
+        wait_until(lambda: 0 in wire.closed)
+        with pytest.raises(ConnectionError):
+            send(transport, "PUT", wire.url + "/f", body=body())
+    assert wire.connections == 1
+    assert len(wire.requests) == 1
+
+
+def test_a_request_that_cannot_be_repeated_does_not_trust_a_stale_connection(
+    transport, monkeypatch
+):
+    monkeypatch.setattr(_builtin, "REUSE_WINDOW", 0.05)
+    with Wire(closing_after_each_reply) as wire:
+        send(transport, "POST", wire.url + "/f", body=b"one").read()
+        wait_until(lambda: 0 in wire.closed)
+        threading.Event().wait(0.2)
+        assert send(transport, "POST", wire.url + "/f", body=b"two").read() == b"ok"
+    assert wire.connections == 2
+    assert [r.body for r in wire.requests] == [b"one", b"two"]
+
+
+def test_a_request_that_cannot_be_repeated_reuses_a_connection_used_a_moment_ago(
+    transport,
+):
+    with Wire() as wire:
+        send(transport, "POST", wire.url + "/f", body=b"one").read()
+        send(transport, "POST", wire.url + "/f", body=b"two").read()
+    assert wire.connections == 1
+
+
+def test_a_second_failure_is_not_retried_again(transport):
+    # The resend goes to a server that also drops the request.
+    def script(request):
+        return (
+            Reply(response(body=b"ok"), close=True)
+            if request.connection == 0
+            else Drop()
+        )
+
+    with Wire(script) as wire:
+        get(transport, wire.url + "/").read()
+        wait_until(lambda: 0 in wire.closed)
+        with pytest.raises(ConnectionError):
+            get(transport, wire.url + "/")
+    assert wire.connections == 2
+
+
+def test_a_timeout_on_a_reused_connection_is_not_sent_again(transport):
+    def script(request):
+        if request.connection == 0 and len(request.target) == 1:
+            return response(body=b"ok")
+        from http_wire import Hang
+
+        return Hang()
+
+    with Wire(script) as wire:
+        get(transport, wire.url + "/").read()
+        with pytest.raises(TimeoutError):
+            transport.send("GET", wire.url + "/slow", headers={}, timeout=(5, 0.3))
+    assert wire.connections == 1
+
+
+# --- threads -----------------------------------------------------------------
+
+
+def test_each_thread_has_its_own_connection(transport):
+    with Wire() as wire:
+        get(transport, wire.url + "/").read()
+        threading.Thread(target=lambda: get(transport, wire.url + "/").read()).start()
+        assert wait_until(lambda: wire.connections == 2)
+        get(transport, wire.url + "/").read()
+    assert wire.connections == 2
+
+
+def test_the_connection_of_a_thread_closes_when_the_thread_ends(transport):
+    with Wire() as wire:
+        worker = threading.Thread(target=lambda: get(transport, wire.url + "/").read())
+        worker.start()
+        worker.join()
+        assert wait_until(lambda: wire.closed == [0])
+
+
+def test_a_thread_keeps_at_most_eight_idle_connections(transport, monkeypatch):
+    wires = [Wire() for _ in range(_pool.MAX_IDLE_PER_THREAD + 1)]
+    try:
+        for wire in wires:
+            get(transport, wire.url + "/").read()
+        # The one used longest ago was closed to make room.
+        assert wait_until(lambda: wires[0].closed == [0])
+        assert all(wire.closed == [] for wire in wires[1:])
+    finally:
+        for wire in wires:
+            wire.close()
+
+
+# --- closing -----------------------------------------------------------------
+
+
+def test_close_closes_idle_connections_and_may_be_called_twice():
+    transport = HTTPTransport()
+    with Wire() as wire:
+        get(transport, wire.url + "/").read()
+        transport.close()
+        transport.close()
+        assert wait_until(lambda: wire.closed == [0])
+        # A closed transport connects afresh when used again.
+        assert get(transport, wire.url + "/").read() == b"ok"
+        transport.close()
+    assert wire.connections == 2
+
+
+def test_close_also_closes_the_connection_of_an_open_reply():
+    transport = HTTPTransport()
+    with Wire(lambda r: response(body=b"x" * 300000)) as wire:
+        reply = get(transport, wire.url + "/", stream=True)
+        reply.read(10)
+        transport.close()
+        assert wait_until(lambda: wire.closed == [0])
+        with pytest.raises(OSError):
+            reply.read()
+        reply.close()
+
+
+def test_a_transport_that_is_dropped_without_close_closes_its_connections():
+    with Wire() as wire:
+        transport = HTTPTransport()
+        get(transport, wire.url + "/").read()
+        del transport
+        gc.collect()
+        assert wait_until(lambda: wire.closed == [0])
+
+
+def test_a_reply_that_is_dropped_unread_closes_its_connection():
+    with Wire(lambda r: response(body=b"x" * 300000)) as wire:
+        with HTTPTransport() as transport:
+            reply = get(transport, wire.url + "/", stream=True)
+            reply.read(10)
+            del reply
+            gc.collect()
+            assert wait_until(lambda: wire.closed == [0])
+
+
+def test_the_pool_forgets_nothing_it_still_needs_after_a_failed_request(transport):
+    with Wire(lambda r: Drop()) as wire:
+        for _ in range(3):
+            with pytest.raises(ConnectionError):
+                get(transport, wire.url + "/")
+    assert wire.connections == 3
+    assert transport._pool._open == set()

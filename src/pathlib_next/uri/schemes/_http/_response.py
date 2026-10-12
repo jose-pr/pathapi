@@ -137,8 +137,10 @@ class HTTPResponse:
         self.reason = reason or ""
         self.headers = headers if isinstance(headers, Headers) else Headers(headers)
         self.url = url
+        self._kept = False
         if isinstance(body, (bytes, bytearray, memoryview)):
             body = _Memory(body)
+            self._kept = True  # in memory: readable after close
         self._source = body
         self._inflater = _inflater_for(self.headers) if decode else None
         self._leftover = b""
@@ -158,12 +160,16 @@ class HTTPResponse:
         except Exception:
             pass
 
-    def _next(self) -> bytes:
-        """The next decoded bytes of the body; empty at its end."""
+    def _check_open(self) -> None:
+        if self._closed and not self._kept:
+            raise ValueError("read of a closed response")
+
+    def _next(self, limit: int = CHUNK) -> bytes:
+        """The next decoded bytes of the body; empty at its end. Without a
+        coding, no more than `limit` bytes are asked of the transport."""
         if self._ended:
             return b""
-        if self._closed:
-            raise ValueError("read of a closed response")
+        self._check_open()
         inflater = self._inflater
         while True:
             if inflater is not None and inflater.has_input:
@@ -171,7 +177,7 @@ class HTTPResponse:
                 if out:
                     return out
                 continue
-            out = self._source.read(CHUNK)
+            out = self._source.read(CHUNK if inflater else min(CHUNK, limit))
             if not out:
                 if inflater is not None:
                     inflater.finish()
@@ -184,10 +190,12 @@ class HTTPResponse:
     def read(self, size: "int | None" = -1) -> bytes:
         """Up to `size` bytes of the decoded body, fewer only at its end; the
         whole rest of it when `size` is negative or `None`."""
+        self._check_open()
         parts = []
         have = 0
         while size is None or size < 0 or have < size:
-            chunk = self._leftover or self._next()
+            wanted = CHUNK if size is None or size < 0 else size - have
+            chunk = self._leftover or self._next(wanted)
             if not chunk:
                 break
             if size is not None and 0 <= size < have + len(chunk):
@@ -202,8 +210,9 @@ class HTTPResponse:
     def iter_bytes(self, chunk_size: int = CHUNK) -> "_ty.Iterator[bytes]":
         """The rest of the body in pieces of at most `chunk_size` bytes, each
         as soon as it has arrived."""
+        self._check_open()
         while True:
-            chunk = self._leftover or self._next()
+            chunk = self._leftover or self._next(chunk_size)
             if not chunk:
                 return
             self._leftover = chunk[chunk_size:]
@@ -221,6 +230,7 @@ class HTTPResponse:
         response can be read after the connection has been given back."""
         try:
             self._leftover = self.read()
+            self._kept = True
         finally:
             self.close()
         return self

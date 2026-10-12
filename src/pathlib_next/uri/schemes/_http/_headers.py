@@ -52,7 +52,8 @@ class Headers(_abc.Mapping):
         return [value for field, value in self._pairs if field.lower() == key]
 
     def __repr__(self) -> str:
-        return f"Headers({list(self._pairs)!r})"
+        # Values are left out: a reply can carry cookies and tokens.
+        return f"Headers({list(self._spelling.values())!r})"
 
 
 def has_header(headers: "_abc.Mapping[str, str]", name: str) -> bool:
@@ -94,6 +95,22 @@ def check_method(method: str) -> str:
     if not isinstance(method, str) or not _TOKEN.fullmatch(method):
         raise ValueError("the request method is not an HTTP token")
     return method.upper()
+
+
+def check_body(body) -> bool:
+    """Whether `body` (`None`, bytes, a binary file or an iterable of bytes)
+    can be sent twice; `TypeError` for text or anything else."""
+    if body is None or isinstance(body, (bytes, bytearray, memoryview)):
+        return True
+    if isinstance(body, str):
+        raise TypeError("the request body is bytes, not text")
+    if hasattr(body, "read"):
+        return False
+    if isinstance(body, (list, tuple)):
+        return all(isinstance(piece, (bytes, bytearray)) for piece in body)
+    if hasattr(body, "__iter__"):
+        return False
+    raise TypeError("the request body is bytes, a file or an iterable of bytes")
 
 
 def check_headers(headers: "_abc.Mapping[str, str] | None") -> "list[tuple[str, str]]":
