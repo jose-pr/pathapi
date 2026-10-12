@@ -47,8 +47,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   importing its module or loading its entry point first, and raises
   `ValueError` naming the registered schemes when there is none. They answer
   "why did `UriPath("x://...")` give a plain `UriPath`" without a dispatch.
+- **`pathlib_next.exceptions`: `PathError`, the base of the exceptions the
+  package defines.** `NonRelativePatternError` (an absolute glob pattern) is
+  now a `PathError` as well as a `NotImplementedError` and a `ValueError`, so
+  every `except` clause that caught it still does. I/O failures stay the
+  `OSError` types `pathlib` raises. `PathError`, `NonRelativePatternError` and
+  `MemPath` are exported from `pathlib_next`.
+- **`pathlib_next.mempath`, `pathlib_next.sync` and `pathlib_next.testing`
+  declare `__all__`**, so `from pathlib_next.sync import *` publishes
+  `PathSyncer`, `SyncEvent` and `PathAndStat` and nothing else, and a type
+  checker reads those names as the module's exports.
 
 ### Changed
+- **The `pathlib_next.utils` package is gone, and the modules that replace it
+  are named for what they hold (takes effect in 0.10.0).** There is no alias:
+  the old import raises `ModuleNotFoundError`. Change each import as the table
+  says; a name that is not in the table was never public. Code that builds a
+  class on `Path` takes its helpers from `pathlib_next.providers`.
+
+  | Old import | New import |
+  | --- | --- |
+  | `pathlib_next.utils.sync` (`PathSyncer`, `SyncEvent`, `PathAndStat`) | `pathlib_next.sync` |
+  | `pathlib_next.utils.glob` (`glob`, `select`, `full_match`, `parse_pattern`, ...) | `pathlib_next.glob` |
+  | `pathlib_next.utils.glob.NonRelativePatternError` | `pathlib_next.NonRelativePatternError` (defined in `pathlib_next.exceptions`) |
+  | `pathlib_next.utils.checksum` (`md5`, `sha256`, `stream`, `native`) | `pathlib_next.checksum` |
+  | `pathlib_next.utils.md5`, `pathlib_next.utils.sha256` | `pathlib_next.checksum.md5`, `pathlib_next.checksum.sha256` |
+  | `pathlib_next.utils.archive`, `pathlib_next.utils.make_archive`, `pathlib_next.utils.unpack_archive` | `pathlib_next.archive.make_archive`, `pathlib_next.archive.unpack_archive` |
+  | `pathlib_next.utils.archive.detect_format` (also `_detect_format`) | `pathlib_next.archive.detect_format` |
+  | `pathlib_next.utils.stat.FileStat` | `pathlib_next.FileStat` |
+  | `pathlib_next.utils.as_mode` | `pathlib_next.providers.parse_mode` |
+  | `pathlib_next.utils.as_owner` | `pathlib_next.providers.parse_owner` |
+  | `pathlib_next.utils.UNCHANGED` | `pathlib_next.providers.UNCHANGED` |
+  | `pathlib_next.utils.as_error_handler`, `as_error_predicate`, `OfferedOnce` | `pathlib_next.providers.as_error_handler`, `as_error_predicate`, `OfferedOnce` |
+  | `pathlib_next.utils.is_safe_child_name`, `is_windows_flavoured` | `pathlib_next.providers.is_safe_child_name`, `is_windows_flavoured` |
+  | `pathlib_next.utils.notimplemented` | `pathlib_next.providers.notimplemented` |
+  | `pathlib_next.utils.LRU` | `pathlib_next.providers.LRU` |
+  | `pathlib_next.utils._commit.CommitOnClose` (also `_CommitOnClose`) | `pathlib_next.providers.CommitOnClose` |
+  | `pathlib_next.path.check_follow`, `contains`, `copy_error_predicate` (also `_check_follow`, `_contains`) | `pathlib_next.providers.check_follow`, `contains`, `copy_error_predicate` |
+  | `pathlib_next.utils.sizeof_fmt`, `pathlib_next.utils.parsedate` | removed: no replacement is public |
+
+  `pathlib_next.path`, `pathlib_next.glob`, `pathlib_next.sync` and
+  `pathlib_next.testing` are now packages whose private modules hold the code;
+  they export the same names, and `pathlib_next.path.Path` is still
+  `pathlib_next.Path`. A module or name that starts with an underscore is not
+  part of the API.
 - **A scheme name belongs to one class: a second claim raises, and an entry
   point can no longer take a built-in scheme.** Defining a `UriPath` subclass
   that lists a name another class held used to replace it silently, so the
