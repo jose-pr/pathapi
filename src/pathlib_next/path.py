@@ -127,10 +127,8 @@ class _PathnameParents(_ty.Sequence[PN]):
     def __init__(self, path: PN):
         self._path = path
         segments = tuple(path.segments)
-        # The anchor (a leading "" for the root of an absolute path) is not
-        # an ancestor of its own: counting it made MemPath("/a/b").parents
-        # ['/a', '', ''] -- one entry too many, and the root spelled as the
-        # relative empty path (pathlib: ['/a', '/']).
+        # The anchor (a leading "" for the root) is no ancestor of its own: counting
+        # it adds an entry and spells the root as the relative empty path.
         self._anchor = path._anchor_segments()
         segments = segments[len(self._anchor) :]
         while segments and not segments[-1]:
@@ -278,13 +276,9 @@ class Pathname(FsPathLike, _ty.Generic[_P]):
     def is_relative_to(self, other: _ty.Self | str):
         """Return True if the path is relative to another path or False."""
         cls = type(self)
-        # with_segments(other), NOT cls(self, other): joining `other` under
-        # `self` first turned `MemPath("a/b").is_relative_to("a")` into a
-        # comparison against "a/b/a" and answered False, while the object
-        # form of the same call answered True. CPython parses `other`
-        # standalone (`self.with_segments(other)`) and so do we -- via
-        # with_segments rather than the bare constructor so per-instance
-        # state a subclass carries (MemPath's backend) survives.
+        # `other` is parsed standalone, as CPython does, not joined under `self`;
+        # `with_segments()` rather than the constructor keeps per-instance state
+        # such as MemPath's backend.
         other = other if isinstance(other, cls) else self.with_segments(other)
         return other == self or other in self.parents
 
@@ -430,10 +424,8 @@ class Pathname(FsPathLike, _ty.Generic[_P]):
         if not pattern_names and not pattern_anchored:
             raise ValueError("empty pattern")
         if _sys.version_info[:2] == (3, 12):
-            # 3.12 matches the whole path at once, as a string with its
-            # separators swapped for newlines, rather than part by part --
-            # different enough at the edges (see `_match_lines_312`) that it
-            # gets its own pass.
+            # 3.12 matches the whole path as one string with its separators swapped for
+            # newlines, which differs at the edges: see `_match_lines_312`.
             return _match_lines_312(
                 anchored, names, pattern_anchored, pattern_names, case_sensitive
             )
@@ -446,12 +438,9 @@ class Pathname(FsPathLike, _ty.Generic[_P]):
             return False
         for index, pattern in enumerate(reversed(pattern_names)):
             if index == len(names):
-                # A relative pattern as long as the path reaches its root.
-                # 3.13+ compiles the root part "/" like any other part with
-                # glob.translate: "*" and "?" never match the separator, but
-                # a bracket expression such as "[!a]" does. 3.9-3.11 fnmatch
-                # the root string, so "*" and "?" match it too. (3.12 never
-                # reaches here -- `_match_lines_312` answered above.)
+                # A relative pattern as long as the path reaches its root. 3.13+ compiles the
+                # root like any part (a bracket expression matches "/", "*" and "?" do not);
+                # 3.9-3.11 fnmatch the root string, so "*" and "?" match it too.
                 if _sys.version_info >= (3, 13):
                     from .fspath import _translate_segment
 
@@ -508,39 +497,9 @@ class Pathname(FsPathLike, _ty.Generic[_P]):
 PurePathLike = _ty.Union[str, Pathname]
 
 
-# Operations whose implementation must come from pathlib_next even when a
-# concrete `pathlib` class sits ahead of us in a subclass's MRO. See
-# `Path.__init_subclass__` for why this is needed and how it is applied.
-#
-# Two different, opposite failure modes motivate this list:
-#   * NEW stdlib overriding us: `copy`/`move` landed in CPython 3.14 and
-#     expect the private `_copy_from` protocol, so a downstream
-#     `class X(PosixPathname, Path)` (or any class mixing a concrete
-#     `pathlib` path) either crashes with
-#     `AttributeError: ... has no attribute '_copy_from'` on non-local
-#     backends, or -- worse -- SILENTLY succeeds on local-backed classes
-#     with stdlib's different metadata semantics (it preserves timestamps,
-#     ours preserves st_mode only). That makes mtime-based syncs converge
-#     on 3.14 and never converge on <=3.13.
-#   * 3.14's `copy_into`/`move_into` call `copy()`/`move()` with stdlib's own
-#     keywords and defaults (`preserve_metadata=False`, no `overwrite`) and
-#     return what those return, so a `LocalPath` would answer differently on
-#     3.14 than on every other version and backend. `replace` is not here:
-#     `LocalPath` keeps stdlib's `os.replace`, which is what `move()` uses to
-#     swap a local file atomically.
-#   * OLD stdlib lacking our keywords: `exists(follow_symlinks=)` is 3.12+
-#     and `read_text`/`write_text`'s `newline=` is 3.13+ in CPython, and
-#     `rglob`'s `include_hidden=`/`recursive=`/`dironly=` extensions never
-#     existed there, so on the 3.9 floor the stdlib implementation rejects
-#     keywords this library's protocols promise. `symlink_to`'s `force=`
-#     is the same shape: no stdlib version has ever accepted it, so
-#     without this guard `LocalPath().symlink_to(t, force=True)` raises
-#     TypeError while every other backend honors it.
-#
-# A class mixing a concrete stdlib path with `Path` *without* `LocalPath`
-# gets more than these: every function `LocalPath` defines
-# (`_local_primitives`), because the operations above call `stat()`,
-# `glob()` and `_scandir()` with pathlib_next's signatures and contracts.
+# Operations that must come from pathlib_next even when a concrete `pathlib`
+# class precedes it in a subclass's MRO; `Path.__init_subclass__` applies
+# them and says why.
 _OPERATION_NAMES = (
     "copy",
     "move",
@@ -675,6 +634,20 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         *itself* is always left alone -- this only displaces implementations
         coming from outside this library.
 
+        `_OPERATION_NAMES` lists what is re-asserted, for two opposite
+        reasons. Newer stdlib overrides ours: 3.14's `copy` and `move` expect
+        the private `_copy_from` protocol, so such a class either raises
+        `AttributeError` on non-local backends or silently succeeds on local
+        ones with stdlib's metadata semantics (timestamps preserved, where
+        ours preserves `st_mode`), so mtime-based syncs converge on 3.14 and
+        not before; 3.14's `copy_into` and `move_into` call `copy()` and
+        `move()` with stdlib's keywords and defaults. Older stdlib lacks our
+        keywords: `exists(follow_symlinks=)` (3.12+), `read_text` and
+        `write_text(newline=)` (3.13+), `rglob`'s extensions, and
+        `symlink_to(force=)`, which no stdlib has. `replace` is not listed:
+        `LocalPath` keeps stdlib's `os.replace`, which `move()` uses to swap a
+        local file atomically.
+
         A class that mixes a concrete stdlib path with `Path` but not
         `LocalPath` is a local class too, and gets what `LocalPath` has for
         each name it defines (`_local_primitives`) wherever stdlib or a
@@ -701,18 +674,13 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
             # also covers `LocalPath.copy`/`move`'s explicit routing).
             if name in vars(cls):
                 continue
-            # Find which class in the MRO actually supplies the inherited
-            # implementation. Checking the resolved function's `__module__`
-            # is not enough: a downstream mixin may legitimately define the
-            # method in its own module, and that must be honored too.
+            # The owner is the base that supplies the implementation, not the module of
+            # the resolved function: a downstream mixin may define it in its own module.
             owner = next((base for base in cls.__mro__[1:] if name in vars(base)), None)
             if owner is None:
                 continue
-            # Only stdlib `pathlib` is displaced. Anything else -- a
-            # downstream mixin, a user base class, or pathlib_next itself --
-            # is a deliberate implementation and is left alone. Matching on
-            # stdlib specifically (rather than "not pathlib_next") is what
-            # keeps this guard from hijacking third-party code.
+            # Only stdlib `pathlib` is displaced; a mixin, a user base or pathlib_next
+            # itself is deliberate and stays, which keeps this off third-party code.
             owner_module = getattr(owner, "__module__", "") or ""
             if owner_module != "pathlib" and not owner_module.startswith("pathlib."):
                 continue
@@ -725,17 +693,9 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         if cls is Path:
             from .fspath import LocalPath
 
-            # LocalPath doesn't define its own __new__, so LocalPath.__new__
-            # resolves via *its* MRO to the real pathlib.Path.__new__
-            # (WindowsPath/PosixPath precede our Path in LocalPath's bases,
-            # see fspath.py) -- which is what actually parses `args` into
-            # _drv/_root/_parts on Python <3.12 (3.12+ does this in
-            # PurePath.__init__ instead, called separately afterward
-            # regardless). Calling `Pathname.__new__(cls)` here instead used
-            # to skip that parsing entirely and silently drop `args`,
-            # leaving a blank instance -- masked on 3.12+ because __init__
-            # does the real work there, but crashed on 3.9-3.11 the moment
-            # any pathlib internal (e.g. `/`) touched the missing state.
+            # `LocalPath.__new__` is `pathlib.Path.__new__`, which parses `args` into
+            # `_drv/_root/_parts` before 3.12 (3.12+ does it in `PurePath.__init__`);
+            # `Pathname.__new__(cls)` would skip that and drop `args`.
             return _ty.cast("_ty.Self", LocalPath.__new__(LocalPath, *args, **kwargs))
         return Pathname.__new__(cls)
 
@@ -981,10 +941,8 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
                 bound_loops=bound_loops,
             )
         if not (isinstance(pattern, str) and not pattern):
-            # Reject an absolute pattern before "**/" hides its anchor;
-            # glob() validates without listing anything. Only the anchor is
-            # judged here: a pattern with no component ("." or "./") means
-            # every entry below, and the glob() below judges the rest.
+            # Reject an absolute pattern before "**/" hides its anchor; glob() validates
+            # without listing. A pattern with no component ("." or "./") is allowed.
             try:
                 self.glob(pattern, recursive=False, native=native)
             except _glob.NonRelativePatternError:
@@ -1041,13 +999,8 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
                 yield path
                 continue
             try:
-                # `_scandir()` is a generator -- listing this directory may
-                # not actually happen (and so may not raise) until the first
-                # `next()`, not at this call. Materializing it here (rather
-                # than iterating lazily below) keeps any such error inside
-                # this try, matching the on_error contract regardless of
-                # whether a given implementation happens to fail eagerly or
-                # lazily.
+                # Materialized inside the try: `_scandir()` is a generator, so a failing
+                # listing may raise at the first `next()`, and `on_error` must see it.
                 entries = list(path._scandir())
             except OSError as error:
                 if on_error is not None:
@@ -1265,10 +1218,8 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
             for name, child_stat in entries:
                 child = None
                 try:
-                    # The name decides what is removed, so it is checked
-                    # before any child is built from it. Only the
-                    # one-component rule: a name this directory listed is not
-                    # rewritten by the platform that listed it.
+                    # Checked before any child is built from the name; only the one-component
+                    # rule, as a listed name is not rewritten by the platform that listed it.
                     if not _utils.is_safe_child_name(name):
                         raise ValueError(
                             f"refusing unsafe child name {name!r} under {path}"
@@ -1521,22 +1472,17 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         directory tree is never what `force=` on a symlink call is asking
         for.
         """
-        # Normalize a str target to a path object, so the primitive only
-        # ever handles one type. Routed through `_symlink_target()` rather
-        # than inlining `type(self)(target)`: for a URI-backed path that
-        # constructor re-parses the string as URI syntax, which silently
-        # truncated a link target at a "?"/"#" and percent-decoded it (see
-        # `UriPath._symlink_target`).
+        # Through `_symlink_target()`, not `type(self)(target)`: for a URI-backed path
+        # the constructor re-parses the string as URI syntax, cutting the target at "?"
+        # or "#" and percent-decoding it.
         target = self._symlink_target(target)
         if force:
             try:
                 self.unlink(missing_ok=True)
             except (IsADirectoryError, PermissionError, OSError) as error:
-                # A directory at the link path (POSIX: IsADirectoryError;
-                # Windows and several remote backends: PermissionError or a
-                # plain OSError) is not something force= should remove.
-                # Let the symlink attempt below raise the error that
-                # actually describes the conflict.
+                # A directory at the link path (IsADirectoryError on POSIX; PermissionError or
+                # an OSError on Windows and remote backends) is not removed by force=: the
+                # symlink attempt below raises the error that describes the conflict.
                 if not self.is_dir():
                     raise error
         return self._symlink_to(target, target_is_directory)
@@ -1577,6 +1523,14 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         exception. An error it declined is not offered again by the
         directories above. `ignore_error` and `on_error` are two spellings of
         one policy: passing both raises `TypeError` before anything is copied.
+
+        A child whose listed name is not one safe component for `target` (a
+        drive such as `C:x` or a backslash on a Windows target, which land
+        outside it; a trailing dot, which Windows stores under another name)
+        is refused with `ValueError` and reported through `ignore_error` or
+        `on_error` like any child failure. `PathSyncer` and
+        `utils.unpack_archive()` apply the same rule; an archive listing keeps
+        such names, as they are ordinary filenames on POSIX.
 
         `progress`, when given, is called as `progress(path, bytes_copied,
         total_size)` for every chunk written during each *file* copy (`path`
@@ -1633,18 +1587,8 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
                 windows_target = _utils.is_windows_flavoured(target)
                 for child in children:
                     try:
-                        # The names come from a listing the destination does not
-                        # control (an archive, a remote index, an object-store
-                        # key), so one that is not a single component inside
-                        # `target` must never be joined onto it: on a Windows
-                        # target "C:x" joins to a drive-relative path outside it
-                        # entirely, and so does "a\\b"; "report." is stored as
-                        # "report", over whatever that file held. Reported through
-                        # `ignore_error` like any other per-child failure, not
-                        # silently skipped. `PathSyncer` and
-                        # `utils.unpack_archive()` apply the same rule per
-                        # destination; an archive listing keeps such names,
-                        # because they are ordinary filenames on POSIX.
+                        # A listed name is untrusted: one that is not a single component inside
+                        # `target` is refused (see the child-name paragraph of the docstring).
                         if not _utils.is_safe_child_name(
                             child.name, windows=windows_target
                         ):
@@ -1894,10 +1838,9 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
                     and type(target) is type(src)
                     and getattr(type(src), "replace", Path.replace) is not Path.replace
                 ):
-                    # A class with its own replace() (local paths: os.replace()
-                    # swaps atomically and leaves the target untouched if it
-                    # fails, e.g. a locked source). Path.replace() is built on
-                    # move(), so calling it from here would never end.
+                    # A class with its own replace() (os.replace() swaps atomically and leaves the
+                    # target alone on failure). Path.replace() is built on move(): calling it here
+                    # would never end.
                     try:
                         return src.replace(target)
                     except OSError as error:
@@ -1918,12 +1861,9 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
                 if error.errno != _errno.EXDEV:
                     raise
 
-        # A link is recreated, not read through, wherever the target can
-        # hold one: what a move produces must not depend on whether
-        # rename() was available. The copy is told what this call found out
-        # about the roots (nothing at `target`; `src` is not a link) so it
-        # does not ask a backend again. A rename that raised
-        # NotImplementedError or EXDEV changed nothing.
+        # A link is recreated, not read through, wherever the target can hold one, so
+        # the result does not depend on rename() being available. The copy is handed
+        # what is known (nothing at `target`, `src` not a link); a failed rename changed nothing.
         links = _holds_links(src, target)
         handing = _handing(
             src,
