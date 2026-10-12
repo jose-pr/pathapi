@@ -25,11 +25,6 @@ IMPLEMENTER_HEADINGS = ("For path implementers", "For scheme implementers")
 # helper classes, or of a stdlib named tuple. Each is a name the scan finds
 # in a core module too; a pair that no longer matches anything fails.
 NOT_THE_CORES = {
-    ("uri/schemes/archive/_base.py", "_handle"): "the archive backend's open handle",
-    ("uri/schemes/archive/zip.py", "_handle"): "the archive backend's open handle",
-    ("uri/schemes/archive/zip.py", "_append"): "the zip write stream's own method",
-    ("uri/schemes/archive/tar.py", "_members"): "the tar backend's member table",
-    ("uri/schemes/archive/tar.py", "_source"): "the tar backend's byte source",
     ("uri/schemes/_objstore.py", "_dirty"): "a write stream's own flag",
     ("uri/schemes/s3.py", "_path"): "the path a stream or a client call is for",
     ("uri/schemes/_objstore.py", "_path"): "the path a stream is for",

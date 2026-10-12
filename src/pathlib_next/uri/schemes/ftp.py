@@ -14,13 +14,12 @@ from .. import Source, Uri
 from ._delegate import DelegatingPath
 
 if _ty.TYPE_CHECKING:
-    import ftplib as _ftplib
     import ssl as _ssl
 
 
 class BaseFtpBackend(object):
-    """Protocol for obtaining a connected+logged-in `ftplib.FTP` (or
-    `FTP_TLS`) for a `Source`. Subclass this to plug in custom connection
+    """Protocol for obtaining a connected+logged-in FTP client (or
+    its TLS variant) for a `Source`. Subclass this to plug in custom connection
     handling (e.g. tests mock it directly, no real server);
     `FtpBackend` is the real implementation. A path to each endpoint
     (`Source` and `tls`) runs on a core `pathlib_next.ftp.BaseFTPBackend`
@@ -31,12 +30,12 @@ class BaseFtpBackend(object):
     __slots__ = ("__weakref__",)
 
     @_notimplemented
-    def client(self, source: Source, tls: bool) -> "_ftplib.FTP":
+    def client(self, source: Source, tls: bool) -> "_ty.Any":
         """The connected, logged-in client for `source`; `tls` asks for `ftps:`."""
 
 
 class FtpBackend(BaseFtpBackend):
-    """Connects via stdlib `ftplib.FTP` (`ftp:`) or `ftplib.FTP_TLS`
+    """Connects via the stdlib FTP client (`ftp:`) or its TLS variant
     (`ftps:`, with `PROT P` for an encrypted data channel too).
 
     `timeout` (seconds, default `DEFAULT_TIMEOUT` = 30) bounds connect,
@@ -119,7 +118,7 @@ def _endpoint_backend(owner: BaseFtpBackend, source: Source, tls: bool):
 
 
 class FtpPath(DelegatingPath):
-    """`ftp:`/`ftps:` scheme: full read/write access via stdlib `ftplib`,
+    """`ftp:`/`ftps:` scheme: full read/write access via the stdlib FTP client,
     done by a `pathlib_next.ftp.FTPPath` on the connections of `backend`
     (a thread-keyed LRU cache; a thread's connections close when it ends). A
     listing prefers MLSD (RFC 3659 -- type/size/modify facts in one round

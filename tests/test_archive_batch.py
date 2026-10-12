@@ -17,8 +17,8 @@ pytest.importorskip("uritools")
 from pathlib_next import LocalPath
 from pathlib_next.mempath import MemPath
 from pathlib_next.uri import UriPath
-from pathlib_next.uri.schemes.archive import zip as zip_module
-from pathlib_next.uri.schemes.archive.zip import _ZipBackend
+from pathlib_next.archive import _zipentries as zip_module
+from pathlib_next.archive._zip import _ZipBackend
 from pathlib_next.utils.sync import PathSyncer
 
 
@@ -791,8 +791,8 @@ def _fields(snapshot):
 
 
 def test_a_member_list_given_one_more_entry_equals_one_built_with_it():
-    from pathlib_next.uri.schemes.archive._base import _Snapshot
-    from pathlib_next.uri.schemes.archive.zip import _new_info
+    from pathlib_next.archive._snapshot import _Snapshot
+    from pathlib_next.archive._zipentries import _new_info
 
     names = [
         "a/b/c.txt",
@@ -826,7 +826,7 @@ def test_a_member_list_given_one_more_entry_equals_one_built_with_it():
 def test_copying_a_tree_into_a_zip_derives_the_member_list_a_bounded_number_of_times(
     tmp_path, monkeypatch
 ):
-    from pathlib_next.uri.schemes.archive import _base
+    from pathlib_next.archive import _snapshot as _base
 
     source = _tree(tmp_path / "src", files=200, directories=10)
     archive = _write_zip(tmp_path / "a.zip", [("seed.txt", b"seed")])

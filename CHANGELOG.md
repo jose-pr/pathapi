@@ -22,6 +22,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   this class: their behavior is unchanged, and an error still names the URI.
   `pathlib_next.FTPPath` is imported on first use, so `import pathlib_next`
   still loads neither `ftplib` nor `ssl`.
+- **`pathlib_next.archive`: `ZipPath`, `TarPath` and `ArchivePath`, the members
+  of an archive file that is any `Path`, with no URI and no extra.**
+  `ZipPath("d/x", archive="a.zip")` takes the archive as a `Path`, or a `str`
+  or `os.PathLike` (a `LocalPath`); the segments are the member path, read
+  from the archive root. `ZipPath` and `TarPath` fix the format, `ArchivePath`
+  reads it from the extension or the first bytes on first use, and building a
+  path reads nothing. One handle serves each archive file and format, so paths
+  built separately see each other's writes. A zip that is a local file is
+  written in place (`write_bytes`, `mkdir`, `unlink`, `rmdir`, `rename`,
+  `rm(recursive=True)`, `batch()`); every other archive is read-only, in
+  memory or on any other `Path`. `str()` is the member path, `repr()` names the
+  archive, and `as_uri()` is `zip:<archive uri>!/<member>`.
+  `ArchivePath.backend_for()` gives the handle to pass as `archive=`. `zip:`,
+  `tar:` and `archive:` paths now run on these classes: their behavior is
+  unchanged, and an error still names the URI. `pathlib_next.ZipPath`,
+  `TarPath` and `ArchivePath` are imported on first use.
 - **`UriPath.schemes()` and `UriPath.scheme_class(name)` read the scheme
   registry.** `schemes()` returns the registered names, sorted: every class
   defined so far, every built-in scheme and every `pathlib_next.schemes` entry

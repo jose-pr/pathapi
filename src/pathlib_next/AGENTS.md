@@ -26,7 +26,7 @@ keep the core and the URI layer under separate headings.
 
 | Extra | Installs | Needed for |
 | --- | --- | --- |
-| *(none)* | — | `Path`, `LocalPath`, `MemPath`, `FTPPath`, `utils`, `testing`, `uripath` on local paths |
+| *(none)* | — | `Path`, `LocalPath`, `MemPath`, `FTPPath`, `ZipPath`, `TarPath`, `ArchivePath`, `utils`, `testing`, `uripath` on local paths |
 | `uri` | `uritools`, `netimps>=0.4.0,<0.5` | `pathlib_next.uri` and **every** URI scheme (`file:`, `data:`, `ftp(s):`, archives included) |
 | `http` | `requests` + `uri` | `http(s):`, `dav(s):`, `github:`, `gitlab:`, `git:` |
 | `sftp` | `paramiko` + `uri` | `sftp:` (paramiko backend) |
@@ -41,10 +41,11 @@ keep the core and the URI layer under separate headings.
 `import pathlib_next` exposes `Path`, `Pathname`, `LocalPath`,
 `PosixPathname`, `WindowsPathname`, `FileStat`, the protocols `Stat`, `Chmod`,
 `BinaryOpen`, `FsPathLike`, the aliases `PathLike`/`PurePathLike`, and the modules
-`glob` (`utils.glob`) and `sync` (`utils.sync`). `FTPPath` is exported too,
-imported on first use so that `import pathlib_next` loads neither `ftplib`
-nor `ssl`. `MemPath` lives in `pathlib_next.mempath`; `pathlib_next.testing`
-is never imported implicitly.
+`glob` (`utils.glob`) and `sync` (`utils.sync`). `FTPPath`, `ZipPath`,
+`TarPath` and `ArchivePath` are exported too, imported on first use so that
+`import pathlib_next` loads neither `ftplib` nor `ssl` nor any archive code.
+`MemPath` lives in `pathlib_next.mempath`; `pathlib_next.testing` is never
+imported implicitly.
 
 The root, `path`, `fspath`, `protocols` (and its `fs`, `io`, `checksum`),
 `utils`, `utils.stat` and `utils.glob` declare `__all__` with exactly the names
@@ -805,6 +806,218 @@ class FTPBackend(BaseFTPBackend):
   `follow_symlinks=False`).
 - Errors are the `OSError` family: a refused login is `PermissionError`, a
   connection that cannot be made or drops is `ConnectionError`.
+
+## Archives (`pathlib_next.archive`)
+
+Standard library only (`zipfile`, `tarfile`); needs no extra and no URI.
+`pathlib_next.ArchivePath`, `ZipPath` and `TarPath` are the same classes,
+imported on first use.
+
+### `ArchivePath`, `ZipPath`, `TarPath`
+
+```python
+MEMBER_SPOOL_BYTES = 16777216
+MAX_LINKS = 40
+
+class ArchivePath(Path):
+    archive
+    backend
+    def __init__(self, *segments, archive=None) -> None: ...
+    @classmethod
+    def backend_for(cls, archive, *, shared=True, identity=None): ...
+    def refresh(self) -> None: ...
+    def batch(self) -> ContextManager[None]: ...
+    def readlink(self) -> LinkTarget: ...
+    def _rm_tree(self, on_error, follows=False) -> bool: ...
+class ZipPath(ArchivePath): ...
+class TarPath(ArchivePath): ...
+class LinkTarget(PurePosixPath):
+    path: str
+```
+
+The members of an archive file. The segments are the member path; `archive=`
+is the archive file as a `Path`, or a `str` or other `os.PathLike` (a
+`LocalPath`). `ZipPath` and `TarPath` fix the format, `ArchivePath` reads it
+from the extension (`.zip`/`.jar` vs `.tar`/`.tgz`/`.tar.*`), else from the
+first bytes (a `PK` magic sniff) on first use.
+
+- **Construction.** `ZipPath("d/x", archive="a.zip")`. A path with no
+  `archive=` takes the one of a segment that is a path of the same family
+  (`ZipPath(root, "x")`, `/`, `joinpath`, `parent`, `with_name`, `iterdir`,
+  `relative_to` all keep it); with neither it is a `TypeError`, as it is for
+  an `archive=` that is not a path, a `str` or an `os.PathLike`. `archive=`
+  may also be the backend of another path of the archive: `backend_for(
+  archive, *, shared=True, identity=None)` returns the backend to pass, the
+  one shared by every path of that file and format, or with `shared=False`
+  one of its own; `identity` names a non-local archive file in the registry
+  (else its `_node_key()`, else its URI). It reads nothing.
+- **Names.** Member names are read from the archive root: `d/x` and `/d/x`
+  are one member, and the empty path or `/` is the archive itself.
+- **Text forms.** `str()` is the member path alone. `repr()` names the
+  archive (`ZipPath('a/b', archive=LocalPath('x.zip'))`) without reading it.
+  `as_uri()` is `zip:<archive uri>!/<member>` (`tar:`, `archive:`), with a
+  literal `!/` in a member name written `%21/`.
+- **Identity.** `==` compares the names only; two paths are one tree
+  (`copy()`, `move()` and `PathSyncer` ask) when they share a handle, and
+  `_node_key()` is that handle and the normalized member. A pickle holds the
+  text and the archive file; `copy.copy` and `copy.deepcopy` share the handle.
+- `archive` is the archive file, `backend` the shared handle (it settles the
+  format of an `ArchivePath` on the first call), `refresh()` is described
+  below, `batch()` and `readlink()` under Writes and Links. `_rm_tree(
+  on_error, follows=False)` is the one-rewrite removal `rm(recursive=True)`
+  uses, for a wrapper that keeps the generic walk for the rest: it returns
+  False when the case is not that one, and asks `on_error(error, self)` about
+  a failure.
+- `ArchivePath` settles the format on first use, not when the path is built:
+  constructing, printing, joining, copying and pickling a path read nothing,
+  a non-local archive file that had to be read to decide is not fetched a second
+  time, and a failure to read the outer propagates and decides nothing, so
+  the next call tries again (an `ArchivePath` to an archive file that is missing
+  and has no extension raises `FileNotFoundError` on a write, as it does on
+  a read).
+- One shared handle per archive file and format (keyed by the real local
+  path, or by the node -- else the URI -- of a non-local archive file),
+  released when no path references it, so paths built separately for one
+  file see each other's writes. A local zip or tar is read from its file as
+  needed (a compressed tar is decompressed from its start for each member it
+  reaches) and no OS handle is held between calls; a non-local archive file is
+  read whole into memory, once, and kept while any path to it lives.
+  `refresh()` forgets what is held of it, so the next use reads it again
+  (every path to the same archive shares it); it is how a change at a remote
+  source is seen, and a local archive needs none (it is checked against the
+  file on every use).
+- Cost. The members, the directories and each entry's stat data are derived
+  once per open handle, so a listing, a `walk()` or a `stat()` costs one
+  validation of the file and work in the size of the directory, not of the
+  archive. A member read is copied out of the shared handle: in memory up to
+  `MEMBER_SPOOL_BYTES` (16 MiB) and past that into an
+  unnamed temporary file, so memory stays small however large the member is,
+  and the disk used is the member's size as the archive declares it (an
+  archive can declare more than it holds). `open("r+")` and a write buffer
+  hold the whole member in memory. A zip mutation copies the entries it does
+  not change as they lie in the archive, without decompressing them, so it
+  costs the archive's stored size; an encrypted member, or one stored with a
+  compression method `zipfile` lacks, does not stop a change to another
+  member.
+- **Member names are normalized POSIX relative paths**, whatever the
+  writer emitted and whichever format: a leading `./` (`tar -C dir .`,
+  `shutil.make_archive`), empty segments (`a//b`) and interior `.`/`..`
+  (`a/./b`, `a/b/../c`) resolve, so one member has one name and a listing
+  and a lookup always agree. The spelling as written still addresses the
+  member. A name that would leave the root -- `../x`, `/abs`, or a `..`
+  with nothing to spend it on -- has no name inside the archive: it is
+  never listed and never readable. A URI cannot name it either: dot
+  segments are resolved before the archive is asked, so
+  `zip:file:///a.zip!/../x` is the member `x`, and a write through such a
+  spelling lands on that member. A name only a *Windows destination* would
+  misread (`C:drive.txt`, `a\b`) IS a member, because it is an ordinary POSIX
+  filename; refusing to join it is the destination's rule, applied by
+  whatever writes there (see `copy()` below, `PathSyncer`,
+  `unpack_archive()`). On Windows `zipfile` rewrites `\` to `/` in a zip
+  member name; elsewhere (and in a tar) a backslash name is a member like any
+  other. When two spellings normalize to one name the
+  later member wins, as in `zipfile`/`tarfile`. Exception types are POSIX on every
+  platform.
+- The archive root is the archive: `exists()`/`is_dir()`/`stat()` of it
+  open the archive, so a missing one does not exist (`FileNotFoundError`
+  from `stat()`) and a file that is not an archive raises
+  `zipfile.BadZipFile` / `tarfile.ReadError`, as a listing does. So does any
+  other damage that stops the archive from being read -- a bad deflate
+  stream, a short or inconsistent header, a zip version `zipfile` does not
+  know, a truncated or corrupt gzip/bzip2/xz stream -- whichever decoder
+  noticed it, and never as `zlib.error`, `struct.error`, `EOFError` or an
+  `OSError` without an errno. A member that is encrypted raises
+  `RuntimeError`, and one stored with a compression method `zipfile` lacks
+  `NotImplementedError`, as `zipfile` raises them. A member another thread's
+  rewrite removed between the lookup and its stat is `FileNotFoundError`.
+- **Links.** A tar `SYMTYPE` member and a zip entry made on Unix whose mode
+  says link (`S_IFLNK`; its data is the text) are symbolic links.
+  `is_symlink()` is True and `stat(follow_symlinks=False)` / `lstat()`, in a
+  listing too, is a link (`S_IFLNK`, `st_size` the length of the text).
+  `readlink()` is the text as a `LinkTarget`: a `PurePosixPath`, so spelled
+  normalized, whose `path` is the text exactly as stored (what `copy()` and
+  `PathSyncer` recreate a link from); `OSError(EINVAL)` for a member that is
+  not a link, `OSError(EIO)` when the text cannot be read (a zip link over
+  4096 bytes, or damaged data). `stat()`, `exists()`, `is_dir()`, `is_file()`,
+  `open()` and `iterdir()` follow links inside the archive, on the way
+  (`ln/x` is the member `x` of what `ln` points at) and at the end; a relative
+  text is read from the directory that holds the link. A link that is
+  absolute, goes above the root, has no readable text or points at nothing
+  resolves to nothing: `FileNotFoundError` whose `filename` names the link,
+  never a path outside the archive. A loop, or more than `MAX_LINKS` (40)
+  links followed by one lookup, is `OSError(ELOOP)`. `walk()` and `glob()`
+  list a link once and by default do not enter it; `rm(recursive=True)`
+  removes the entry, never what it points at; `copy(follow_symlinks=False)`
+  and a `PathSyncer(follow_symlinks=False)` recreate it with `symlink_to()`
+  where the target can hold one. With `follow_symlinks=True` (`copy()`'s
+  default) a listing follows one directory link per path and never a link to
+  the directory that holds it or to one above it: such a link, and one met
+  below another link, answers `OSError(ELOOP)` to a following `stat()`,
+  `is_dir()` or read, so `walk()` and `glob()` list it as an entry and
+  `copy()`, `PathSyncer` and `rm()` meet it as one that cannot be entered
+  (an error for that entry offered to `ignore_error`, for `rm()` a link
+  removed as a link). The entries a recursive operation visits are at most
+  `(members + links) * (directory links + 1)` however the links point; spell
+  the path (`root / "l1" / "l2" / "f"`, or start the walk there) to go
+  further. Nothing is written
+  through a link (`NotImplementedError`: a write, `mkdir()`, `unlink()` or
+  `rename()` whose path passes through one, or a write that names one);
+  `unlink()`, `rename()` and `rm()` of the link itself act on its entry, and
+  no link can be created in an archive. A tar hard link is a second name for
+  a member, not a symlink: it reads and stats as that member and
+  `is_symlink()` is False.
+- A file has no children: with a file `y` and a member `y/z`, `y/z` does
+  not exist for `exists()`, `stat()`, `open()`, `unlink()` and `rename()`
+  (`FileNotFoundError`; writing or `mkdir()` below `y` is
+  `NotADirectoryError`), and no listing shows it.
+- Writes: zip only, and only with a local archive file (else
+  `NotImplementedError`). `"w"`/`"x"`/`"r+"`, `mkdir()`, `unlink()`,
+  `rmdir()`, `rename()` (same archive; replaces like POSIX `rename`;
+  a destination below a file or a missing directory is
+  `NotADirectoryError` / `FileNotFoundError`, a directory into itself
+  `OSError(EINVAL)`); parents must exist; `"a"` unsupported. Every mutation
+  replaces the archive atomically (temp file + `os.replace`) and keeps
+  other members' metadata, the comment and any prefix bytes. A write uses
+  the normalized name. A new member is stored deflated; an existing member that is
+  overwritten keeps its compression method. The archive is replaced by a
+  new file, so another hard link to it keeps the old content and the
+  writing user owns the result; an archive the caller may not write
+  (`os.access(..., W_OK)`) is refused with `PermissionError`, on every
+  platform, before anything is written.
+- `batch()` — for a writable archive (`NotImplementedError` otherwise, as
+  for any write): inside the block every change (`"w"`/`"x"`/`"r+"`,
+  `mkdir()`, `unlink()`, `rmdir()`, `rename()`, `rm()`) goes to a member
+  list held in memory (written data up to `MEMBER_SPOOL_BYTES`, then an
+  unnamed temporary file), every path of the archive reads it, and the
+  file is not touched. When the outermost block ends without an exception
+  the archive is replaced ONCE, with the members, order and metadata that
+  the same changes made one by one would leave; an archive that does not
+  exist yet is created then. An exception leaves the file byte for byte as
+  it was and drops the changes, and so does an archive another process
+  replaced meanwhile (`OSError(EBUSY)`; their file stays). A block inside
+  another joins it and commits or drops nothing itself. The block holds the
+  archive for its thread: another thread's use of the archive waits for it.
+  A change patches the pending member list, so the list is derived twice
+  however many changes the block makes (once for the archive as the block
+  finds it, once when it first holds a change); only a change to a name
+  the archive spells two ways derives it again.
+  `copy(recursive=True)` into a zip and `PathSyncer.sync()` onto one enter
+  it themselves, so each is one replacement; a copy or sync that raises
+  leaves the archive as it was, where the members written before the error
+  used to stay.
+- Removing a file never removes its directory: when `unlink()`, `rename()`
+  or `rm()` takes the last member out of a directory that exists only
+  through its members, the directory's own entry (`name/`) is written in
+  the same rewrite. `rmdir()` of the root succeeds on an empty archive
+  (`OSError(ENOTEMPTY)` otherwise) and removes nothing.
+  `rm(recursive=True)` of a directory is ONE rewrite (unless a policy other
+  than `follow_symlinks=False` has to meet each link under it), and raises
+  `OSError(ENOTEMPTY)` removing nothing when the tree holds a member under
+  a file.
+- A member the archive spells several ways (`norm` and `./norm`) is one
+  member: `unlink()`, `rename()`, `rmdir()` and `rm()` act on every entry
+  that names it, and renaming over it replaces them all.
+- `TarPath` (plain, gz, bz2, xz) is read-only.
 
 ## Protocols (`pathlib_next.protocols`)
 
@@ -2497,9 +2710,7 @@ with the scheme it was written with.
   constructing, printing, joining, copying and pickling a path read nothing,
   a non-local outer that had to be read to decide is not fetched a second
   time, and a failure to read the outer propagates and decides nothing, so
-  the next call tries again (an `archive:` path to an outer that is missing
-  and has no extension raises `FileNotFoundError` on a write, as it does on
-  a read).
+  the next call tries again.
 - Syntax `<scheme>:<archive-uri>!/<member>`; `<archive-uri>` must carry a
   scheme (`ValueError` otherwise) and may be any URI, including another
   archive (each leading archive scheme consumes one `!/`; nested archives
@@ -2510,146 +2721,16 @@ with the scheme it was written with.
   `%XX` (`caf%E9.txt`), so such a path prints, hashes, compares and parses
   back to the same member.
 - One shared handle per archive (keyed by the real local path, or the outer
-  URI), released when no path references it. A local zip or tar is read from
-  its file as needed (a compressed tar is decompressed from its start for
-  each member it reaches) and no OS handle is held between calls; a
-  non-local outer is read whole into memory, once, and kept while any path
-  to it lives. `ArchiveUri.refresh()` forgets what is held of the outer, so
-  the next use reads it again (every path to the same archive shares it);
-  it is how a change at a remote source is seen, and a local archive needs
-  none (it is checked against the file on every use).
-- Cost. The members, the directories and each entry's stat data are derived
-  once per open handle, so a listing, a `walk()` or a `stat()` costs one
-  validation of the file and work in the size of the directory, not of the
-  archive. A member read is copied out of the shared handle: in memory up to
-  `schemes.archive._base.MEMBER_SPOOL_BYTES` (16 MiB) and past that into an
-  unnamed temporary file, so memory stays small however large the member is,
-  and the disk used is the member's size as the archive declares it (an
-  archive can declare more than it holds). `open("r+")` and a write buffer
-  hold the whole member in memory. A zip mutation copies the entries it does
-  not change as they lie in the archive, without decompressing them, so it
-  costs the archive's stored size; an encrypted member, or one stored with a
-  compression method `zipfile` lacks, does not stop a change to another
-  member.
-- **Member names are normalized POSIX relative paths**, whatever the
-  writer emitted and whichever format: a leading `./` (`tar -C dir .`,
-  `shutil.make_archive`), empty segments (`a//b`) and interior `.`/`..`
-  (`a/./b`, `a/b/../c`) resolve, so one member has one name and a listing
-  and a lookup always agree. The spelling as written still addresses the
-  member. A name that would leave the root -- `../x`, `/abs`, or a `..`
-  with nothing to spend it on -- has no name inside the archive: it is
-  never listed and never readable. A URI cannot name it either: dot
-  segments are resolved before the archive is asked, so
-  `zip:file:///a.zip!/../x` is the member `x`, and a write through such a
-  spelling lands on that member. A name only a *Windows destination* would
-  misread (`C:drive.txt`, `a\b`) IS a member, because it is an ordinary POSIX
-  filename; refusing to join it is the destination's rule, applied by
-  whatever writes there (see `copy()` below, `PathSyncer`,
-  `unpack_archive()`). On Windows `zipfile` rewrites `\` to `/` in a zip
-  member name; elsewhere (and in a tar) a backslash name is a member like any
-  other. When two spellings normalize to one name the
-  later member wins, as in `zipfile`/`tarfile`. Exception types are POSIX on every
-  platform.
-- The archive root is the archive: `exists()`/`is_dir()`/`stat()` of it
-  open the archive, so a missing one does not exist (`FileNotFoundError`
-  from `stat()`) and a file that is not an archive raises
-  `zipfile.BadZipFile` / `tarfile.ReadError`, as a listing does. So does any
-  other damage that stops the archive from being read -- a bad deflate
-  stream, a short or inconsistent header, a zip version `zipfile` does not
-  know, a truncated or corrupt gzip/bzip2/xz stream -- whichever decoder
-  noticed it, and never as `zlib.error`, `struct.error`, `EOFError` or an
-  `OSError` without an errno. A member that is encrypted raises
-  `RuntimeError`, and one stored with a compression method `zipfile` lacks
-  `NotImplementedError`, as `zipfile` raises them. A member another thread's
-  rewrite removed between the lookup and its stat is `FileNotFoundError`.
-- **Links.** A tar `SYMTYPE` member and a zip entry made on Unix whose mode
-  says link (`S_IFLNK`; its data is the text) are symbolic links.
-  `is_symlink()` is True and `stat(follow_symlinks=False)` / `lstat()`, in a
-  listing too, is a link (`S_IFLNK`, `st_size` the length of the text).
-  `readlink()` is the text as a `LinkTarget`: a `PurePosixPath`, so spelled
-  normalized, whose `path` is the text exactly as stored (what `copy()` and
-  `PathSyncer` recreate a link from); `OSError(EINVAL)` for a member that is
-  not a link, `OSError(EIO)` when the text cannot be read (a zip link over
-  4096 bytes, or damaged data). `stat()`, `exists()`, `is_dir()`, `is_file()`,
-  `open()` and `iterdir()` follow links inside the archive, on the way
-  (`ln/x` is the member `x` of what `ln` points at) and at the end; a relative
-  text is read from the directory that holds the link. A link that is
-  absolute, goes above the root, has no readable text or points at nothing
-  resolves to nothing: `FileNotFoundError` whose `filename` names the link,
-  never a path outside the archive. A loop, or more than `MAX_LINKS` (40)
-  links followed by one lookup, is `OSError(ELOOP)`. `walk()` and `glob()`
-  list a link once and by default do not enter it; `rm(recursive=True)`
-  removes the entry, never what it points at; `copy(follow_symlinks=False)`
-  and a `PathSyncer(follow_symlinks=False)` recreate it with `symlink_to()`
-  where the target can hold one. With `follow_symlinks=True` (`copy()`'s
-  default) a listing follows one directory link per path and never a link to
-  the directory that holds it or to one above it: such a link, and one met
-  below another link, answers `OSError(ELOOP)` to a following `stat()`,
-  `is_dir()` or read, so `walk()` and `glob()` list it as an entry and
-  `copy()`, `PathSyncer` and `rm()` meet it as one that cannot be entered
-  (an error for that entry offered to `ignore_error`, for `rm()` a link
-  removed as a link). The entries a recursive operation visits are at most
-  `(members + links) * (directory links + 1)` however the links point; spell
-  the path (`root / "l1" / "l2" / "f"`, or start the walk there) to go
-  further. Nothing is written
-  through a link (`NotImplementedError`: a write, `mkdir()`, `unlink()` or
-  `rename()` whose path passes through one, or a write that names one);
-  `unlink()`, `rename()` and `rm()` of the link itself act on its entry, and
-  no link can be created in an archive. A tar hard link is a second name for
-  a member, not a symlink: it reads and stats as that member and
-  `is_symlink()` is False.
-- A file has no children: with a file `y` and a member `y/z`, `y/z` does
-  not exist for `exists()`, `stat()`, `open()`, `unlink()` and `rename()`
-  (`FileNotFoundError`; writing or `mkdir()` below `y` is
-  `NotADirectoryError`), and no listing shows it.
-- Writes: zip only, and only with a local `file:` outer (else
-  `NotImplementedError`). `"w"`/`"x"`/`"r+"`, `mkdir()`, `unlink()`,
-  `rmdir()`, `rename()` (same archive; replaces like POSIX `rename`;
-  a destination below a file or a missing directory is
-  `NotADirectoryError` / `FileNotFoundError`, a directory into itself
-  `OSError(EINVAL)`); parents must exist; `"a"` unsupported. Every mutation
-  replaces the archive atomically (temp file + `os.replace`) and keeps
-  other members' metadata, the comment and any prefix bytes. A write uses
-  the normalized name. A new member is stored deflated; an existing member that is
-  overwritten keeps its compression method. The archive is replaced by a
-  new file, so another hard link to it keeps the old content and the
-  writing user owns the result; an archive the caller may not write
-  (`os.access(..., W_OK)`) is refused with `PermissionError`, on every
-  platform, before anything is written.
-- `batch()` — for a writable archive (`NotImplementedError` otherwise, as
-  for any write): inside the block every change (`"w"`/`"x"`/`"r+"`,
-  `mkdir()`, `unlink()`, `rmdir()`, `rename()`, `rm()`) goes to a member
-  list held in memory (written data up to `MEMBER_SPOOL_BYTES`, then an
-  unnamed temporary file), every path of the archive reads it, and the
-  file is not touched. When the outermost block ends without an exception
-  the archive is replaced ONCE, with the members, order and metadata that
-  the same changes made one by one would leave; an archive that does not
-  exist yet is created then. An exception leaves the file byte for byte as
-  it was and drops the changes, and so does an archive another process
-  replaced meanwhile (`OSError(EBUSY)`; their file stays). A block inside
-  another joins it and commits or drops nothing itself. The block holds the
-  archive for its thread: another thread's use of the archive waits for it.
-  A change patches the pending member list, so the list is derived twice
-  however many changes the block makes (once for the archive as the block
-  finds it, once when it first holds a change); only a change to a name
-  the archive spells two ways derives it again.
-  `copy(recursive=True)` into a zip and `PathSyncer.sync()` onto one enter
-  it themselves, so each is one replacement; a copy or sync that raises
-  leaves the archive as it was, where the members written before the error
-  used to stay.
-- Removing a file never removes its directory: when `unlink()`, `rename()`
-  or `rm()` takes the last member out of a directory that exists only
-  through its members, the directory's own entry (`name/`) is written in
-  the same rewrite. `rmdir()` of the root succeeds on an empty archive
-  (`OSError(ENOTEMPTY)` otherwise) and removes nothing.
-  `rm(recursive=True)` of a directory is ONE rewrite (unless a policy other
-  than `follow_symlinks=False` has to meet each link under it), and raises
-  `OSError(ENOTEMPTY)` removing nothing when the tree holds a member under
-  a file.
-- A member the archive spells several ways (`norm` and `./norm`) is one
-  member: `unlink()`, `rename()`, `rmdir()` and `rm()` act on every entry
-  that names it, and renaming over it replaces them all.
-- `tar:` (plain, gz, bz2, xz) is read-only.
+  URI), released when no path references it. `ArchiveUri.refresh()` forgets
+  what is held of the outer, so the next use reads it again; the rest is
+  described under `ArchivePath`.
+- `ArchiveUri` is a `UriPath` over `pathlib_next.archive.ArchivePath` (`ZipUri`
+  over `ZipPath`, `TarUri` over `TarPath`) on the shared handle of its outer:
+  member names, the archive root, links, cost, writes, `batch()`, the removal
+  and the damage errors are those described under "Archives
+  (`pathlib_next.archive`)", with an `OSError` naming the URI.
+  `schemes.archive._base.MEMBER_SPOOL_BYTES` is the same setting as
+  `pathlib_next.archive.MEMBER_SPOOL_BYTES`.
 
 ## Exceptions
 

@@ -660,7 +660,7 @@ def test_a_name_called_safe_is_one_component_on_both_path_flavours(name):
 @given(name=st.text(alphabet="ab./: " + BACKSLASH + chr(0), max_size=14))
 @settings(max_examples=300)
 def test_an_archive_member_name_normalizes_once_and_stays_inside(name):
-    from pathlib_next.uri.schemes.archive._base import _normalize_member_name
+    from pathlib_next.archive._names import _normalize_member_name
 
     normal = _normalize_member_name(name)
     if normal is None:

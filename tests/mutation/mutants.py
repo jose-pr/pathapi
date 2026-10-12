@@ -48,9 +48,9 @@ def mutant(
 
 mutant(
     "archive-rename-escaping-name",
-    "uri/schemes/archive/_base.py",
-    '        if not new_path:\n            raise ValueError(f"member name escapes the archive root: {target.path!r}")\n',
-    '        if False:\n            raise ValueError(f"member name escapes the archive root: {target.path!r}")\n',
+    "archive/_write.py",
+    '        if not new_path:\n            raise ValueError(\n                f"member name escapes the archive root: {target.as_posix()!r}"\n            )\n',
+    '        if False:\n            raise ValueError(\n                f"member name escapes the archive root: {target.as_posix()!r}"\n            )\n',
     "tests/test_archive_safety.py::test_renaming_to_a_name_that_escapes_the_archive_is_refused_and_changes_nothing",
     "rename() accepts a target name that normalizes to nothing",
 )
@@ -367,7 +367,7 @@ mutant(
 )
 mutant(
     "archive-name-with-leading-dotdot-is-dropped",
-    "uri/schemes/archive/_base.py",
+    "archive/_names.py",
     "                return None  # escapes the archive root\n",
     "                continue  # escapes the archive root\n",
     "tests/test_archive_safety.py::test_archive_listing_skips_escaping_member_names",
@@ -375,7 +375,7 @@ mutant(
 )
 mutant(
     "archive-member-safety-check-off",
-    "uri/schemes/archive/_base.py",
+    "archive/_names.py",
     "    if not _is_safe_member_name(normalized):\n",
     "    if False:\n",
     "tests/test_archive_safety.py::test_a_member_name_with_a_nul_is_refused_and_the_archive_is_unchanged",
@@ -771,7 +771,7 @@ mutant(
 )
 mutant(
     "archive-link-beyond-another-link-is-entered",
-    "uri/schemes/archive/_base.py",
+    "archive/_path.py",
     "        if beyond or around:\n",
     "        if around:\n",
     "tests/test_archive_link_listing.py::test_nested_links_are_bounded_for_every_operation",
@@ -779,7 +779,7 @@ mutant(
 )
 mutant(
     "archive-link-to-its-own-ancestor-is-entered",
-    "uri/schemes/archive/_base.py",
+    "archive/_path.py",
     "        if beyond or around:\n",
     "        if beyond:\n",
     "tests/test_archive_link_listing.py::test_a_following_walk_lists_a_link_to_its_own_directory_and_does_not_enter_it",
@@ -787,7 +787,7 @@ mutant(
 )
 mutant(
     "archive-link-chain-is-unbounded",
-    "uri/schemes/archive/_base.py",
+    "archive/_snapshot.py",
     "                if followed > MAX_LINKS:\n",
     "                if followed > MAX_LINKS + 1:\n",
     ("tests/test_archive_links.py", "tests/test_archive_link_listing.py"),
@@ -955,4 +955,90 @@ mutant(
     "    return a.__qualname__ == b.__qualname__\n",
     f"{_SCHEME_TESTS}::test_a_class_of_the_same_qualified_name_in_another_module_is_still_refused",
     "a class of another module takes a scheme from a class that has the same name",
+)
+
+# --- ftp: FTPPath and FTPBackend -------------------------------------------------
+
+_FTP_PATH = "tests/test_ftp_path.py"
+mutant(
+    "ftp-path-join-drops-the-backend",
+    "ftp/_path.py",
+    "        return type(self)(text, backend=self._backend)\n",
+    '        return type(self)(text, host="other")\n',
+    f"{_FTP_PATH}::test_every_path_derived_from_one_keeps_its_backend",
+    "a path derived from an FTPPath connects through a backend of its own",
+)
+mutant(
+    "ftp-repr-shows-the-password",
+    "ftp/_backend.py",
+    "        shown = [repr(self.host), str(self.port)]\n",
+    '        shown = [repr(self.host), str(self.port), f"password={self.password!r}"]\n',
+    f"{_FTP_PATH}::test_repr_names_the_endpoint_and_never_the_password",
+    "repr() of an FTPBackend shows its password",
+)
+mutant(
+    "ftp-backend-and-endpoint-keywords-together",
+    "ftp/_path.py",
+    "        if backend is not None and endpoint:\n",
+    "        if False:\n",
+    f"{_FTP_PATH}::test_a_backend_cannot_be_given_together_with_endpoint_keywords",
+    "backend= and an endpoint keyword are both accepted, and one is ignored",
+)
+mutant(
+    "ftp-close-leaves-the-connections-open",
+    "ftp/_backend.py",
+    "        keys = [key for key in _CACHED_CLIENTS.cache if key[0] is backend]\n",
+    "        keys = []\n",
+    (
+        f"{_FTP_PATH}::test_close_ends_the_connections_the_backend_holds",
+        f"{_FTP_PATH}::test_leaving_a_with_block_closes_the_connections",
+    ),
+    "FTPBackend.close() ends no connection",
+)
+mutant(
+    "ftp-equal-endpoints-are-two-trees",
+    "ftp/_path.py",
+    "        return endpoint is not None and endpoint == theirs.endpoint\n",
+    "        return False\n",
+    f"{_FTP_PATH}::test_two_backends_of_one_endpoint_are_one_tree",
+    "two paths to one server and account through two backends are not one tree",
+)
+
+# --- archive: ZipPath, TarPath and ArchivePath -----------------------------------
+
+_ARCHIVE_PATH = "tests/test_archive_path.py"
+mutant(
+    "archive-join-takes-a-handle-of-its-own",
+    "archive/_path.py",
+    "            backend = donor._backend\n",
+    "            backend = self.backend_for(donor.archive, shared=False)\n",
+    f"{_ARCHIVE_PATH}::test_a_join_keeps_the_archive_and_its_handle",
+    "a path joined from an archive path opens a handle of its own",
+)
+mutant(
+    "archive-in-memory-archives-of-one-name-share-a-handle",
+    "archive/_backend.py",
+    "        return id(space), names\n",
+    "        return outer.as_uri()\n",
+    f"{_ARCHIVE_PATH}::test_two_in_memory_archives_with_one_name_are_two_archives",
+    "two archives on different in-memory trees are one archive when they are spelled alike",
+)
+mutant(
+    "archive-memory-archive-counts-as-writable",
+    "archive/_zip.py",
+    "        return _local_outer_path(self.outer) is not None\n",
+    "        return True\n",
+    f"{_ARCHIVE_PATH}::test_a_local_zip_is_written_in_place_and_a_memory_one_is_not",
+    "a zip that is not a local file is written as if it were",
+)
+mutant(
+    "archive-backend-for-always-shares",
+    "archive/_path.py",
+    "        if not shared:\n",
+    "        if False:\n",
+    (
+        f"{_ARCHIVE_PATH}::test_backend_for_shares_a_handle_unless_asked_for_its_own",
+        "tests/test_uri_schemesmap.py",
+    ),
+    "backend_for(shared=False) returns the shared handle",
 )

@@ -4,6 +4,7 @@ import importlib as _importlib
 from importlib import metadata as _metadata
 
 __all__ = [
+    "ArchivePath",
     "BinaryOpen",
     "Chmod",
     "FTPPath",
@@ -16,7 +17,9 @@ __all__ = [
     "PosixPathname",
     "PurePathLike",
     "Stat",
+    "TarPath",
     "WindowsPathname",
+    "ZipPath",
     "__version__",
     "glob",
     "sync",
@@ -38,8 +41,14 @@ else:
 
 
 #: Path classes of the standard-library providers, imported on first use so
-#: that `import pathlib_next` loads neither `ftplib` nor `ssl`.
-_LAZY = {"FTPPath": ".ftp"}
+#: that `import pathlib_next` loads neither `ftplib` nor `ssl`, and no archive
+#: code.
+_LAZY = {
+    "ArchivePath": ".archive",
+    "FTPPath": ".ftp",
+    "TarPath": ".archive",
+    "ZipPath": ".archive",
+}
 
 
 def __getattr__(name: str):

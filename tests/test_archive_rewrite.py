@@ -16,7 +16,7 @@ import pytest
 pytest.importorskip("uritools")
 
 from pathlib_next.uri import UriPath
-from pathlib_next.uri.schemes.archive.zip import _ZipBackend
+from pathlib_next.archive._zip import _ZipBackend
 
 
 def _zip_uri(path, inner=""):

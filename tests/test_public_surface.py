@@ -25,6 +25,7 @@ HEADER = PACKAGE / "AGENTS.md"
 # Each module's exports, as the shipped header documents them.
 EXPORTS = {
     "pathlib_next": {
+        "ArchivePath",
         "BinaryOpen",
         "Chmod",
         "FTPPath",
@@ -37,7 +38,9 @@ EXPORTS = {
         "PosixPathname",
         "PurePathLike",
         "Stat",
+        "TarPath",
         "WindowsPathname",
+        "ZipPath",
         "__version__",
         "glob",
         "sync",
@@ -53,6 +56,14 @@ EXPORTS = {
         "copy_error_predicate",
     },
     "pathlib_next.fspath": {"LocalPath", "PosixPathname", "WindowsPathname"},
+    "pathlib_next.archive": {
+        "ArchivePath",
+        "LinkTarget",
+        "MAX_LINKS",
+        "MEMBER_SPOOL_BYTES",
+        "TarPath",
+        "ZipPath",
+    },
     "pathlib_next.ftp": {
         "BaseFTPBackend",
         "DEFAULT_PORT",
