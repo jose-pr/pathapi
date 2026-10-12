@@ -339,13 +339,16 @@ def test_mempath_relative_to_answers_as_purepath_does(path, other):
 
 
 @pytest.mark.skipif(sys.version_info < (3, 12), reason="walk_up arrived in 3.12")
-@pytest.mark.parametrize("path,other", RELATIVE_PAIRS)
-def test_mempath_relative_to_walk_up_answers_as_purepath_does(path, other):
-    ours = _answer(lambda: MemPath(path).relative_to(other, walk_up=True))
-    theirs = _answer(
-        lambda: pathlib.PurePosixPath(path).relative_to(other, walk_up=True)
-    )
-    assert ours == theirs
+def test_mempath_relative_to_walk_up_answers_as_purepath_does():
+    differing = []
+    for path, other in RELATIVE_PAIRS:
+        ours = _answer(lambda: MemPath(path).relative_to(other, walk_up=True))
+        theirs = _answer(
+            lambda: pathlib.PurePosixPath(path).relative_to(other, walk_up=True)
+        )
+        if ours != theirs:
+            differing.append((path, other, ours, theirs))
+    assert differing == []
 
 
 @pytest.mark.parametrize(
