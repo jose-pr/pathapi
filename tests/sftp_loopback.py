@@ -18,6 +18,10 @@ import threading
 import asyncssh
 from server_loops import stop_server
 
+#: `Loopback(password=ANY_PASSWORD)` asks for a password and accepts any, so a
+#: test can read which one the client offered from `Loopback.logins`.
+ANY_PASSWORD = object()
+
 #: The server-side methods that are counted and can carry a hook.
 COUNTED = (
     "stat lstat fstat open open56 close read write remove rmdir mkdir rename "
@@ -39,6 +43,9 @@ class Wire:
         #: callable(path: bytes) -> extra asyncssh.SFTPName entries a listing
         #: of that directory also holds.
         self.listing = None
+        #: callable(path: bytes, entry) -> entry: reshapes each entry of a
+        #: listing.
+        self.listed = None
 
     def record(self, name, args=()):
         with self._lock:
@@ -134,7 +141,7 @@ def counting_server_class(wire, base=asyncssh.SFTPServer):
         for entry in extra:
             yield entry
         async for entry in original_scandir(self, path):
-            yield entry
+            yield entry if wire.listed is None else wire.listed(path, entry)
 
     _Server.scandir = scandir
     return _Server
@@ -143,7 +150,8 @@ def counting_server_class(wire, base=asyncssh.SFTPServer):
 class Loopback:
     """An asyncssh SFTP server on 127.0.0.1 serving `root`, on its own loop.
 
-    `password` makes the login require it (anything else is refused);
+    `password` makes the login require it (anything else is refused;
+    `ANY_PASSWORD` accepts whichever is offered);
     `sftp_version` is the highest version the server speaks; `server_class`
     replaces the counting `SFTPServer` subclass; `escaped_names` serves the
     names `name_on_disk()` stores as the bytes they stand for.
@@ -218,7 +226,7 @@ class Loopback:
 
             def validate_password(self, username, given):
                 state.logins.append((username, given))
-                return given == password
+                return password is ANY_PASSWORD or given == password
 
         async def _listen():
             return await asyncssh.listen(
@@ -263,10 +271,22 @@ class Loopback:
         """`(algorithm, base64 key)` of the host key."""
         return tuple(self.host_key.export_public_key("openssh").decode().split()[:2])
 
-    def known_hosts_line(self):
-        algorithm, key = self.public_key()
-        return f"[{self.host}]:{self.port} {algorithm} {key}\n"
+    def known_hosts_line(self, key=None):
+        """The known_hosts line for this server; `key` names another private
+        key to put in it (a host key that changed)."""
+        if key is None:
+            algorithm, blob = self.public_key()
+        else:
+            algorithm, blob = key.export_public_key("openssh").decode().split()[:2]
+        return f"[{self.host}]:{self.port} {algorithm} {blob}\n"
 
     def url(self, path="", *, user="x", password="x"):
         auth = f"{user}:{password}@" if password is not None else f"{user}@"
         return f"sftp://{auth}{self.host}:{self.port}/{path}"
+
+    def source(self, *, user="x", password="x"):
+        """The `Source` of `url()`, for the backends' own `client(source)`."""
+        from pathlib_next.uri import Source
+
+        userinfo = f"{user}:{password}" if password is not None else user
+        return Source("sftp", userinfo, self.host, self.port)

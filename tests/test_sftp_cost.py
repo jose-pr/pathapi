@@ -19,8 +19,6 @@ from pathlib_next.uri.schemes import sftp as sftp_pkg  # noqa: E402
 from pathlib_next.uri.schemes.sftp import SftpPath  # noqa: E402
 from pathlib_next.uri.schemes.sftp import _asyncssh as backend_mod  # noqa: E402
 
-from sftp_loopback import Loopback, Wire  # noqa: E402
-
 try:
     import paramiko
 except ImportError:  # asyncssh-only install
@@ -36,25 +34,6 @@ def home(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
     return home
-
-
-@pytest.fixture
-def root(tmp_path):
-    root = tmp_path / "root"
-    root.mkdir()
-    return root
-
-
-@pytest.fixture
-def wire():
-    return Wire()
-
-
-@pytest.fixture
-def server(root, wire):
-    loopback = Loopback(root, wire).start()
-    yield loopback
-    loopback.stop()
 
 
 @pytest.fixture(params=["paramiko", "asyncssh"])
@@ -100,94 +79,94 @@ def make_tree(base, directories=8, files=16):
 
 
 def test_native_rm_asks_about_no_entry_the_listing_described(
-    server, root, wire, asyncssh_backend
+    sftp_loopback, sftp_root, sftp_wire, asyncssh_backend
 ):
-    make_tree(root / "tree")
-    tree = SftpPath(server.url("tree"), backend=asyncssh_backend)
+    make_tree(sftp_root / "tree")
+    tree = SftpPath(sftp_loopback.url("tree"), backend=asyncssh_backend)
     tree.exists()
-    wire.reset()
+    sftp_wire.reset()
 
     tree.rm(recursive=True)
 
-    assert not (root / "tree").exists()
+    assert not (sftp_root / "tree").exists()
     # 128 files and 9 directories are removed; each of the 9 directories is
     # listed once and the root is looked at once. The server's own lstat of
     # "." and ".." for each listing (18) is part of its answer to the listing.
-    assert wire.calls["remove"] == 128
-    assert wire.calls["rmdir"] == 9
-    assert wire.calls["scandir"] == 9
-    assert wire.calls["lstat"] <= 19
-    assert wire.total() <= 165
+    assert sftp_wire.calls["remove"] == 128
+    assert sftp_wire.calls["rmdir"] == 9
+    assert sftp_wire.calls["scandir"] == 9
+    assert sftp_wire.calls["lstat"] <= 19
+    assert sftp_wire.total() <= 165
 
 
 def test_a_loop_over_a_listing_stats_no_child_that_is_not_a_link(
-    server, root, wire, backend
+    sftp_loopback, sftp_root, sftp_wire, backend
 ):
-    (root / "dir").mkdir()
+    (sftp_root / "dir").mkdir()
     for number in range(20):
-        (root / "dir" / f"f{number:02}").write_bytes(b"x")
-    (root / "dir" / "sub").mkdir()
-    directory = SftpPath(server.url("dir"), backend=backend)
+        (sftp_root / "dir" / f"f{number:02}").write_bytes(b"x")
+    (sftp_root / "dir" / "sub").mkdir()
+    directory = SftpPath(sftp_loopback.url("dir"), backend=backend)
     directory.exists()
-    wire.reset()
+    sftp_wire.reset()
 
     kinds = [(child.name, child.is_dir()) for child in directory.iterdir()]
 
     assert sum(1 for _name, is_dir in kinds if is_dir) == 1
     assert len(kinds) == 21
-    assert wire.calls["scandir"] == 1
-    assert wire.calls["stat"] == 0
+    assert sftp_wire.calls["scandir"] == 1
+    assert sftp_wire.calls["stat"] == 0
 
 
 def test_a_listed_link_is_still_followed_by_a_stat_of_its_own(
-    server, root, wire, backend
+    sftp_loopback, sftp_root, sftp_wire, backend
 ):
-    (root / "dir" / "real").mkdir(parents=True)
+    (sftp_root / "dir" / "real").mkdir(parents=True)
     try:
-        os.symlink(root / "dir" / "real", root / "dir" / "link", True)
+        os.symlink(sftp_root / "dir" / "real", sftp_root / "dir" / "link", True)
     except (OSError, NotImplementedError):
         pytest.skip("this machine cannot create a symbolic link")
-    directory = SftpPath(server.url("dir"), backend=backend)
+    directory = SftpPath(sftp_loopback.url("dir"), backend=backend)
     directory.exists()
-    wire.reset()
+    sftp_wire.reset()
 
     by_name = {child.name: child for child in directory.iterdir()}
-    wire.reset()
+    sftp_wire.reset()
     assert by_name["real"].is_dir()
-    assert wire.calls["stat"] == 0
+    assert sftp_wire.calls["stat"] == 0
     assert by_name["link"].is_dir()
-    assert wire.calls["stat"] == 1
+    assert sftp_wire.calls["stat"] == 1
     assert by_name["link"].is_symlink()
 
 
 def test_a_listed_entry_that_does_not_say_what_it_is_is_asked_about(
-    server, root, wire, backend
+    sftp_loopback, sftp_root, sftp_wire, backend
 ):
-    (root / "dir").mkdir()
-    wire.listing = lambda path: [
+    (sftp_root / "dir").mkdir()
+    sftp_wire.listing = lambda path: [
         asyncssh.SFTPName(b"typeless", attrs=asyncssh.SFTPAttrs(size=3))
     ]
-    directory = SftpPath(server.url("dir"), backend=backend)
+    directory = SftpPath(sftp_loopback.url("dir"), backend=backend)
     (child,) = [c for c in directory.iterdir() if c.name == "typeless"]
-    wire.reset()
+    sftp_wire.reset()
 
     assert not child.is_dir()
 
-    assert wire.calls["stat"] == 1
+    assert sftp_wire.calls["stat"] == 1
 
 
-def test_a_hint_is_used_once(server, root, wire, backend):
-    (root / "dir").mkdir()
-    (root / "dir" / "a").write_bytes(b"x")
-    directory = SftpPath(server.url("dir"), backend=backend)
+def test_a_hint_is_used_once(sftp_loopback, sftp_root, sftp_wire, backend):
+    (sftp_root / "dir").mkdir()
+    (sftp_root / "dir" / "a").write_bytes(b"x")
+    directory = SftpPath(sftp_loopback.url("dir"), backend=backend)
     (child,) = list(directory.iterdir())
-    wire.reset()
+    sftp_wire.reset()
 
     assert child.is_file()
-    assert wire.count("stat", "lstat") == 0
+    assert sftp_wire.count("stat", "lstat") == 0
     # What was learned from the listing is not trusted a second time.
     assert child.is_file()
-    assert wire.count("stat", "lstat") == 1
+    assert sftp_wire.count("stat", "lstat") == 1
 
 
 # --- a backend that has no native tree operation never loads asyncssh -----------
@@ -216,15 +195,17 @@ print("asyncssh loaded:", "asyncssh" in sys.modules)
 
 
 @pytest.mark.skipif(paramiko is None, reason="paramiko not installed")
-def test_copy_and_rm_on_the_paramiko_backend_do_not_import_asyncssh(server, root):
-    (root / "one.txt").write_bytes(b"1")
+def test_copy_and_rm_on_the_paramiko_backend_do_not_import_asyncssh(
+    sftp_loopback, sftp_root
+):
+    (sftp_root / "one.txt").write_bytes(b"1")
     env = dict(os.environ)
     env["PYTHONPATH"] = os.pathsep.join(
         [SRC, *([env["PYTHONPATH"]] if env.get("PYTHONPATH") else [])]
     )
 
     finished = subprocess.run(
-        [sys.executable, "-c", _CHILD, server.url("")],
+        [sys.executable, "-c", _CHILD, sftp_loopback.url("")],
         env=env,
         capture_output=True,
         text=True,
@@ -233,6 +214,6 @@ def test_copy_and_rm_on_the_paramiko_backend_do_not_import_asyncssh(server, root
 
     assert finished.returncode == 0, finished.stderr
     assert "asyncssh loaded: False" in finished.stdout
-    assert (root / "two.txt").read_bytes() == b"1"
-    assert (root / "tree2" / "sub" / "f.txt").read_bytes() == b"x"
-    assert not (root / "tree").exists()
+    assert (sftp_root / "two.txt").read_bytes() == b"1"
+    assert (sftp_root / "tree2" / "sub" / "f.txt").read_bytes() == b"x"
+    assert not (sftp_root / "tree").exists()

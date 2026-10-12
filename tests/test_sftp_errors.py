@@ -22,7 +22,7 @@ from pathlib_next.uri.schemes import sftp as sftp_pkg  # noqa: E402
 from pathlib_next.uri.schemes.sftp import SftpPath  # noqa: E402
 from pathlib_next.uri.schemes.sftp import _asyncssh as backend_mod  # noqa: E402
 
-from sftp_loopback import Loopback, Wire, name_on_disk  # noqa: E402
+from sftp_loopback import name_on_disk  # noqa: E402
 
 try:
     import paramiko
@@ -38,37 +38,6 @@ def home(tmp_path, monkeypatch):
     monkeypatch.setenv("USERPROFILE", str(home))
     assert pathlib.Path.home() == home
     return home
-
-
-@pytest.fixture
-def root(tmp_path):
-    root = tmp_path / "root"
-    root.mkdir()
-    return root
-
-
-@pytest.fixture
-def wire():
-    return Wire()
-
-
-@pytest.fixture
-def servers():
-    started = []
-
-    def start(root, wire, **kwargs):
-        server = Loopback(root, wire, **kwargs).start()
-        started.append(server)
-        return server
-
-    yield start
-    for server in started:
-        server.stop()
-
-
-@pytest.fixture
-def server(root, wire, servers):
-    return servers(root, wire)
 
 
 @pytest.fixture(params=["paramiko", "asyncssh"])
@@ -117,21 +86,21 @@ def unchained(error):
     )
 
 
-def path_at(server, backend, rel=""):
-    return SftpPath(server.url(rel), backend=backend)
+def path_at(sftp_loopback, backend, rel=""):
+    return SftpPath(sftp_loopback.url(rel), backend=backend)
 
 
 # --- a server status becomes the same exception on both backends ---------------
 
 
-def test_missing_path_errors_carry_the_remote_path(server, backend):
-    root = path_at(server, backend)
+def test_missing_path_errors_carry_the_remote_path(sftp_loopback, backend):
+    sftp_root = path_at(sftp_loopback, backend)
     for call in (
-        lambda: (root / "nope").stat(),
-        lambda: (root / "nope").open("rb"),
-        lambda: (root / "nope").unlink(),
-        lambda: (root / "nope" / "child").mkdir(),
-        lambda: (root / "nope").rmdir(),
+        lambda: (sftp_root / "nope").stat(),
+        lambda: (sftp_root / "nope").open("rb"),
+        lambda: (sftp_root / "nope").unlink(),
+        lambda: (sftp_root / "nope" / "child").mkdir(),
+        lambda: (sftp_root / "nope").rmdir(),
     ):
         with pytest.raises(FileNotFoundError) as raised:
             call()
@@ -142,10 +111,10 @@ def test_missing_path_errors_carry_the_remote_path(server, backend):
         )
 
 
-def test_rename_error_names_both_paths_without_a_winerror(server, backend):
-    root = path_at(server, backend)
+def test_rename_error_names_both_paths_without_a_winerror(sftp_loopback, backend):
+    sftp_root = path_at(sftp_loopback, backend)
     with pytest.raises(FileNotFoundError) as raised:
-        (root / "nope").rename(root / "elsewhere")
+        (sftp_root / "nope").rename(sftp_root / "elsewhere")
     assert raised.value.errno == errno.ENOENT
     assert raised.value.filename.endswith("/nope")
     assert raised.value.filename2.endswith("/elsewhere")
@@ -153,52 +122,58 @@ def test_rename_error_names_both_paths_without_a_winerror(server, backend):
 
 
 def test_unsupported_setstat_is_not_implemented_and_a_copy_still_completes(
-    server, root, wire, backend
+    sftp_loopback, sftp_root, sftp_wire, backend
 ):
-    (root / "src.txt").write_bytes(b"payload")
+    (sftp_root / "src.txt").write_bytes(b"payload")
 
     def unsupported(server_, *args):
         raise asyncssh.SFTPOpUnsupported("setstat not supported here")
 
-    wire.before["setstat"] = unsupported
-    src = path_at(server, backend, "src.txt")
+    sftp_wire.before["setstat"] = unsupported
+    src = path_at(sftp_loopback, backend, "src.txt")
 
     with pytest.raises(NotImplementedError):
         src.chmod(0o600)
-    src.copy(path_at(server, backend, "copy.txt"))
+    src.copy(path_at(sftp_loopback, backend, "copy.txt"))
 
-    assert (root / "copy.txt").read_bytes() == b"payload"
-    assert wire.calls["setstat"] >= 2
+    assert (sftp_root / "copy.txt").read_bytes() == b"payload"
+    assert sftp_wire.calls["setstat"] >= 2
 
 
-def test_connection_lost_status_is_a_connection_reset(server, wire, backend):
+def test_connection_lost_status_is_a_connection_reset(
+    sftp_loopback, sftp_wire, backend
+):
     def lost(server_, *args):
         raise asyncssh.SFTPConnectionLost("gone")
 
-    wire.before["stat"] = lost
+    sftp_wire.before["stat"] = lost
 
     with pytest.raises(ConnectionResetError) as raised:
-        path_at(server, backend, "x").stat()
+        path_at(sftp_loopback, backend, "x").stat()
     assert raised.value.errno == errno.ECONNRESET
     assert unchained(raised.value)
 
 
-def test_a_translated_status_is_not_chained_to_the_library_exception(server, backend):
+def test_a_translated_status_is_not_chained_to_the_library_exception(
+    sftp_loopback, backend
+):
     with pytest.raises(FileNotFoundError) as raised:
-        path_at(server, backend, "nope").stat()
+        path_at(sftp_loopback, backend, "nope").stat()
     assert unchained(raised.value)
 
 
 # --- the connection, the login and the host key ---------------------------------
 
 
-def test_wrong_password_is_an_authentication_error(root, wire, servers, kind, backends):
-    server = servers(root, wire, password="right")
+def test_wrong_password_is_an_authentication_error(
+    sftp_root, sftp_wire, sftp_loopbacks, kind, backends
+):
+    sftp_loopback = sftp_loopbacks(sftp_root, sftp_wire, password="right")
     backend = make_backend(kind, backends)
 
     with pytest.raises(sftp_pkg.SftpAuthenticationError) as raised:
         SftpPath(
-            server.url("a", user="alice", password="wrong"), backend=backend
+            sftp_loopback.url("a", user="alice", password="wrong"), backend=backend
         ).stat()
 
     error = raised.value
@@ -206,50 +181,55 @@ def test_wrong_password_is_an_authentication_error(root, wire, servers, kind, ba
     assert error.errno == errno.EACCES
     assert "wrong" not in str(error) and "right" not in str(error)
     assert unchained(error)
-    assert server.logins and all(given == "wrong" for _user, given in server.logins)
+    assert sftp_loopback.logins and all(
+        given == "wrong" for _user, given in sftp_loopback.logins
+    )
 
 
-def test_right_password_logs_in(root, wire, servers, kind, backends):
-    server = servers(root, wire, password="right")
-    (root / "a").write_bytes(b"x")
+def test_right_password_logs_in(sftp_root, sftp_wire, sftp_loopbacks, kind, backends):
+    sftp_loopback = sftp_loopbacks(sftp_root, sftp_wire, password="right")
+    (sftp_root / "a").write_bytes(b"x")
     backend = make_backend(kind, backends)
 
     assert (
-        SftpPath(server.url("a", password="right"), backend=backend).stat().st_size == 1
+        SftpPath(sftp_loopback.url("a", password="right"), backend=backend)
+        .stat()
+        .st_size
+        == 1
     )
 
 
 def test_a_changed_host_key_is_a_host_key_error_and_no_credential_is_sent(
-    root, wire, servers, kind, backends, tmp_path
+    sftp_root, sftp_wire, sftp_loopbacks, kind, backends, tmp_path
 ):
-    server = servers(root, wire, password="right")
+    sftp_loopback = sftp_loopbacks(sftp_root, sftp_wire, password="right")
     other = asyncssh.generate_private_key("ssh-rsa")
     algorithm, key = other.export_public_key("openssh").decode().split()[:2]
     known = tmp_path / "known_hosts"
-    known.write_text(f"[{server.host}]:{server.port} {algorithm} {key}\n")
+    known.write_text(f"[{sftp_loopback.host}]:{sftp_loopback.port} {algorithm} {key}\n")
     backend = make_backend(kind, backends, known_hosts=known)
 
     with pytest.raises(sftp_pkg.SftpHostKeyError) as raised:
-        SftpPath(server.url("a", password="right"), backend=backend).stat()
+        SftpPath(sftp_loopback.url("a", password="right"), backend=backend).stat()
 
     error = raised.value
     assert isinstance(error, ConnectionError)
     assert error.errno == errno.ECONNABORTED
     assert "right" not in str(error)
     assert unchained(error)
-    assert server.logins == []
+    assert sftp_loopback.logins == []
 
 
 def test_an_unknown_host_key_is_a_host_key_error(
-    root, wire, servers, kind, backends, tmp_path
+    sftp_root, sftp_wire, sftp_loopbacks, kind, backends, tmp_path
 ):
-    server = servers(root, wire)
+    sftp_loopback = sftp_loopbacks(sftp_root, sftp_wire)
     known = tmp_path / "known_hosts"
     known.write_text("")
     backend = make_backend(kind, backends, known_hosts=known)
 
     with pytest.raises(sftp_pkg.SftpHostKeyError):
-        SftpPath(server.url("a"), backend=backend).stat()
+        SftpPath(sftp_loopback.url("a"), backend=backend).stat()
 
 
 @pytest.fixture
@@ -325,75 +305,78 @@ def test_a_failed_handshake_logs_nothing_above_debug(
     assert [r for r in caplog.records if r.name == "pathlib_next.sftp"] == []
 
 
-def test_a_trusted_host_key_connects(root, wire, servers, kind, backends, tmp_path):
-    server = servers(root, wire)
-    (root / "a").write_bytes(b"xy")
+def test_a_trusted_host_key_connects(
+    sftp_root, sftp_wire, sftp_loopbacks, kind, backends, tmp_path
+):
+    sftp_loopback = sftp_loopbacks(sftp_root, sftp_wire)
+    (sftp_root / "a").write_bytes(b"xy")
     known = tmp_path / "known_hosts"
-    known.write_text(server.known_hosts_line())
+    known.write_text(sftp_loopback.known_hosts_line())
     backend = make_backend(kind, backends, known_hosts=known)
 
-    assert SftpPath(server.url("a"), backend=backend).stat().st_size == 2
+    assert SftpPath(sftp_loopback.url("a"), backend=backend).stat().st_size == 2
 
 
 def test_a_connection_closed_in_the_middle_of_a_request_is_a_connection_reset(
-    server, root, wire, backend
+    sftp_loopback, sftp_root, sftp_wire, backend
 ):
-    (root / "a").write_bytes(b"xy")
-    path = path_at(server, backend, "a")
+    (sftp_root / "a").write_bytes(b"xy")
+    path = path_at(sftp_loopback, backend, "a")
     assert path.stat().st_size == 2
 
     def drop(server_, *args):
-        server.drop_connections()
+        sftp_loopback.drop_connections()
 
-    wire.before["stat"] = drop
+    sftp_wire.before["stat"] = drop
     with pytest.raises(ConnectionResetError) as raised:
         path.stat()
     assert raised.value.errno == errno.ECONNRESET
     assert unchained(raised.value)
 
     # The next call reconnects.
-    del wire.before["stat"]
+    del sftp_wire.before["stat"]
     assert path.stat().st_size == 2
-    assert server.connections == 2
+    assert sftp_loopback.connections == 2
 
 
 def test_a_connection_closed_in_the_middle_of_a_read_is_a_connection_reset(
-    server, root, wire, backend
+    sftp_loopback, sftp_root, sftp_wire, backend
 ):
-    (root / "big").write_bytes(b"x" * 300_000)
+    (sftp_root / "big").write_bytes(b"x" * 300_000)
 
     def drop(server_, *args):
-        server.drop_connections()
+        sftp_loopback.drop_connections()
 
-    wire.before["read"] = drop
+    sftp_wire.before["read"] = drop
     with pytest.raises(ConnectionResetError):
-        path_at(server, backend, "big").read_bytes()
+        path_at(sftp_loopback, backend, "big").read_bytes()
 
 
-def test_a_refused_connection_stays_a_connection_refused_error(backend, tmp_path):
-    # Nothing listens here: a port the server released.
-    server = Loopback(tmp_path).start()
-    port = server.port
-    server.stop()
+def test_a_refused_connection_stays_a_connection_refused_error(
+    backend, unused_tcp_port
+):
+    # Nothing listens on a port nobody holds.
     with pytest.raises(ConnectionError):
-        SftpPath(f"sftp://x:x@127.0.0.1:{port}/a", backend=backend).stat()
+        SftpPath(f"sftp://x:x@127.0.0.1:{unused_tcp_port}/a", backend=backend).stat()
 
 
 # --- a transport failure does not trigger a second probe -------------------------
 
 
-def test_a_lost_connection_in_mkdir_is_not_probed_again(server, wire, backend):
-    path = path_at(server, backend, "d")
+def test_a_lost_connection_in_mkdir_is_not_probed_again(
+    sftp_loopback, sftp_wire, backend
+):
+    path = path_at(sftp_loopback, backend, "d")
     path.parent.stat()
 
     def drop(server_, *args):
-        server.drop_connections()
+        sftp_loopback.drop_connections()
 
-    wire.before["mkdir"] = drop
-    wire.reset()
+    sftp_wire.before["mkdir"] = drop
+    sftp_wire.reset()
     with pytest.raises(ConnectionResetError):
         path.mkdir()
-    assert wire.calls["stat"] == 0
+    assert sftp_wire.calls["stat"] == 0
 
 
 # --- names that are not UTF-8 -----------------------------------------------------
@@ -401,8 +384,8 @@ def test_a_lost_connection_in_mkdir_is_not_probed_again(server, wire, backend):
 ODD = "bad\udcff\udcfeutf8"
 
 
-def odd_tree(root):
-    tree = root / "tree"
+def odd_tree(sftp_root):
+    tree = sftp_root / "tree"
     tree.mkdir()
     (tree / "good.txt").write_bytes(b"good")
     (tree / name_on_disk(ODD.encode("utf-8", "surrogateescape")).decode()).write_bytes(
@@ -415,9 +398,9 @@ def odd_tree(root):
 
 
 @pytest.fixture
-def odd_server(root, wire, servers):
-    odd_tree(root)
-    return servers(root, wire, escaped_names=True)
+def odd_server(sftp_root, sftp_wire, sftp_loopbacks):
+    odd_tree(sftp_root)
+    return sftp_loopbacks(sftp_root, sftp_wire, escaped_names=True)
 
 
 def test_a_non_utf8_name_lists_beside_its_siblings(odd_server, backend):
@@ -441,28 +424,30 @@ def test_a_non_utf8_name_reads_and_stats(odd_server, backend):
     assert odd.is_file()
 
 
-def test_a_non_utf8_name_is_removed_by_unlink_and_by_rm(odd_server, root, backend):
+def test_a_non_utf8_name_is_removed_by_unlink_and_by_rm(odd_server, sftp_root, backend):
     tree = path_at(odd_server, backend, "tree")
     (tree / ODD).unlink()
     assert not (tree / ODD).exists()
 
     odd_tree_again = (
-        root / "tree" / name_on_disk(ODD.encode("utf-8", "surrogateescape")).decode()
+        sftp_root
+        / "tree"
+        / name_on_disk(ODD.encode("utf-8", "surrogateescape")).decode()
     )
     odd_tree_again.write_bytes(b"odd")
     tree.rm(recursive=True)
 
-    assert not (root / "tree").exists()
+    assert not (sftp_root / "tree").exists()
 
 
-def test_a_tree_with_a_non_utf8_name_copies_whole(odd_server, root, backend):
+def test_a_tree_with_a_non_utf8_name_copies_whole(odd_server, sftp_root, backend):
     tree = path_at(odd_server, backend, "tree")
 
     tree.copy(path_at(odd_server, backend, "copy"), recursive=True)
 
     copied = sorted(
-        path.relative_to(root / "copy").as_posix()
-        for path in (root / "copy").rglob("*")
+        path.relative_to(sftp_root / "copy").as_posix()
+        for path in (sftp_root / "copy").rglob("*")
         if path.is_file()
     )
     assert copied == sorted(

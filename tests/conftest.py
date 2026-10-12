@@ -781,6 +781,52 @@ def sftp_server(fixture_tree, tmp_path_factory, monkeypatch):
         stop_server(loop, thread, server, live)
 
 
+@pytest.fixture
+def sftp_root(tmp_path):
+    """An empty directory for a counting loopback SFTP server to serve."""
+    root = tmp_path / "root"
+    root.mkdir()
+    return root
+
+
+@pytest.fixture
+def sftp_wire():
+    """The counters and hooks of a counting loopback SFTP server (`Wire` in
+    `tests/sftp_loopback.py`): per-method counts and a request log, a hook that
+    fails or reshapes any request, rows a listing also holds."""
+    pytest.importorskip("asyncssh")
+    from sftp_loopback import Wire
+
+    return Wire()
+
+
+@pytest.fixture
+def sftp_loopbacks():
+    """`sftp_loopbacks(root, wire=None, **options)` starts a counting SFTP
+    server on 127.0.0.1 serving `root` and returns it; every one started is
+    stopped when the test ends. `options` are those of `Loopback`: `password`,
+    `sftp_version` (4 for a v4 session), `server_class`, `escaped_names`."""
+    pytest.importorskip("asyncssh")
+    from sftp_loopback import Loopback
+
+    started = []
+
+    def start(root, wire=None, **options):
+        server = Loopback(root, wire, **options).start()
+        started.append(server)
+        return server
+
+    yield start
+    for server in started:
+        server.stop()
+
+
+@pytest.fixture
+def sftp_loopback(sftp_root, sftp_wire, sftp_loopbacks):
+    """A counting SFTP server serving `sftp_root`, counted into `sftp_wire`."""
+    return sftp_loopbacks(sftp_root, sftp_wire)
+
+
 def _build_git_tree(local_dir):
     """Flatten a local directory into a git-tree-shaped {posix relpath:
     bytes} dict for the fake GitHub/GitLab servers below. Git has no

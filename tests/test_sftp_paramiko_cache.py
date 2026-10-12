@@ -13,8 +13,6 @@ from pathlib_next.uri.schemes import sftp as sftp_pkg  # noqa: E402
 from pathlib_next.uri.schemes.sftp import SftpPath  # noqa: E402
 from pathlib_next.uri.schemes.sftp import _paramiko  # noqa: E402
 
-from sftp_loopback import Loopback, Wire  # noqa: E402
-
 
 @pytest.fixture(autouse=True)
 def home(tmp_path, monkeypatch):
@@ -26,11 +24,10 @@ def home(tmp_path, monkeypatch):
     return home
 
 
-def test_a_connection_of_a_thread_that_ended_is_closed_by_the_next_new_one(tmp_path):
-    root = tmp_path / "root"
-    root.mkdir()
-    (root / "a.txt").write_bytes(b"a")
-    server = Loopback(root, Wire()).start()
+def test_a_connection_of_a_thread_that_ended_is_closed_by_the_next_new_one(
+    sftp_root, sftp_loopback
+):
+    (sftp_root / "a.txt").write_bytes(b"a")
     backend = sftp_pkg.SftpBackend(
         {"allow_agent": False, "look_for_keys": False},
         paramiko.AutoAddPolicy(),
@@ -38,7 +35,7 @@ def test_a_connection_of_a_thread_that_ended_is_closed_by_the_next_new_one(tmp_p
         known_hosts=None,
     )
     try:
-        source = SftpPath(server.url("a.txt")).source
+        source = SftpPath(sftp_loopback.url("a.txt")).source
         clients = []
         worker = threading.Thread(target=lambda: clients.append(backend.client(source)))
         worker.start()
@@ -56,7 +53,6 @@ def test_a_connection_of_a_thread_that_ended_is_closed_by_the_next_new_one(tmp_p
         assert backend.client(source) is fresh
     finally:
         backend.close()
-        server.stop()
 
 
 def test_a_changed_ssh_config_file_is_read_again(tmp_path):

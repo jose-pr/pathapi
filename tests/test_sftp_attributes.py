@@ -26,7 +26,7 @@ from pathlib_next.uri.schemes.sftp import _asyncssh as backend_mod  # noqa: E402
 from pathlib_next.uri.schemes.sftp import _checkfile  # noqa: E402
 from pathlib_next.uri.schemes.sftp._sshconfig import _DEFAULT_SSH_CONFIG  # noqa: E402
 
-from sftp_loopback import Loopback, Wire, counting_server_class  # noqa: E402
+from sftp_loopback import counting_server_class  # noqa: E402
 
 try:
     import paramiko
@@ -46,32 +46,6 @@ def home(tmp_path, monkeypatch):
     monkeypatch.setenv("USERPROFILE", str(home))
     assert pathlib.Path.home() == home
     return home
-
-
-@pytest.fixture
-def root(tmp_path):
-    root = tmp_path / "root"
-    root.mkdir()
-    return root
-
-
-@pytest.fixture
-def wire():
-    return Wire()
-
-
-@pytest.fixture
-def servers():
-    started = []
-
-    def start(root, wire, **kwargs):
-        server = Loopback(root, wire, **kwargs).start()
-        started.append(server)
-        return server
-
-    yield start
-    for server in started:
-        server.stop()
 
 
 @pytest.fixture(params=["paramiko", "asyncssh"])
@@ -113,14 +87,14 @@ class _SetstatRecorder:
     """A server class that records the attributes of every `setstat` and
     leaves the file alone."""
 
-    def __init__(self, wire):
+    def __init__(self, sftp_wire):
         self.seen = []
         recorder = self
-        base = counting_server_class(wire)
+        base = counting_server_class(sftp_wire)
 
         class _Server(base):
             def setstat(self, path, attrs):
-                wire.record("setstat", (path,))
+                sftp_wire.record("setstat", (path,))
                 recorder.seen.append(
                     (attrs.uid, attrs.gid, attrs.owner, attrs.group, attrs.permissions)
                 )
@@ -147,18 +121,20 @@ def _reports_owner(owner, group):
 
 
 @pytest.fixture
-def v4(root, wire, servers, backends):
-    recorder = _SetstatRecorder(wire)
-    server = servers(root, wire, sftp_version=4, server_class=recorder.server_class)
-    (root / "a.txt").write_bytes(b"hello")
+def v4(sftp_root, sftp_wire, sftp_loopbacks, backends):
+    recorder = _SetstatRecorder(sftp_wire)
+    sftp_loopback = sftp_loopbacks(
+        sftp_root, sftp_wire, sftp_version=4, server_class=recorder.server_class
+    )
+    (sftp_root / "a.txt").write_bytes(b"hello")
     backend = make_backend("asyncssh", backends, sftp_version=4)
-    path = SftpPath(server.url("a.txt"), backend=backend)
+    path = SftpPath(sftp_loopback.url("a.txt"), backend=backend)
     return path, recorder
 
 
-def test_a_partial_chown_against_a_server_that_names_owners_is_refused(v4, wire):
+def test_a_partial_chown_against_a_server_that_names_owners_is_refused(v4, sftp_wire):
     path, recorder = v4
-    wire.after["stat"] = _reports_owner("alice", "staff")
+    sftp_wire.after["stat"] = _reports_owner("alice", "staff")
 
     with pytest.raises(NotImplementedError, match="uid"):
         path.chown(None, 4242)
@@ -168,9 +144,9 @@ def test_a_partial_chown_against_a_server_that_names_owners_is_refused(v4, wire)
     assert recorder.seen == []
 
 
-def test_a_full_chown_against_a_server_that_names_owners_is_sent(v4, wire):
+def test_a_full_chown_against_a_server_that_names_owners_is_sent(v4, sftp_wire):
     path, recorder = v4
-    wire.after["stat"] = _reports_owner("alice", "staff")
+    sftp_wire.after["stat"] = _reports_owner("alice", "staff")
 
     path.chown(7, 8)
 
@@ -179,9 +155,9 @@ def test_a_full_chown_against_a_server_that_names_owners_is_sent(v4, wire):
     ]
 
 
-def test_a_numeric_owner_name_is_the_id(v4, wire):
+def test_a_numeric_owner_name_is_the_id(v4, sftp_wire):
     path, recorder = v4
-    wire.after["stat"] = _reports_owner("1000", "1001")
+    sftp_wire.after["stat"] = _reports_owner("1000", "1001")
 
     stat = path.stat()
     path.chown(None, 4242)
@@ -193,12 +169,14 @@ def test_a_numeric_owner_name_is_the_id(v4, wire):
 
 
 def test_a_partial_chown_against_a_v3_server_keeps_the_known_owner(
-    root, wire, servers, kind, backends
+    sftp_root, sftp_wire, sftp_loopbacks, kind, backends
 ):
-    recorder = _SetstatRecorder(wire)
-    server = servers(root, wire, sftp_version=3, server_class=recorder.server_class)
-    (root / "a.txt").write_bytes(b"hello")
-    path = SftpPath(server.url("a.txt"), backend=make_backend(kind, backends))
+    recorder = _SetstatRecorder(sftp_wire)
+    sftp_loopback = sftp_loopbacks(
+        sftp_root, sftp_wire, sftp_version=3, server_class=recorder.server_class
+    )
+    (sftp_root / "a.txt").write_bytes(b"hello")
+    path = SftpPath(sftp_loopback.url("a.txt"), backend=make_backend(kind, backends))
     stat = path.stat()
 
     path.chown(None, 4242)
@@ -212,27 +190,27 @@ def test_a_partial_chown_against_a_v3_server_keeps_the_known_owner(
 
 
 @pytest.fixture
-def served(root, wire, servers, kind, backends):
-    server = servers(root, wire)
+def served(sftp_root, sftp_wire, sftp_loopbacks, kind, backends):
+    sftp_loopback = sftp_loopbacks(sftp_root, sftp_wire)
     backend = make_backend(kind, backends)
-    return SftpPath(server.url(), backend=backend), root
+    return SftpPath(sftp_loopback.url(), backend=backend), sftp_root
 
 
 def test_write_bytes_returns_the_number_of_bytes(served):
-    path, root = served
+    path, sftp_root = served
 
     assert (path / "w.bin").write_bytes(b"12345") == 5
     assert (path / "t.txt").write_text("héllo") == 5
-    assert (root / "w.bin").read_bytes() == b"12345"
+    assert (sftp_root / "w.bin").read_bytes() == b"12345"
 
 
 def test_write_of_an_exclusive_file_returns_the_count(served):
-    path, root = served
+    path, sftp_root = served
 
     with (path / "x.bin").open("xb") as handle:
         assert handle.write(b"hi") == 2
         assert handle.write(bytearray(b"abc")) == 3
-    assert (root / "x.bin").read_bytes() == b"hiabc"
+    assert (sftp_root / "x.bin").read_bytes() == b"hiabc"
 
 
 def test_a_file_without_a_descriptor_says_so(served):
@@ -243,26 +221,26 @@ def test_a_file_without_a_descriptor_says_so(served):
 
 
 def test_truncate_cuts_the_remote_file(served):
-    path, root = served
-    (root / "t.bin").write_bytes(b"0123456789")
+    path, sftp_root = served
+    (sftp_root / "t.bin").write_bytes(b"0123456789")
 
     with (path / "t.bin").open("r+b") as handle:
         assert handle.truncate(4) == 4
-    assert (root / "t.bin").read_bytes() == b"0123"
+    assert (sftp_root / "t.bin").read_bytes() == b"0123"
 
     with (path / "t.bin").open("r+b") as handle:
         handle.seek(2)
         assert handle.truncate() == 2
-    assert (root / "t.bin").read_bytes() == b"01"
+    assert (sftp_root / "t.bin").read_bytes() == b"01"
 
 
 def test_truncate_after_a_buffered_write_cuts_what_was_written(served):
-    path, root = served
+    path, sftp_root = served
 
     with (path / "t.bin").open("w+b") as handle:
         handle.write(b"abcdefgh")
         handle.truncate(3)
-    assert (root / "t.bin").read_bytes() == b"abc"
+    assert (sftp_root / "t.bin").read_bytes() == b"abc"
 
 
 # --- the default sentinels survive a copy and a pickle ---------------------------
@@ -312,21 +290,21 @@ if paramiko is not None:
 
 
 def test_a_pickled_or_copied_path_stats_against_the_server(
-    root, wire, servers, kind, home, monkeypatch
+    sftp_root, sftp_wire, sftp_loopbacks, kind, home, monkeypatch
 ):
-    server = servers(root, wire)
-    (root / "a.txt").write_bytes(b"hello")
-    (home / ".ssh" / "known_hosts").write_text(server.known_hosts_line())
+    sftp_loopback = sftp_loopbacks(sftp_root, sftp_wire)
+    (sftp_root / "a.txt").write_bytes(b"hello")
+    (home / ".ssh" / "known_hosts").write_text(sftp_loopback.known_hosts_line())
     monkeypatch.setattr(
         _PickledPath,
         "_default_backend_cls",
         _QuietParamiko if kind == "paramiko" else backend_mod.AsyncsshSftpBackend,
     )
-    path = _PickledPath(server.url("a.txt"))
+    path = _PickledPath(sftp_loopback.url("a.txt"))
     try:
         for clone in (
             pickle.loads(pickle.dumps(path)),
-            pickle.loads(pickle.dumps(_PickledPath(server.url("a.txt")))),
+            pickle.loads(pickle.dumps(_PickledPath(sftp_loopback.url("a.txt")))),
             copy.deepcopy(path),
         ):
             assert clone.stat().st_size == 5
@@ -532,15 +510,17 @@ handle.write(b"buffered, never closed" if mode == "bytes" else "text, never clos
 
 
 @pytest.mark.parametrize("mode", ["bytes", "text"])
-def test_a_file_left_open_at_exit_is_written(root, wire, servers, kind, mode):
-    server = servers(root, wire)
+def test_a_file_left_open_at_exit_is_written(
+    sftp_root, sftp_wire, sftp_loopbacks, kind, mode
+):
+    sftp_loopback = sftp_loopbacks(sftp_root, sftp_wire)
     env = dict(os.environ)
     env["PYTHONPATH"] = os.pathsep.join(
         [SRC, *([env["PYTHONPATH"]] if env.get("PYTHONPATH") else [])]
     )
 
     finished = subprocess.run(
-        [sys.executable, "-c", _CHILD, server.url("left.txt"), kind, mode],
+        [sys.executable, "-c", _CHILD, sftp_loopback.url("left.txt"), kind, mode],
         env=env,
         capture_output=True,
         text=True,
@@ -550,7 +530,7 @@ def test_a_file_left_open_at_exit_is_written(root, wire, servers, kind, mode):
     assert finished.returncode == 0, finished.stderr
     assert "shutting down" not in finished.stderr
     expected = b"buffered, never closed" if mode == "bytes" else b"text, never closed"
-    assert (root / "left.txt").read_bytes() == expected
+    assert (sftp_root / "left.txt").read_bytes() == expected
 
 
 def test_the_exit_hook_does_not_wait_for_a_connection_that_hangs(monkeypatch):
@@ -576,19 +556,19 @@ def test_the_exit_hook_does_not_wait_for_a_connection_that_hangs(monkeypatch):
 
 
 def test_a_fresh_root_its_parent_and_twenty_children_open_one_connection(
-    root, wire, servers, kind, home, monkeypatch
+    sftp_root, sftp_wire, sftp_loopbacks, kind, home, monkeypatch
 ):
-    server = servers(root, wire)
+    sftp_loopback = sftp_loopbacks(sftp_root, sftp_wire)
     for number in range(20):
-        (root / f"c{number}.txt").write_bytes(b"x")
-    (home / ".ssh" / "known_hosts").write_text(server.known_hosts_line())
+        (sftp_root / f"c{number}.txt").write_bytes(b"x")
+    (home / ".ssh" / "known_hosts").write_text(sftp_loopback.known_hosts_line())
     monkeypatch.setattr(
         SftpPath,
         "_default_backend_cls",
         _QuietParamiko if kind == "paramiko" else backend_mod.AsyncsshSftpBackend,
     )
 
-    path = SftpPath(server.url("c0.txt"))
+    path = SftpPath(sftp_loopback.url("c0.txt"))
     try:
         assert path.parent.exists()
         assert path.exists()
@@ -596,4 +576,4 @@ def test_a_fresh_root_its_parent_and_twenty_children_open_one_connection(
     finally:
         path.backend.close()
 
-    assert server.connections == 1
+    assert sftp_loopback.connections == 1
