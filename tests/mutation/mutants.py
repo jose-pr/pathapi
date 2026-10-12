@@ -876,3 +876,14 @@ mutant(
     "tests/test_sync_sftp_parity.py::test_checksum_refusal_costs_one_request_per_connection",
     "a server without the extension is asked again for every file",
 )
+mutant(
+    "sftp-check-file-leaks-its-handle",
+    "uri/schemes/sftp/_checkfile.py",
+    "        finally:\n            file.close()\n        digest = parse_reply(payload, algorithm)",
+    "        finally:\n            pass\n        digest = parse_reply(payload, algorithm)",
+    (
+        "tests/test_sftp.py::test_paramiko_checksum_closes_handle_even_when_request_raises",
+        "tests/test_sftp.py::test_paramiko_checksum_sends_correct_extended_request",
+    ),
+    "a check-file request leaves the handle it opened, whether or not it succeeds",
+)
