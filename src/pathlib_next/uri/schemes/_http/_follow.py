@@ -8,7 +8,7 @@ import errno as _errno
 import re as _re
 import urllib.parse as _urlparse
 
-from ._headers import drop_header, peer_text
+from ._headers import check_url, drop_header, peer_text
 from ._response import HTTPResponse
 
 MAX_REDIRECTS = 30
@@ -108,8 +108,8 @@ def redirect_location(url: str, resp: HTTPResponse) -> "str | None":
         return None
     try:
         absolute = split_userinfo(_urlparse.urljoin(url, location))[0]
-        if _urlparse.urlsplit(absolute).scheme.lower() not in _DEFAULT_PORTS:
-            return None
+        # What a transport would refuse is not a place to go.
+        check_url(absolute)
         return absolute
     except ValueError:
         return None
@@ -168,7 +168,8 @@ def send_following(
             return resp
         location = redirect_location(current, resp)
         if location is None:
-            return resp
+            _discard(resp)
+            raise refused_redirect(method, current, resp, None, "no usable Location")
         if hops >= MAX_REDIRECTS:
             _discard(resp)
             raise OSError(

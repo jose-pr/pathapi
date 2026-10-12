@@ -2,10 +2,13 @@
 `HEAD` or `OPTIONS` redirect itself and takes `Authorization` off when the
 scheme, host or port changes, whichever transport sends the requests."""
 
+import errno
+
 import pytest
 
 from http_fakes import FakeTransport, reply
-from http_wire import Wire, response
+from http_wire import Reply, Wire, response
+from pathlib_next.uri import UriPath
 from pathlib_next.uri.schemes.http import HttpBackend
 
 AUTH = {"Authorization": "Bearer TOKEN-1"}
@@ -119,12 +122,17 @@ def test_a_redirect_loop_stops_after_thirty_redirects(http_transport):
         "javascript:alert(1)",
     ],
 )
-def test_a_location_that_is_not_an_http_url_is_not_followed(http_transport, location):
+def test_a_location_that_is_not_an_http_url_is_a_refused_redirect(
+    http_transport, location
+):
     with Wire(lambda r: redirect(location)) as wire:
         backend = HttpBackend(http_transport)
-        reply_ = backend.request("GET", wire.url + "/start")
-        assert reply_.status == 302
-        reply_.close()
+        with pytest.raises(OSError) as excinfo:
+            backend.request("GET", wire.url + "/start")
+    assert excinfo.value.errno == errno.EIO
+    assert "HTTP 302" in str(excinfo.value) and "no usable Location" in str(
+        excinfo.value
+    )
     assert len(wire.requests) == 1
 
 
@@ -188,3 +196,53 @@ def test_a_header_with_a_line_break_is_refused_before_any_transport_call():
     with pytest.raises(ValueError):
         HttpBackend(transport).request("GET", "http://h/x\r\nX-A: 1")
     assert transport.sent == []
+
+
+# --- a Location the URL check refuses ----------------------------------------------
+
+REFUSED_LOCATIONS = [
+    "http://127.0.0.1:99999/x",  # a port out of range
+    "http://127.0.0.1:port/x",  # a port that is not a number
+    "http://a\u3002\u3002b/x",  # a host name with an empty label
+    "http://" + "\u00e9" * 70 + "/x",  # a label too long to be a name
+    "http://[::1/x",  # an unclosed address
+]
+
+
+@pytest.mark.parametrize("location", REFUSED_LOCATIONS)
+@pytest.mark.parametrize("operation", ["read_bytes", "stat", "iterdir", "is_dir"])
+def test_a_location_the_url_check_refuses_is_oserror_never_valueerror(
+    http_transport_kind, location, operation
+):
+    raw = (
+        "HTTP/1.1 302 Found\r\nLocation: " + location + "\r\nContent-Length: 0\r\n\r\n"
+    ).encode("utf-8")
+    with Wire(lambda r: Reply(raw)) as wire:
+        path = UriPath(wire.url + "/f")
+        try:
+            outcome = getattr(path, operation)()
+            if operation == "iterdir":
+                list(outcome)
+        except ValueError:
+            raise AssertionError("a ValueError escaped") from None
+        except OSError as error:
+            # The refused reply is named by its status; `requests` reads a
+            # Location it cannot parse before this library sees the reply.
+            assert error.errno == errno.EIO
+            assert "HTTP 302" in str(error) or "could not be read" in str(error)
+        else:
+            assert operation == "is_dir" and outcome is False
+    assert len(wire.requests) in (1, 2)  # the slash form is asked for first
+
+
+@pytest.mark.parametrize("location", REFUSED_LOCATIONS)
+def test_a_walk_over_a_refused_location_ends_with_the_oserror_it_catches(
+    http_transport_kind, location
+):
+    raw = (
+        "HTTP/1.1 302 Found\r\nLocation: " + location + "\r\nContent-Length: 0\r\n\r\n"
+    ).encode("utf-8")
+    with Wire(lambda r: Reply(raw)) as wire:
+        # `walk()` and `exists()` meet OSError as an unreadable directory.
+        assert list(UriPath(wire.url + "/d/").walk()) == []
+        assert UriPath(wire.url + "/d/").exists() is False

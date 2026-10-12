@@ -18,6 +18,7 @@ from ._headers import (
     check_body,
     check_headers,
     check_method,
+    check_timeout,
     check_url,
     wants_decoding,
 )
@@ -170,23 +171,6 @@ class _Dropped(Exception):
     def __init__(self, error: BaseException):
         super().__init__()
         self.error = error
-
-
-def _timeouts(timeout) -> "tuple[float | None, float | None]":
-    if timeout is None:
-        return None, None
-    if isinstance(timeout, tuple):
-        if len(timeout) != 2:
-            raise ValueError("a timeout is a number, None or a (connect, read) pair")
-        connect, read = timeout
-    else:
-        connect = read = timeout
-    for value in (connect, read):
-        if value is not None and (
-            isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0
-        ):
-            raise ValueError("a timeout is a positive number of seconds, or None")
-    return connect, read
 
 
 class _Payload:
@@ -353,7 +337,7 @@ class HTTPTransport:
         method = check_method(method)
         target = check_url(url)
         pairs = check_headers(headers)
-        connect_timeout, read_timeout = _timeouts(timeout)
+        connect_timeout, read_timeout = check_timeout(timeout)
         payload = _Payload(body)
         names = {name.lower() for name, _ in pairs}
         decode = wants_decoding(pairs)

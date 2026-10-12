@@ -2177,7 +2177,10 @@ class HTTPResponse:
 - Timeout: `DEFAULT_TIMEOUT = (10, 60)` (connect, read) unless given;
   `timeout=None` waits forever.
 - Redirects: `GET`/`HEAD`/`OPTIONS` follow up to 30 (a `303` becomes a
-  `GET`); a `Location` that is not `http:` or `https:` is not followed. A
+  `GET`); a redirect whose `Location` is missing or that a request cannot be
+  sent to (another scheme, a port out of range, a host that is not a name) is
+  `OSError(EIO)` naming the status, never `ValueError`, which is reserved
+  for the caller's own URL and headers. A
   redirect that changes the scheme, host or port drops `Authorization` for
   every later hop, the asking again of `stat()`, `exists()`, `is_dir()`,
   `unlink()`, `open("x")` and a patch-mode append included (also on a

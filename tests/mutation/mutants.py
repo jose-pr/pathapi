@@ -1290,3 +1290,19 @@ mutant(
     "tests/test_http_redirect_origin.py::test_a_redirect_to_another_origin_does_not_carry_authorization",
     "a re-request compares the redirect target with itself instead of with the origin it was asked for",
 )
+mutant(
+    "http-unusable-location-reaches-the-transport",
+    f"{_HTTP_PKG}/_follow.py",
+    "        check_url(absolute)\n        return absolute\n",
+    "        return absolute\n",
+    "tests/test_http_redirects.py::test_a_location_the_url_check_refuses_is_oserror_never_valueerror",
+    "a Location the URL check refuses is sent on, and its ValueError reaches the caller",
+)
+mutant(
+    "http-redirect-without-a-usable-location-is-the-reply",
+    f"{_HTTP_PKG}/_follow.py",
+    '        if location is None:\n            _discard(resp)\n            raise refused_redirect(method, current, resp, None, "no usable Location")\n        if hops >= MAX_REDIRECTS:',
+    "        if location is None:\n            return resp\n        if hops >= MAX_REDIRECTS:",
+    "tests/test_http_redirects.py::test_a_location_that_is_not_an_http_url_is_a_refused_redirect",
+    "a redirect with an unusable Location reads as the answer itself",
+)

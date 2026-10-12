@@ -105,6 +105,25 @@ def merge_headers(*layers: "_abc.Mapping[str, str] | None") -> "dict[str, str]":
     return dict(merged.values())
 
 
+def check_timeout(timeout) -> "tuple[float | None, float | None]":
+    """`timeout` (a number, `None`, or a `(connect, read)` pair) as that pair;
+    `ValueError` for anything else."""
+    if timeout is None:
+        return None, None
+    if isinstance(timeout, tuple):
+        if len(timeout) != 2:
+            raise ValueError("a timeout is a number, None or a (connect, read) pair")
+        connect, read = timeout
+    else:
+        connect = read = timeout
+    for value in (connect, read):
+        if value is not None and (
+            isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0
+        ):
+            raise ValueError("a timeout is a positive number of seconds, or None")
+    return connect, read
+
+
 def check_method(method: str) -> str:
     if not isinstance(method, str) or not _TOKEN.fullmatch(method):
         raise ValueError("the request method is not an HTTP token")

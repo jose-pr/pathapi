@@ -16,6 +16,7 @@ from ._headers import (
     check_body,
     check_headers,
     check_method,
+    check_timeout,
     check_url,
     drop_header,
     has_header,
@@ -205,6 +206,7 @@ class RequestsTransport:
         method = check_method(method)
         check_url(url)
         check_body(body)
+        check_timeout(timeout)
         sent = dict(check_headers(headers))
         decode = wants_decoding(sent.items())
         if not has_header(sent, "Accept-Encoding"):
@@ -244,6 +246,13 @@ class RequestsTransport:
             )
         except self._requests.exceptions.RequestException as error:
             raise self._failure(error) from None
+        except ValueError as error:
+            # The URL and the headers were checked before this call, so this
+            # is `requests` reading what the server said: a `Location` it
+            # cannot parse, when it looks ahead to the redirect.
+            raise OSError(
+                _errno.EIO, f"the reply could not be read ({type(error).__name__})"
+            ) from None
         status = response.status_code
         if status < 200:
             # An interim reply taken as the final one (urllib3 skips only
