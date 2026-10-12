@@ -136,10 +136,9 @@ class _BaseFSPathname(_path.PurePath, _proto.Pathname):
     def with_segments(self, *args: str | _proto.FsPathLike):
         return type(self)(*args)
 
-    # match()/full_match(): stdlib's own wherever it has the promised
-    # signature. `PurePath` follows this class in the MRO, so defining either
-    # name unconditionally would displace stdlib's on the versions that have
-    # it -- hence the version-gated definitions.
+    # match()/full_match(): stdlib's own wherever it has the promised signature.
+    # `PurePath` follows this class in the MRO, so an unconditional definition would
+    # displace stdlib's on versions that have it: hence the version gate.
 
     if _sys.version_info < (3, 12):
 
@@ -230,14 +229,9 @@ class LocalPath(
     __slots__ = ()
 
     def _scandir(self):
-        # On 3.11+, `pathlib.Path._scandir()` (stdlib, ahead of ours in the
-        # MRO via WindowsPath/PosixPath) shadows `_proto.Path._scandir()`
-        # and returns `os.scandir(self)` directly -- an iterator of raw
-        # `os.DirEntry`, not this project's `(name, FileStat|None)` tuples.
-        # walk()/glob() expect the latter, so re-assert our own contract
-        # here regardless of what stdlib does in a given version. DirEntry's
-        # own cached lstat (`follow_symlinks=False`, matching walk()'s
-        # default) is reused instead of a fresh stat() round trip.
+        # On 3.11+ stdlib's `_scandir()` (ahead of ours in the MRO) returns raw
+        # `os.DirEntry`; walk()/glob() expect `(name, FileStat|None)`, so ours is
+        # asserted. The entry's cached lstat (matching walk()'s default) is reused.
         for entry in _os.scandir(self):
             try:
                 stat = _FileStat.from_stat(entry.stat(follow_symlinks=False))
@@ -260,8 +254,8 @@ class LocalPath(
 
         lstat() reports a junction (IO_REPARSE_TAG_MOUNT_POINT) as a plain
         directory -- CPython only rewrites the mode to S_IFLNK for real
-        symlinks -- so `rm(recursive=True)` used to walk into one and delete
-        the target's files. `shutil.rmtree` guards the same case.
+        symlinks -- so a recursive removal must test for it or it would walk
+        into one and delete the target's files, as `shutil.rmtree` guards.
         """
         if _os.name != "nt":
             return False
@@ -288,15 +282,9 @@ class LocalPath(
             return False
 
     def walk(self, top_down=True, on_error=None, follow_symlinks=False):
-        # 3.12+ stdlib `pathlib.Path.walk()` sits ahead of ours in the MRO
-        # and would otherwise win here. Its implementation calls
-        # `self._scandir()` expecting stdlib's own context-manager-capable
-        # `os.scandir(self)` return value ("with scandir_it:") -- our
-        # `_scandir()` override above is a plain generator, so stdlib's
-        # `walk()` breaks on it (`TypeError: 'generator' object does not
-        # support the context manager protocol`). Route explicitly to our
-        # own `walk()` (which drives `_scandir()` correctly) regardless of
-        # which one the MRO would otherwise resolve to.
+        # 3.12+ stdlib `Path.walk()` would win the MRO, but it uses `self._scandir()` as a
+        # context manager (`with scandir_it:`) and ours is a plain generator: route
+        # explicitly to our own `walk()`.
         return _proto.Path.walk(
             self, top_down=top_down, on_error=on_error, follow_symlinks=follow_symlinks
         )
@@ -312,15 +300,9 @@ class LocalPath(
     def _symlink_to(
         self, target: _proto.Path | str, target_is_directory: bool = False
     ) -> None:
-        # `symlink_to` is in _OPERATION_NAMES, so the generic
-        # `Path.symlink_to()` (which owns `force=`) is what resolves on
-        # LocalPath -- it delegates the actual link creation here, and
-        # stdlib's own implementation is reached explicitly.
-        # Unlike every remote scheme, target_is_directory is meaningful
-        # here: it is the Windows-only flag pathlib forwards to
-        # os.symlink(). stdlib accepts any os.PathLike, so the normalized
-        # path object goes straight through -- and a relative target stays
-        # relative, exactly as before.
+        # `symlink_to` is in _OPERATION_NAMES, so the generic `Path.symlink_to()` (which
+        # owns `force=`) resolves on LocalPath and delegates link creation here; stdlib's
+        # is reached explicitly. target_is_directory is meaningful here (Windows, via os.symlink).
         return _path.Path.symlink_to(self, target, target_is_directory)
 
     def stat(self, *, follow_symlinks=True):
@@ -345,10 +327,9 @@ class LocalPath(
         )
 
     if _sys.version_info < (3, 13):
-        # `is_dir()`/`is_file()` gained `follow_symlinks=` in 3.13, and the
-        # `Stat` protocol promises it; stdlib precedes `Stat` in this MRO.
-        # Following links keeps stdlib's own implementation; the
-        # non-following form is 3.13's (any OSError/ValueError is False).
+        # `is_dir()`/`is_file()` gained `follow_symlinks=` in 3.13 and the `Stat` protocol
+        # promises it. Following keeps stdlib's implementation; the non-following form
+        # is 3.13's (any OSError/ValueError is False).
 
         def is_dir(self, *, follow_symlinks=True):
             if follow_symlinks:
@@ -373,19 +354,12 @@ class LocalPath(
         *,
         follow_symlinks: bool = True,
     ) -> None:
-        # shutil.chown() is the stdlib spelling that accepts names as well
-        # as ids, and it takes None for "leave unchanged" -- the same
-        # canonical form Chmod.chown() already normalized to, so the pair
-        # passes straight through. os.chown's -1 sentinel never appears
-        # here.
+        # shutil.chown() accepts names as well as ids and takes None for "leave unchanged",
+        # the canonical form Chmod.chown() normalizes to; os.chown's -1 never appears here.
         if not hasattr(_os, "chown"):
-            # shutil.chown() *exists* on Windows while os.chown does not, so
-            # without this the int form leaked `AttributeError: module 'os'
-            # has no attribute 'chown'` and the name form leaked
-            # `LookupError: no such user` -- actively misleading, since
-            # there is no `pwd` module for shutil._get_uid to consult, so
-            # every name "misses" whether or not the user exists.
-            # docs/divergences.md promises NotImplementedError here.
+            # shutil.chown() exists on Windows while os.chown does not, and there is no `pwd`
+            # for it to consult, so an int would leak AttributeError and a name LookupError:
+            # docs/divergences.md promises NotImplementedError.
             raise NotImplementedError("chown()")
         if not follow_symlinks:
             if not hasattr(_os, "lchown"):
