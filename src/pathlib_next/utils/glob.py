@@ -27,41 +27,36 @@ __all__ = [
 RECURSIVE = "**"
 ANY_PATTERN = _re.compile(_fnmatch.translate("*"))
 WILDCARD_PATTERN = _re.compile("([*?[])")
-WILCARD_PATTERN = WILDCARD_PATTERN  # back-compat alias for the old typo'd name
+WILCARD_PATTERN = WILDCARD_PATTERN  # misspelled alias, kept for importers
 
 # CPython 3.13 made a trailing "**" select files as well as directories;
 # earlier versions select directories only. glob() follows the running
 # interpreter so LocalPath keeps matching the pathlib it runs next to.
 _DOUBLESTAR_SELECTS_FILES = _sys.version_info >= (3, 13)
 
-# The two rules the running interpreter changed mid-series, honoured when
-# `native=True` (the default) and smoothed over when it is False:
-#   - a trailing "/" selects directories only from 3.11; before that pathlib
-#     ignores it entirely.
-#   - "**" is only a recursive component when it is the WHOLE component;
-#     "a**" raises before 3.13 and is a plain wildcard from 3.13.
+# Rules the running interpreter changed mid-series: honoured when `native=True`
+# (the default), smoothed over when it is False.
+#: A trailing "/" selects directories only from 3.11; before, pathlib ignores it.
 _TRAILING_SLASH_SELECTS_DIRS = _sys.version_info >= (3, 11)
+#: "**" recurses only as the WHOLE component; "a**" raises before 3.13 and is a
+#: plain wildcard from 3.13.
 _PARTIAL_DOUBLESTAR_ALLOWED = _sys.version_info >= (3, 13)
 
-# And two rules of how a literal component is checked, which `native=False`
-# pins to the current pathlib's:
-#   - before 3.13 a literal that is not the last component must be a
-#     directory; from 3.13 it is joined unchecked and only the whole path is
-#     tested.
-#   - from 3.12 the last literal is tested without following a link, so a
-#     dangling symlink is selected; before that it is tested with `exists()`.
+# How a literal component is checked; `native=False` pins both to the current pathlib's.
+#: Before 3.13 a literal that is not the last component must be a directory; from
+#: 3.13 it is joined unchecked and only the whole path is tested.
 _INTERMEDIATE_LITERAL_IS_CHECKED = _sys.version_info < (3, 13)
+#: From 3.12 the last literal is tested without following a link (a dangling symlink
+#: is selected); before that, with `exists()`.
 _FINAL_LITERAL_IS_NOT_FOLLOWED = _sys.version_info >= (3, 12)
 
-# Two more rules of the same kind, followed when `native=True`:
-#   - 3.12 selects every literal component (but "..") from the directory
-#     listing, as it does a wildcard, so a literal typed in another case yields
-#     the stored name where the filesystem ignores case. Other versions join a
-#     literal as typed.
-#   - from 3.13 pathlib tests a final literal with a trailing separator as
-#     `lexists(name + os.sep)`, and Windows' lstat does not follow a directory
-#     link given that spelling, so a dangling one is selected there.
+#: Followed when `native=True`. 3.12 selects every literal component (but "..") from
+#: the directory listing, as a wildcard: a literal typed in another case yields the
+#: stored name where the filesystem ignores case. Other versions join it as typed.
 _LITERALS_ARE_LISTED = _sys.version_info[:2] == (3, 12)
+#: From 3.13 a final literal with a trailing separator is tested as `lexists(name +
+#: os.sep)`, which Windows' lstat does not follow for a directory link: a dangling one
+#: is selected there.
 _DIRONLY_LITERAL_IS_LEXISTS = _os.name == "nt" and _sys.version_info >= (3, 13)
 
 #: Symlinks one descent may pass through when `recurse_symlinks=True` and the
@@ -138,10 +133,9 @@ def full_match(segments: _ty.Sequence[str], pattern: str, case_sensitive: bool) 
     end = len(pats)
     last = end - 1
 
-    # A state is (index, stage). Stage 0: about to match pats[index]. Stages
-    # 1 and 2 belong to a "**": 1 once it has taken a single empty field (the
-    # root), which does not yet count, 2 once it has taken enough and may
-    # take more or hand over to the next component.
+    # A state is (index, stage). Stage 0: about to match pats[index]. Stage 1 is a "**"
+    # that has taken one empty field (the root), which does not count yet; stage 2 has
+    # taken enough and may take more or hand over to the next component.
     def closure(states: _ty.Set[_ty.Tuple[int, int]]) -> _ty.Set[_ty.Tuple[int, int]]:
         pending = list(states)
         while pending:

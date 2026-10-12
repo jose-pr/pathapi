@@ -43,18 +43,14 @@ class FileStat(_FStat):
     st_mtime: float
     st_ctime: float
 
-    #: Whether `st_mode` is metadata the backend actually reported (True) or
-    #: a placeholder synthesized from `is_dir` (False: `S_IFREG | 0o444`, or
-    #: `S_IFDIR | 0o555` for a directory). Consumers that would *write* the
-    #: mode somewhere -- `Path.copy(preserve_metadata=True)` -- skip it when
-    #: False, so an invented read-only mode never lands on a real file.
+    #: Whether `st_mode` was reported by the backend (True) or is a placeholder from
+    #: `is_dir` (False: `S_IFREG | 0o444`, `S_IFDIR | 0o555`). A consumer that would
+    #: write the mode (`copy(preserve_metadata=True)`) skips a placeholder.
     mode_known: bool
 
-    #: False when the listing this stat came from knew the entry's type but
-    #: not its size and time: `st_size` and `st_mtime` are then placeholders
-    #: (0), and only the type answers (`is_dir()`, `is_file()`). A consumer of
-    #: a listing's stat that needs a size or a time asks the path itself, as it
-    #: does for a stat that is `None`.
+    #: False when the listing knew the entry's type but not its size and time: `st_size`
+    #: and `st_mtime` are placeholders (0) and only the type answers. A consumer that
+    #: needs a size or time asks the path itself, as for a stat that is `None`.
     size_known: bool
 
     def __init__(

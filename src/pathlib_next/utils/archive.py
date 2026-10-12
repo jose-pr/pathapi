@@ -373,10 +373,9 @@ def unpack_archive(archive: Path, dest: Path) -> None:
                             if member_f is not None:
                                 _copy_chunks(member_f, out_f)
                     elif member.islnk() or member.issym():
-                        # The member a link names inside the archive, never
-                        # the filesystem. Resolved here, one hop at a time:
-                        # `extractfile()` follows a chain by recursion and
-                        # a link that names itself never ends.
+                        # The member a link names inside the archive, never the filesystem, resolved one hop
+                        # at a time: `extractfile()` follows a chain by recursion and a link that names
+                        # itself never ends.
                         if links is None:
                             links = _TarLinks(members)
                         target_member = links.target(member)
