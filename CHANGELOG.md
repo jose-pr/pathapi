@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.9.14] - 2026-10-12
+
 ### Added
 - **`MemPath.relative_to(other, *, walk_up=False)`.** It raised
   `NotImplementedError`; it now answers as `PurePosixPath.relative_to` does,
@@ -3228,7 +3230,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Sync error handling.
 - Generic Path Protocol based pathlib implementation for URI paths with file access support for sftp, http, file schemes.
 
-[Unreleased]: https://github.com/jose-pr/pathlib-next/compare/v0.9.13...HEAD
+[Unreleased]: https://github.com/jose-pr/pathlib-next/compare/v0.9.14...HEAD
+[0.9.14]: https://github.com/jose-pr/pathlib-next/compare/v0.9.13...v0.9.14
 [0.9.13]: https://github.com/jose-pr/pathlib-next/compare/v0.9.12...v0.9.13
 [0.9.12]: https://github.com/jose-pr/pathlib-next/compare/v0.9.11...v0.9.12
 [0.9.11]: https://github.com/jose-pr/pathlib-next/compare/v0.9.10...v0.9.11
