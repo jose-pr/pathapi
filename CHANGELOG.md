@@ -161,6 +161,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   do. A new hook, `Path._write_batch()` (documented for path implementers,
   a block that does nothing by default), is what `copy(recursive=True)`
   and `PathSyncer.sync()` enter around their writes to their target.
+- **Symbolic links in `zip:` and `tar:` archives are links.** A tar
+  symlink and a zip entry whose Unix mode says link are listed as links:
+  `is_symlink()` is True, `stat(follow_symlinks=False)` is a link,
+  `readlink()` (new on archives, a `LinkTarget`) is the text it stores,
+  and `stat()`, `exists()`, `is_dir()`, `open()` and `iterdir()` follow it
+  inside the archive. A zip link used to read as a file holding its own
+  text, a tar link as the target's content (a loop was a
+  `RecursionError`, a link to a directory `IsADirectoryError`), and
+  `ln/x` below a link was not found. A link that is absolute, leaves the
+  archive or points at nothing is now `FileNotFoundError` naming the link
+  and a loop, or more than 40 links in one lookup, `OSError(ELOOP)`.
+  `walk()` and `glob()` list a link once and do not enter it by default,
+  `rm()` removes the entry and never what it points at, and
+  `copy(follow_symlinks=False)` and a `PathSyncer` that keeps links
+  recreate it. A program that read a zip link's text with `read_bytes()`
+  now gets its target's content: use `readlink()` for the text. Writing
+  through a link, and creating one, raise `NotImplementedError`. A tar
+  hard link is unchanged.
 
 ### Changed
 - **A sync leaves each copy with its source's modification time
