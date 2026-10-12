@@ -558,6 +558,7 @@ def unused_tcp_port():
 
 @pytest.fixture
 def ftp_server(fixture_tree):
+    pytest.importorskip("pyftpdlib")
     import errno
     import threading
     import warnings

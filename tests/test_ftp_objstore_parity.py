@@ -153,9 +153,16 @@ def test_ftp_write_after_idle_timeout_reconnects_and_lands(ftp_factory):
     assert p.parent.is_dir()  # the session exists before the idle wait
     f = p.open("wb")
     f.write(b"important data")
+    opened = time.monotonic()
     # The server drops the idle session; what the write must survive is that
-    # drop, however long the machine takes to notice it.
-    assert wait_until(lambda: handler.disconnections >= 1, timeout=60)
+    # drop, however long the machine takes to notice it. The client asks a
+    # connection whether it is alive only once it has been idle for longer than
+    # `IDLE_PROBE_SECONDS`, which is also the server's timeout here.
+    idle_enough = ftp_mod.IDLE_PROBE_SECONDS + 0.25
+    assert wait_until(
+        lambda: handler.disconnections >= 1 and time.monotonic() - opened > idle_enough,
+        timeout=60,
+    )
     f.close()
     assert (root / "late.txt").read_bytes() == b"important data"
     assert handler.connections == 2
