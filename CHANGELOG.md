@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **`MemPath.relative_to(other, *, walk_up=False)`.** It raised
+  `NotImplementedError`; it now answers as `PurePosixPath.relative_to` does,
+  on the path's own names (no `..` applied): `other` is a `MemPath` of the same
+  backend or a `str`, and the result is a relative `MemPath` on that backend.
+  `ValueError` when the path is not below `other`, when only one of them is
+  rooted, or when the backends differ. `walk_up=True` gives the `..`-prefixed
+  form on every Python version, not only 3.12 and later. Code that caught
+  `NotImplementedError` around it can call it directly.
 - **`copy(on_error=)` and `copy_into(on_error=)` take `rm()`'s error
   predicate.** `on_error(error, path) -> bool` (or a bool) is asked once for
   each child of a recursive copy that fails, with `path` the source entry:

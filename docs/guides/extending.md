@@ -28,7 +28,7 @@ Required on the pure-path side (abstract on `Pathname`):
 | `parent` | property: the logical parent (the root is its own parent) |
 | `with_segments(*segments)` | a same-type instance, keeping per-instance state such as a backend |
 | `as_uri()` | a URI string identifying the path (a custom scheme is fine) |
-| `relative_to(other)` | may raise `NotImplementedError` if not meaningful |
+| `relative_to(other)` | this path relative to `other`, `ValueError` when it is not below it (`MemPath` implements it); `NotImplementedError` where the question has no meaning |
 
 `is_absolute()` is optional: it answers whether the path has a root, which is
 right unless your rooted paths are not all absolute. Equality is not required
