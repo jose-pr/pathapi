@@ -110,7 +110,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
   A redirect of a `GET`, `HEAD` or `OPTIONS` is followed by the backend (up to
   30), whichever transport sends: `Authorization`, and only it, is dropped
-  when the scheme, host or port changes.
+  when the scheme, host or port changes, in the requests `stat()`, `is_dir()`,
+  `unlink()` and an append make after a redirect as well. Other headers set
+  with `with_transport(headers=...)` (an API-key header, a cookie) are not
+  dropped: they go to the new host too, even from `https:` to `http:`, so keep
+  a secret in `Authorization`, or point the path at the final URL. A
+  `Location` that is not a usable `http:` or `https:` URL is a refused
+  redirect (`OSError(EIO)`), and a reason phrase or `Location` from a server
+  is escaped and cut before it is part of an error message. Two things about
+  `proxies=` are written down: an exception from the provider other than
+  `KeyError` reaches the caller as it is, and a proxy that cannot be reached
+  is the error unless the provider's order goes on to `None`, which connects
+  directly.
+- **A reply the library reads whole is held to the limit a listing has.** Under
+  `requests` the reply to a write, a `DELETE`, a `PROPFIND` or a git API call
+  was read to its end whatever its size, and a gzip reply of 130 KiB on the
+  wire held 256 MiB. Such a reply is now at most `MAX_LISTING_BYTES` (8 MiB after
+  decoding, however small it is on the wire) when its content is needed (a
+  `PROPFIND`'s, a git API's JSON, `HttpBackend.request(stream=False)`'s), and
+  more is `OSError(EFBIG)` naming the path. The body of a reply nobody looks at
+  (a write's, a `DELETE`'s, an error's) is read up to that many bytes and
+  dropped. The content of a file is not limited. Raise the constant for a
+  server whose answers are legitimately larger.
 - **`HttpBackend` is a class, not a named tuple, and `RepoBackend` and
   `BaseRepoBackend` return an `HTTPResponse` (takes effect in 0.10.0).**
   `HttpBackend(session, requests_args, write_method, append_mode)` becomes
