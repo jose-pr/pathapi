@@ -527,10 +527,10 @@ mutant(
 )
 mutant(
     "http-request-url-keeps-the-password",
-    "uri/schemes/http.py",
+    "uri/schemes/_http/_follow.py",
     "    return url[:start] + hostport + url[end:], (auth if any(auth) else None)\n",
     "    return url, (auth if any(auth) else None)\n",
-    "tests/test_transport_security.py::test_http_sends_userinfo_as_auth_not_in_url",
+    "tests/test_transport_security.py::test_http_sends_userinfo_as_authorization_not_in_url",
     "HTTP requests keep user:password in the request URL",
 )
 mutant(
@@ -795,16 +795,16 @@ mutant(
 )
 mutant(
     "http-write-redirect-reads-as-success",
-    "uri/schemes/http.py",
-    "    if not 300 <= resp.status_code < 400:\n        return resp\n    location = _redirect_location(url, resp)",
-    "    if True:\n        return resp\n    location = _redirect_location(url, resp)",
+    "uri/schemes/_http/_follow.py",
+    "    if not 300 <= resp.status < 400:\n        return resp\n    location = redirect_location(url, resp)",
+    "    if True:\n        return resp\n    location = redirect_location(url, resp)",
     "tests/test_http_writes.py",
     "a write answered by a redirect that is not followed reads as done",
 )
 mutant(
     "http-write-follows-redirects-to-another-host",
-    "uri/schemes/http.py",
-    '    elif _origin(_urlparse.urlsplit(location)) != _origin(_urlparse.urlsplit(url)):\n        reason = "it leaves the scheme, host and port of the request"\n',
+    "uri/schemes/_http/_follow.py",
+    '    elif origin(location) != origin(url):\n        reason = "it leaves the scheme, host and port of the request"\n',
     '    elif False:\n        reason = "it leaves the scheme, host and port of the request"\n',
     "tests/test_http_writes.py",
     "a write is sent again to the host a 307 names, with its body and credentials",
@@ -879,8 +879,8 @@ mutant(
 mutant(
     "github-head-believes-a-reply-that-is-not-the-api-s",
     "uri/schemes/github.py",
-    '            if "X-GitHub-Media-Type" not in resp.headers:\n                return None\n            resp.raise_for_status()',
-    "            resp.raise_for_status()",
+    '            if "X-GitHub-Media-Type" not in resp.headers:\n                return None\n            _raise_for_status(resp)',
+    "            _raise_for_status(resp)",
     "tests/test_github_stat.py::test_a_reply_that_is_not_the_api_s_own_is_not_believed",
     "a proxy's reply to a HEAD is read as the size of the file, or as its absence",
 )
@@ -1041,4 +1041,154 @@ mutant(
         "tests/test_uri_schemesmap.py",
     ),
     "backend_for(shared=False) returns the shared handle",
+)
+
+# --- http transports: the guards every transport keeps --------------------------
+
+_HTTP_PKG = "uri/schemes/_http"
+
+mutant(
+    "http-authorization-kept-across-origins",
+    f"{_HTTP_PKG}/_follow.py",
+    '        if origin(location) != first:\n            headers = drop_header(headers, "Authorization")\n',
+    '        if False:\n            headers = drop_header(headers, "Authorization")\n',
+    (
+        "tests/test_http_redirects.py::test_authorization_is_dropped_by_a_redirect_to_another_port",
+        "tests/test_http_redirects.py::test_authorization_follows_only_a_redirect_that_keeps_scheme_host_and_port",
+    ),
+    "a followed redirect to another scheme, host or port carries Authorization along",
+)
+mutant(
+    "http-redirect-limit-off-by-one",
+    f"{_HTTP_PKG}/_follow.py",
+    "        if hops >= MAX_REDIRECTS:",
+    "        if hops > MAX_REDIRECTS:",
+    "tests/test_http_redirects.py::test_a_redirect_loop_stops_after_thirty_redirects",
+    "a GET follows one redirect more than the limit",
+)
+mutant(
+    "http-unrepeatable-request-resent",
+    f"{_HTTP_PKG}/_builtin.py",
+    "                if reused and repeatable:\n                    connection, reused = None, False\n                    continue\n                raise dropped.error from None",
+    "                if reused:\n                    connection, reused = None, False\n                    continue\n                raise dropped.error from None",
+    (
+        "tests/test_http_pool.py::test_a_request_that_cannot_be_repeated_is_not_sent_again",
+        "tests/test_http_pool.py::test_a_body_that_cannot_be_sent_twice_is_not_sent_again",
+    ),
+    "a POST, or a PUT with a file body, is sent again on a new connection when the server dropped the old one",
+)
+mutant(
+    "http-timeout-treated-as-a-dropped-connection",
+    f"{_HTTP_PKG}/_builtin.py",
+    "            BrokenPipeError,\n            _ssl.SSLEOFError,",
+    "            OSError,\n            _ssl.SSLEOFError,",
+    "tests/test_http_pool.py::test_a_timeout_on_a_reused_connection_is_not_sent_again",
+    "a request that timed out on a reused connection is sent again",
+)
+mutant(
+    "http-stale-connection-trusted-by-an-unrepeatable-request",
+    f"{_HTTP_PKG}/_builtin.py",
+    "            and _now() - connection.released_at > REUSE_WINDOW",
+    "            and _now() - connection.released_at > REUSE_WINDOW + 1e9",
+    "tests/test_http_pool.py::test_a_request_that_cannot_be_repeated_does_not_trust_a_stale_connection",
+    "a POST uses an idle connection however long ago it last carried a reply",
+)
+mutant(
+    "http-verification-off-by-default",
+    f"{_HTTP_PKG}/_builtin.py",
+    '        verify: bool = True,\n        proxies: "_ty.Any" = None,',
+    '        verify: bool = False,\n        proxies: "_ty.Any" = None,',
+    "tests/test_http_tls.py::test_a_server_of_an_unknown_authority_is_refused_by_default",
+    "the built-in transport accepts any certificate unless told to verify",
+)
+mutant(
+    "http-verify-false-beats-the-ssl-context",
+    f"{_HTTP_PKG}/_builtin.py",
+    "        if self._ssl_context is not None:\n            return self._ssl_context",
+    "        if self._ssl_context is not None and self._verify:\n            return self._ssl_context",
+    "tests/test_http_tls.py::test_an_ssl_context_wins_over_verify_false",
+    "verify=False replaces an ssl_context the caller gave",
+)
+mutant(
+    "http-proxy-credentials-in-a-repr",
+    f"{_HTTP_PKG}/_proxies.py",
+    '        return f"ProxyAddress({self.host!r}, {self.port})"',
+    '        return f"ProxyAddress({self.host!r}, {self.port}, {self.authorization!r})"',
+    "tests/test_http_proxy.py::test_proxy_credentials_are_in_no_repr",
+    "a proxy's Proxy-Authorization value shows in its repr",
+)
+mutant(
+    "http-proxy-credentials-in-a-message",
+    f"{_HTTP_PKG}/_proxies.py",
+    '            f"the built-in HTTP transport has no {scheme!r} proxy support; "\n            + REQUESTS_HINT,',
+    '            f"the built-in HTTP transport has no {scheme!r} proxy support ({url}); "\n            + REQUESTS_HINT,',
+    "tests/test_http_proxy.py::test_a_proxy_scheme_that_is_not_http_is_refused_naming_the_other_transport",
+    "the error for an unsupported proxy scheme quotes the proxy URL with its credentials",
+)
+mutant(
+    "http-header-line-break-accepted",
+    f"{_HTTP_PKG}/_headers.py",
+    r'_CONTROL = _re.compile(r"[\x00-\x08\x0a-\x1f\x7f]")',
+    r'_CONTROL = _re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")',
+    "tests/test_http_transport.py::test_a_header_with_a_line_break_or_a_bad_name_is_refused_before_sending",
+    "a header value with a bare line feed is sent",
+)
+mutant(
+    "http-url-line-break-accepted",
+    f"{_HTTP_PKG}/_headers.py",
+    r'_URL_CONTROL = _re.compile(r"[\x00-\x1f\x7f]")',
+    r'_URL_CONTROL = _re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")',
+    "tests/test_http_transport.py::test_a_url_with_a_control_character_is_refused_before_sending",
+    "a URL with a line break or a tab reaches the request line",
+)
+mutant(
+    "http-short-body-read-as-complete",
+    f"{_HTTP_PKG}/_builtin.py",
+    "        if self._expected is not None and self._received < self._expected:",
+    "        if False:",
+    "tests/test_http_transport.py::test_a_body_shorter_than_its_length_is_an_io_error_not_a_short_read",
+    "a body that ends before its Content-Length reads as a complete one",
+)
+mutant(
+    "http-inflation-not-bounded",
+    f"{_HTTP_PKG}/_response.py",
+    "_STEP = 256 * 1024",
+    "_STEP = 1 << 40",
+    "tests/test_http_transport.py::test_a_small_body_that_inflates_enormously_is_read_in_bounded_steps",
+    "a gzip body is inflated whole into memory because a header says it is small",
+)
+mutant(
+    "http-closed-stream-still-read",
+    f"{_HTTP_PKG}/_response.py",
+    "        if self._closed and not self._kept:",
+    "        if False:",
+    "tests/test_http_transport.py::test_reading_a_streamed_reply_after_closing_it_is_an_error",
+    "a closed streaming reply keeps handing out bytes",
+)
+mutant(
+    "http-idle-connection-limit",
+    f"{_HTTP_PKG}/_pool.py",
+    "MAX_IDLE_PER_THREAD = 8",
+    "MAX_IDLE_PER_THREAD = 100",
+    "tests/test_http_pool.py::test_a_thread_keeps_at_most_eight_idle_connections",
+    "a thread keeps more than eight idle connections",
+)
+mutant(
+    "http-default-transport-is-requests",
+    f"{_HTTP_PKG}/_select.py",
+    'DEFAULT_TRANSPORT = "builtin"',
+    'DEFAULT_TRANSPORT = "requests"',
+    "tests/test_http_default.py::test_without_a_setting_the_built_in_transport_is_used",
+    "a backend without a transport builds a requests session",
+)
+mutant(
+    "http-idle-connection-used-without-a-check",
+    f"{_HTTP_PKG}/_builtin.py",
+    "        if connection is not None and _unusable(connection.http.sock):\n",
+    "        if False:\n",
+    (
+        "tests/test_http_pool.py::test_bytes_the_server_sends_after_a_reply_are_not_the_next_reply",
+        "tests/test_http_pool.py::test_an_idle_connection_the_server_closed_is_replaced_before_sending",
+    ),
+    "an idle connection the server closed, or sent extra bytes on, carries the next request",
 )
