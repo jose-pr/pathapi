@@ -611,6 +611,7 @@ pure classes over
 ```python
 class MemPath(Path):
     def __init__(self, *segments, backend=None): ...
+    def relative_to(self, other, *, walk_up=False) -> Self: ...
     backend
     normalized
 
@@ -646,8 +647,15 @@ An unknown keyword → `TypeError`.
 - `_utime()` sets a file's modification time (the access time is not
   kept); a directory has none (`NotImplementedError`), so `touch()` leaves
   one alone.
-- Not implemented (`NotImplementedError`): `relative_to()`,
-  `rename()` (`move()` copies), `chmod()`, `symlink_to()`.
+- `relative_to(other, *, walk_up=False)` takes a `MemPath` of the same
+  backend or a `str` and returns the remainder as a relative `MemPath` on that
+  backend, comparing the names as written (no `..` applied), as `pathlib` does.
+  `ValueError` when `self` is not below `other`, when only one of them is
+  rooted, or when the backends differ. With `walk_up=True` (on every
+  interpreter) a path beside `other` gets a `..` per level climbed; a `..` in
+  `other` cannot be walked (`ValueError`).
+- Not implemented (`NotImplementedError`): `rename()` (`move()` copies),
+  `chmod()`, `symlink_to()`.
 - A `str` destination to `copy()`/`move()` stays on the same backend.
 
 ### `MemPathBackend`

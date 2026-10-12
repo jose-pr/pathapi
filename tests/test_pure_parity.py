@@ -294,6 +294,123 @@ def test_mempath_root_parents_and_is_relative_to():
     assert not MemPath("/a").is_relative_to("")
 
 
+# --- MemPath.relative_to ----------------------------------------------------
+
+#: Absolute and relative spellings, the root, the empty path, `..` and a
+#: sibling, so every pairing meets each branch of the answer.
+RELATIVE_SPELLINGS = [
+    "",
+    "/",
+    "a",
+    "a/b",
+    "a/b/c",
+    "b",
+    "/a",
+    "/a/b",
+    "..",
+    "../a",
+    "a/..",
+    "/a/..",
+]
+RELATIVE_PAIRS = [
+    (path, other) for path in RELATIVE_SPELLINGS for other in RELATIVE_SPELLINGS
+]
+
+
+def _answer(call):
+    try:
+        return str(call()) or "."
+    except ValueError:
+        return ValueError
+
+
+@pytest.mark.parametrize("path,other", RELATIVE_PAIRS)
+def test_mempath_relative_to_answers_as_purepath_does(path, other):
+    ours = _answer(lambda: MemPath(path).relative_to(other))
+    theirs = _answer(lambda: pathlib.PurePosixPath(path).relative_to(other))
+    assert ours == theirs
+    backend = MemPathBackend()
+    as_object = _answer(
+        lambda: MemPath(path, backend=backend).relative_to(
+            MemPath(other, backend=backend)
+        )
+    )
+    assert as_object == ours
+
+
+@pytest.mark.skipif(sys.version_info < (3, 12), reason="walk_up arrived in 3.12")
+@pytest.mark.parametrize("path,other", RELATIVE_PAIRS)
+def test_mempath_relative_to_walk_up_answers_as_purepath_does(path, other):
+    ours = _answer(lambda: MemPath(path).relative_to(other, walk_up=True))
+    theirs = _answer(
+        lambda: pathlib.PurePosixPath(path).relative_to(other, walk_up=True)
+    )
+    assert ours == theirs
+
+
+@pytest.mark.parametrize(
+    "path,other,expected",
+    [
+        ("b", "a", "../b"),
+        ("a/b", "b", "../a/b"),
+        ("/a/b", "/a/c/d", "../../b"),
+        ("a", "a/b/c", "../.."),
+        ("a/b", "a/b", "."),
+        ("..", "../a", ".."),
+        ("a", "..", ValueError),
+        ("/a", "b", ValueError),
+        ("b", "/a", ValueError),
+        ("a", "a/..", ValueError),
+    ],
+)
+def test_mempath_relative_to_walk_up_pinned_on_every_interpreter(path, other, expected):
+    assert _answer(lambda: MemPath(path).relative_to(other, walk_up=True)) == expected
+
+
+def test_mempath_relative_to_keeps_the_backend_and_is_relative():
+    backend = MemPathBackend()
+    path = MemPath("/a/b/c", backend=backend)
+    for other in (MemPath("/a", backend=backend), "/a"):
+        result = path.relative_to(other)
+        assert type(result) is MemPath
+        assert result.backend is backend
+        assert result.segments == ("b", "c")
+        assert not result.is_absolute()
+    assert path.relative_to(path).segments == ()
+    assert MemPath("/a", backend=backend) / result == MemPath("/a/b/c", backend=backend)
+
+
+def test_mempath_relative_to_refuses_another_backend():
+    here = MemPath("/a/b")
+    elsewhere = MemPath("/a", backend=MemPathBackend())
+    with pytest.raises(ValueError, match="different backends"):
+        here.relative_to(elsewhere)
+    with pytest.raises(ValueError, match="different backends"):
+        here.relative_to(elsewhere, walk_up=True)
+
+
+def test_mempath_relative_to_names_the_failing_case():
+    with pytest.raises(ValueError, match="not in the subpath"):
+        MemPath("/a").relative_to("/b")
+    with pytest.raises(ValueError, match="different anchors"):
+        MemPath("/a").relative_to("b", walk_up=True)
+    with pytest.raises(ValueError, match="cannot be walked"):
+        MemPath("a").relative_to("..", walk_up=True)
+
+
+def test_mempath_relative_to_walk_up_is_keyword_only():
+    with pytest.raises(TypeError):
+        MemPath("a").relative_to("b", True)
+
+
+def test_mempath_is_relative_to_does_not_depend_on_relative_to():
+    # `is_relative_to()` decides by equality and `parents`; it never reads
+    # `relative_to()`, so a class that overrides one need not override both.
+    for path, other in RELATIVE_PAIRS:
+        expected = pathlib.PurePosixPath(path).is_relative_to(other)
+        assert MemPath(path).is_relative_to(other) is expected
+
+
 def test_uri_parents_reach_the_authority_root_once():
     parents = [str(p) for p in Uri("http://h/a/b/c.py").parents]
     assert parents == ["http://h/a/b", "http://h/a", "http://h/"]

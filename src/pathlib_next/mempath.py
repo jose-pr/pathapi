@@ -249,8 +249,36 @@ class MemPath(Path):
             return self.with_segments("", "")
         return self.with_segments(*segments[:-1])
 
-    def relative_to(self, other):
-        raise NotImplementedError()
+    def relative_to(self, other, *, walk_up: bool = False):
+        """`self` below `other`, as a relative path on the same backend.
+
+        `other` is a `MemPath` of the same backend or a `str`. Names are
+        compared as written, with no `..` applied. `ValueError` when `self`
+        is not below `other`, when the two differ in being rooted, or when
+        the backends differ. With `walk_up`, a path beside `other` gets a
+        `..` per level climbed; a `..` in `other` cannot be walked."""
+        if isinstance(other, MemPath):
+            if other.backend is not self.backend:
+                raise ValueError(
+                    f"{str(self)!r} and {str(other)!r} are on different backends"
+                )
+        else:
+            other = self.with_segments(other)
+        rooted = self.segments[:1] == ("",)
+        other_rooted = other.segments[:1] == ("",)
+        names = [name for name in self.segments if name]
+        other_names = [name for name in other.segments if name]
+        for step in range(len(other_names) + 1):
+            keep = len(other_names) - step
+            if rooted == other_rooted and names[:keep] == other_names[:keep]:
+                return self.with_segments(*[".."] * step, *names[keep:])
+            if not walk_up:
+                raise ValueError(
+                    f"{str(self)!r} is not in the subpath of {str(other)!r}"
+                )
+            if keep and other_names[keep - 1] == "..":
+                raise ValueError(f"'..' segment in {str(other)!r} cannot be walked")
+        raise ValueError(f"{str(self)!r} and {str(other)!r} have different anchors")
 
     def with_segments(self, *segments: str):
         if all(isinstance(segment, str) for segment in segments):
