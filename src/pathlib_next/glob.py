@@ -68,7 +68,7 @@ _MAX_LINK_TRAVERSALS = 40
 _SPECIAL_PARTS = (".", "..")
 
 if _ty.TYPE_CHECKING:
-    from ..path import P as _Globable
+    from .path import P as _Globable
 else:
 
     class _Globable(_ty.Protocol): ...

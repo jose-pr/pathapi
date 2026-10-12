@@ -15,7 +15,7 @@ import typing as _ty
 
 from . import path as _proto
 from . import utils as _utils
-from .utils import glob as _glob
+from . import glob as _glob
 from ._filestat import FileStat as _FileStat
 
 __all__ = ["LocalPath", "PosixPathname", "WindowsPathname"]

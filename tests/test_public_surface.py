@@ -99,7 +99,7 @@ EXPORTS = {
         "unpack_archive",
     },
     "pathlib_next.checksum": {"md5", "native", "sha256", "stream"},
-    "pathlib_next.utils.glob": {
+    "pathlib_next.glob": {
         "NonRelativePatternError",
         "RECURSIVE",
         "full_match",

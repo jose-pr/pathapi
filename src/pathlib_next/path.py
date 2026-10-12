@@ -25,7 +25,7 @@ import typing as _ty
 from . import utils as _utils
 from .protocols import BinaryOpen, Chmod, Stat
 from .protocols.io import _ASK_STAT
-from .utils import glob as _glob
+from . import glob as _glob
 from ._filestat import FileStat
 
 __all__ = [
@@ -460,7 +460,7 @@ class Pathname(FsPathLike, _ty.Generic[_P]):
         right-anchored partial match, and "**" matches any number of path
         segments (including zero). The root is a component of its own: a
         rooted path needs a rooted pattern, or a leading "**" that reaches
-        past it (see `utils.glob.full_match`). Empty and "." components of
+        past it (see `glob.full_match`). Empty and "." components of
         the pattern are ignored, as `pathlib` parses its pattern as a path.
         """
         if case_sensitive is None:
@@ -842,7 +842,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         it does for a pattern argument -- `recursive=None` auto-enables
         recursion for a carried "**", and `native=` applies. `include_hidden`
         keeps THIS method's default (True); the module-level
-        `utils.glob.glob()` this delegates to defaults it to False,
+        `glob.glob()` this delegates to defaults it to False,
         stdlib-`glob`-style, so the two spellings differ on hidden names
         unless the keyword is passed.
 

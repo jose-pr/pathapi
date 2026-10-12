@@ -2,7 +2,7 @@
 
 ::: pathlib_next.utils
 
-::: pathlib_next.utils.glob
+::: pathlib_next.glob
 
 ::: pathlib_next.utils.sync
 

@@ -383,7 +383,7 @@ mutant(
 )
 mutant(
     "glob-wildcard-matches-dotfiles-when-hidden-excluded",
-    "utils/glob.py",
+    "glob.py",
     '    skip_hidden = not opts.include_hidden and not part.startswith(".")\n',
     "    skip_hidden = False\n",
     "tests/test_parity_io.py::test_glob_hidden_included_by_default_like_pathlib",
@@ -391,7 +391,7 @@ mutant(
 )
 mutant(
     "glob-recursive-wildcard-enters-hidden",
-    "utils/glob.py",
+    "glob.py",
     "            if not include_hidden and child.is_hidden():\n",
     "            if False:\n",
     "tests/test_glob_parity.py::test_include_hidden_false_leaves_hidden_entries_out_of_a_final_recursive_wildcard",
@@ -746,7 +746,7 @@ mutant(
 )
 mutant(
     "glob-loop-guard-is-off",
-    "utils/glob.py",
+    "glob.py",
     "    if not bound_loops:\n        return True, ancestors\n    key = _identity(child)",
     "    if True:\n        return True, ancestors\n    key = _identity(child)",
     "tests/test_glob_parity.py::test_bound_loops_bounds_a_windows_junction_loop",

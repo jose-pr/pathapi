@@ -319,7 +319,7 @@ def test_a_string_prefix_joined_onto_a_mempath_keeps_its_backend():
 
 
 def test_glob_with_a_mempath_pattern_searches_the_root_dir():
-    from pathlib_next.utils import glob
+    from pathlib_next import glob
 
     src = MemPath("/src")
     src.mkdir()

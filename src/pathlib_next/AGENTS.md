@@ -41,7 +41,7 @@ keep the core and the URI layer under separate headings.
 `import pathlib_next` exposes `Path`, `Pathname`, `LocalPath`,
 `PosixPathname`, `WindowsPathname`, `FileStat`, the protocols `Stat`, `Chmod`,
 `BinaryOpen`, `FsPathLike`, the aliases `PathLike`/`PurePathLike`, and the modules
-`glob` (`utils.glob`) and `sync` (`utils.sync`). `FTPPath`, `ZipPath`,
+`glob` (`pathlib_next.glob`) and `sync` (`utils.sync`). `FTPPath`, `ZipPath`,
 `TarPath` and `ArchivePath` are exported too, imported on first use so that
 `import pathlib_next` loads neither `ftplib` nor `ssl` nor any archive code.
 `MemPath` lives in `pathlib_next.mempath`; `pathlib_next.testing` is never
@@ -1119,7 +1119,7 @@ empty) is advisory and never raises.
 
 ## Utilities (`pathlib_next.utils`)
 
-### `glob` (`pathlib_next.utils.glob`)
+### `glob` (`pathlib_next.glob`)
 
 ```python
 def glob(
@@ -2738,7 +2738,7 @@ A failure is the exception `pathlib` raises for the same condition
 `ValueError`/`TypeError` for a bad argument. Those the package defines are
 listed here; the conditions that raise them are in the entries.
 
-### Core (`pathlib_next.utils.glob`)
+### Core (`pathlib_next.glob`)
 
 ```python
 class NonRelativePatternError(NotImplementedError, ValueError): ...

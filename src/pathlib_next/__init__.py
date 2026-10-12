@@ -33,7 +33,7 @@ except _metadata.PackageNotFoundError:  # a source tree that is not installed
 from .fspath import LocalPath, PosixPathname, WindowsPathname
 from .path import FsPathLike, Path, PathLike, Pathname, PurePathLike
 from .protocols import BinaryOpen, Chmod, Stat
-from .utils import glob as glob
+from . import glob as glob
 from .utils import sync as sync
 from ._filestat import FileStat
 

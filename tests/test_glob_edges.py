@@ -17,7 +17,7 @@ import pytest
 
 import pathlib_next
 from pathlib_next.mempath import MemPath
-from pathlib_next.utils import glob as _glob
+from pathlib_next import glob as _glob
 from pathlib_next import FileStat
 
 WINDOWS = os.name == "nt"

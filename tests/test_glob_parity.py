@@ -17,7 +17,7 @@ from capabilities import requires_junctions
 import pathlib_next
 from pathlib_next.mempath import MemPath
 from pathlib_next.uri import UriPath
-from pathlib_next.utils import glob as _glob
+from pathlib_next import glob as _glob
 
 _FILES = (
     "a.txt",
