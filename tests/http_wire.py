@@ -10,6 +10,7 @@ import pathlib
 import socket
 import ssl
 import threading
+import time
 import typing
 
 import pytest
@@ -34,10 +35,13 @@ class Request(typing.NamedTuple):
 
 
 class Reply(typing.NamedTuple):
-    """Bytes to send, and whether to close the connection after them."""
+    """Bytes to send, whether to close the connection after them, and bytes
+    to send `delay` seconds later on the same connection."""
 
     raw: bytes
     close: bool = False
+    later: bytes = b""
+    delay: float = 0.0
 
 
 class Drop:
@@ -205,6 +209,9 @@ class Wire:
                 if isinstance(action, bytes):
                     action = Reply(action)
                 sock.sendall(action.raw)
+                if action.later:
+                    time.sleep(action.delay)
+                    sock.sendall(action.later)
                 if action.close:
                     return
         except (OSError, ssl.SSLError):

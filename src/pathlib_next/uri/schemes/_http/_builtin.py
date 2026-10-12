@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import errno as _errno
 import http.client as _client
+import select as _select
 import socket as _socket
 import ssl as _ssl
 import threading as _threading
@@ -100,6 +101,17 @@ def _dropped(error: BaseException) -> bool:
             _ssl.SSLZeroReturnError,
         ),
     )
+
+
+def _unusable(sock) -> bool:
+    """Whether an idle connection must not carry a request: the server closed
+    it, or sent bytes nobody asked for, which the next reply would start with."""
+    try:
+        if getattr(sock, "pending", None) is not None and sock.pending():
+            return True
+        return bool(_select.select([sock], [], [], 0)[0])
+    except (OSError, ValueError):
+        return True
 
 
 class _CannotConnect(Exception):
@@ -227,14 +239,15 @@ class HTTPTransport:
     object indexed with the request URL: it returns `None` (no proxy), one
     proxy, or an iterable of them to try in order when a connection cannot be
     made; `KeyError` means no proxy and the environment is not asked. A proxy
-    is a URL or any object with a `url` attribute (a `proxylib` `Proxy`); a
+    is a URL or any object with a `url` attribute; a
     plain `dict` may use the keys `requests` uses (`"http"`, `"all"`, ...).
     Only `http://` proxies are supported (`CONNECT` for `https:`), with Basic
     credentials from the proxy URL; any other scheme is
     `OSError(EPROTONOSUPPORT)`. `{}` sends everything direct.
 
     Each thread keeps one idle connection per server (at most 8), which a later
-    request reuses; the connections of a thread are closed when it ends. A
+    request reuses unless the server has closed it or sent bytes on it since;
+    the connections of a thread are closed when it ends. A
     request that fails before any response byte on a reused connection because
     the server had closed it is sent once more on a new connection, but only
     if it is repeatable (`GET`, `HEAD`, `OPTIONS`, `PUT`, `DELETE`,
@@ -349,6 +362,9 @@ class HTTPTransport:
             and not repeatable
             and _now() - connection.released_at > REUSE_WINDOW
         ):
+            self._pool.discard(connection)
+            connection = None
+        if connection is not None and _unusable(connection.http.sock):
             self._pool.discard(connection)
             connection = None
         reused = connection is not None
