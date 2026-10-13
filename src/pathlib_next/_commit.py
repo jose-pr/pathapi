@@ -3,12 +3,33 @@ from __future__ import annotations
 import io as _io
 import typing as _ty
 
-from ._discard import DiscardOnExit
-
-__all__ = ["CommitOnClose"]
+__all__ = ["CommitOnClose", "DiscardOnError"]
 
 
-class CommitOnClose(DiscardOnExit, _io.BytesIO):
+class DiscardOnError:
+    """Mixin for a write stream that commits when it is closed. Leaving a
+    `with` block through an exception (any `BaseException`) calls `discard()`
+    and then closes; leaving it normally just closes. Put it first in the
+    bases, so that its `__exit__` wins over `io.IOBase`'s."""
+
+    __slots__ = ()
+
+    def discard(self) -> None:
+        """Drop what was written so that `close()` commits nothing. It does
+        nothing more when called twice or after `close()`."""
+        raise NotImplementedError
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            if exc_type is not None:
+                self.discard()
+        except BaseException:
+            super().__exit__(exc_type, exc_value, traceback)
+            raise
+        return super().__exit__(exc_type, exc_value, traceback)
+
+
+class CommitOnClose(DiscardOnError, _io.BytesIO):
     """A write buffer held in memory whose content is handed to `commit` when
     it is closed, once, if it was written to. For a backend with no way to
     write a file piecewise (an FTP `STOR`, a rewrite of an archive): the cost

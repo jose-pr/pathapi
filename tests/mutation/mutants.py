@@ -1048,7 +1048,7 @@ mutant(
 _DISCARD = "tests/test_write_discard.py"
 mutant(
     "write-block-that-raised-does-not-discard",
-    "_discard.py",
+    "_commit.py",
     "        try:\n            if exc_type is not None:\n                self.discard()\n",
     "        try:\n            if False:\n                self.discard()\n",
     (
@@ -1087,24 +1087,13 @@ mutant(
     "a text file whose last flush failed is committed with the text it did receive",
 )
 mutant(
-    "binary-stream-with-discard-is-not-guarded",
-    "_discard.py",
-    "    guarded = _guarded_class(type(stream))\n",
-    "    guarded = None\n",
-    (
-        f"{_DISCARD}::test_a_block_that_raised_tells_the_stream_to_discard_before_it_is_closed",
-        f"{_DISCARD}::test_write_bytes_and_write_text_whose_write_fails_commit_nothing",
-        f"{_DISCARD}::test_a_guarded_stream_pickles_as_the_class_it_was",
-    ),
-    "a binary stream that has discard() but no __exit__ of its own is committed by a failed block",
-)
-mutant(
     "open-gives-a-discarding-stream-a-stock-text-wrapper",
     "protocols/io.py",
     "            if callable(discard):\n",
     "            if False:\n",
     (
         f"{_DISCARD}::test_a_block_that_raised_tells_the_stream_to_discard_before_it_is_closed",
+        f"{_DISCARD}::test_a_text_file_over_a_stream_with_discard_is_discarded_without_the_mixin",
         f"{_DISCARD}::test_ftp_a_failed_block_does_not_create_the_file",
     ),
     "a text file over a stream with discard() is wrapped by a wrapper that flushes and commits",
@@ -1149,6 +1138,37 @@ mutant(
     "an s3:, gs: or az: write whose with block raised is uploaded on close",
 )
 
+mutant(
+    "commit-on-close-puts-bytesio-ahead-of-the-mixin",
+    "_commit.py",
+    "class CommitOnClose(DiscardOnError, _io.BytesIO):\n",
+    "class CommitOnClose(_io.BytesIO, DiscardOnError):\n",
+    (
+        f"{_DISCARD}::test_commit_on_close_leaving_a_block_by_an_exception_commits_nothing",
+        f"{_DISCARD}::test_ftp_a_failed_block_leaves_the_old_bytes",
+    ),
+    "the __exit__ of BytesIO closes, and so commits, a CommitOnClose whose block raised",
+)
+mutant(
+    "http-upload-stream-puts-bytesio-ahead-of-the-mixin",
+    "uri/schemes/http.py",
+    "class _UploadStream(_providers.DiscardOnError, _io.BytesIO):\n",
+    "class _UploadStream(_io.BytesIO, _providers.DiscardOnError):\n",
+    "tests/test_http_writes.py::test_a_write_block_that_raised_sends_no_upload",
+    "an http: or dav: write whose with block raised is sent by the __exit__ of BytesIO",
+)
+mutant(
+    "objstore-upload-stream-puts-iobase-ahead-of-the-mixin",
+    "uri/schemes/_objstore.py",
+    "class SpoolUploadStream(_providers.DiscardOnError, _io.BufferedIOBase):\n",
+    "class SpoolUploadStream(_io.BufferedIOBase, _providers.DiscardOnError):\n",
+    (
+        "tests/test_s3.py::test_a_write_block_that_raised_sends_no_upload_moto",
+        "tests/test_gs_fake.py::test_a_write_block_that_raised_uploads_nothing",
+        "tests/test_az_fake.py::test_a_write_block_that_raised_uploads_nothing",
+    ),
+    "an s3:, gs: or az: write whose with block raised is uploaded by the __exit__ of IOBase",
+)
 # --- http transports: the guards every transport keeps --------------------------
 
 _HTTP_PKG = "uri/schemes/_http"

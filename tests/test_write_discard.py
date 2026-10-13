@@ -20,13 +20,14 @@ from pathlib_next import LocalPath, ZipPath
 from pathlib_next.ftp import FTPPath
 from pathlib_next.mempath import MemPath
 from pathlib_next.protocols.io import BinaryOpen
-from pathlib_next.providers import CommitOnClose
+from pathlib_next.providers import CommitOnClose, DiscardOnError
 from pathlib_next.sync import PathSyncer
 
 
-class Stream(io.BytesIO):
+class Recording(io.BytesIO):
     """A write stream that commits its content when it is closed, unless it
-    was told to discard it; `log` says what happened, in order."""
+    was told to discard it; `log` says what happened, in order. It has
+    `discard()` and does not inherit `DiscardOnError`."""
 
     def __init__(self, log):
         super().__init__()
@@ -48,11 +49,10 @@ class Stream(io.BytesIO):
         super().close()
 
 
-class Picklable(io.BytesIO):
-    """A stream with `discard()` that pickles: its state is its bytes."""
+class Stream(DiscardOnError, Recording):
+    """`Recording` with the mixin a stream that commits on close inherits."""
 
-    def discard(self):
-        pass
+    discard = Recording.discard
 
 
 def opener(stream):
@@ -136,14 +136,10 @@ def test_a_failed_block_leaves_nothing_to_commit_when_the_wrapper_is_collected()
     assert log == ["discard", "dropped"]
 
 
-def test_a_binary_stream_stays_the_object_and_the_type_it_was():
-    log = []
-    stream = Stream(log)
+def test_a_binary_stream_is_handed_out_untouched():
+    stream = Stream([])
     f = opener(stream).open("wb")
-    assert f is stream
-    assert isinstance(f, Stream) and isinstance(f, io.BytesIO)
-    assert type(f).__name__ == "Stream" and type(f).__module__ == Stream.__module__
-    assert type(f).__qualname__ == Stream.__qualname__
+    assert f is stream and type(f) is Stream
     f.close()
 
 
@@ -166,14 +162,6 @@ def test_a_stream_without_discard_is_handed_out_as_before():
     assert opener(plain).open("wb") is plain
     text = opener(io.BytesIO()).open("w")
     assert type(text) is io.TextIOWrapper
-
-
-def test_a_stream_that_discards_in_its_own_exit_is_not_given_another():
-    commits = []
-    stream = CommitOnClose(commits.append)
-    f = opener(stream).open("wb")
-    assert f is stream and type(f) is CommitOnClose
-    f.close()
 
 
 def test_a_wrapper_that_fails_to_build_discards_and_closes_the_stream():
@@ -201,11 +189,50 @@ def test_a_discard_that_fails_still_closes_the_stream_and_its_error_surfaces():
         assert log == ["discard", "dropped"]
 
 
-def test_a_guarded_stream_pickles_as_the_class_it_was():
-    f = opener(Picklable(b"abc")).open("wb")
-    clone = pickle.loads(pickle.dumps(f))
-    assert type(clone) is Picklable and clone.getvalue() == b"abc"
-    assert type(f) is not Picklable and isinstance(f, Picklable)
+def test_a_binary_stream_with_discard_but_without_the_mixin_is_not_discarded():
+    log = []
+    with pytest.raises(Boom):
+        with opener(Recording(log)).open("wb") as f:
+            f.write(b"part")
+            raise Boom
+    assert log == [("commit", b"part")]
+
+
+def test_a_binary_stream_without_the_mixin_is_discarded_when_its_own_exit_does_it():
+    class Own(Recording):
+        def __exit__(self, exc_type, exc_value, traceback):
+            if exc_type is not None:
+                self.discard()
+            return super().__exit__(exc_type, exc_value, traceback)
+
+    log = []
+    with pytest.raises(Boom):
+        with opener(Own(log)).open("wb") as f:
+            f.write(b"part")
+            raise Boom
+    assert log == ["discard", "dropped"]
+
+
+def test_a_text_file_over_a_stream_with_discard_is_discarded_without_the_mixin():
+    log = []
+    with pytest.raises(Boom):
+        with opener(Recording(log)).open("w") as f:
+            f.write("part")
+            raise Boom
+    assert log == ["discard", "dropped"]
+
+
+def test_the_mixin_closes_the_stream_when_the_subclass_has_no_discard():
+    class Bare(DiscardOnError, io.BytesIO):
+        pass
+
+    with Bare() as fine:
+        fine.write(b"x")
+    assert fine.closed
+    with pytest.raises(NotImplementedError):
+        with Bare() as stream:
+            raise Boom
+    assert stream.closed
 
 
 def test_a_text_wrapper_does_not_pickle_with_or_without_discard():

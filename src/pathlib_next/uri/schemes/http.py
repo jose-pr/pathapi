@@ -597,7 +597,7 @@ _EXCLUSIVE_CREATE = {"headers": {"If-None-Match": "*"}}
 (RFC 9110 13.1.2)."""
 
 
-class _UploadStream(_io.BytesIO):
+class _UploadStream(_providers.DiscardOnError, _io.BytesIO):
     """A write buffer whose `close()` uploads its content through `_upload()`.
 
     `_ready` is set by a subclass as the last step of its constructor. A

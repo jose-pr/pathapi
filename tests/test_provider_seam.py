@@ -39,6 +39,7 @@ NOT_THE_CORES = {
 PROVIDER_HELPERS = [
     ("pathlib_next.archive", "detect_format"),
     ("pathlib_next.providers", "CommitOnClose"),
+    ("pathlib_next.providers", "DiscardOnError"),
     ("pathlib_next.providers", "check_follow"),
     ("pathlib_next.providers", "contains"),
     ("pathlib_next.providers", "copy_error_predicate"),

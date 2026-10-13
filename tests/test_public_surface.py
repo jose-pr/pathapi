@@ -88,6 +88,7 @@ EXPORTS = {
     "pathlib_next.protocols.checksum": {"NativeChecksum"},
     "pathlib_next.providers": {
         "CommitOnClose",
+        "DiscardOnError",
         "LRU",
         "OfferedOnce",
         "UNCHANGED",

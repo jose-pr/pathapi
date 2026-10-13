@@ -300,7 +300,7 @@ class RangeReader(_io.RawIOBase):
         super().close()
 
 
-class SpoolUploadStream(_io.BufferedIOBase):
+class SpoolUploadStream(_providers.DiscardOnError, _io.BufferedIOBase):
     """The write stream of a store that uploads an object from a file: it
     spools the writes (in memory up to `SPOOL_SIZE`, then a temp file) and
     uploads them on close() with `path._upload_file(file, size, exclusive=)`.

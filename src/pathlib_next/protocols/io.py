@@ -80,15 +80,16 @@ class BinaryOpen(_ty.Protocol):
         receives it canonical: one of "r"/"w"/"x"/"a", plus "+" if given --
         never "b" or "t", so "rt"/"wt" reach every backend as "r"/"w".
 
-        A stream that commits on close has a `discard()` method. When the
-        `with` block over the returned file ends in an exception, `open()`
-        calls the stream's `discard()` before closing it, in binary and in text
-        mode, so the close commits nothing and the target stays as it was.
+        A stream that commits on close inherits `providers.DiscardOnError`, so
+        that its own `__exit__` calls `discard()` before closing it when the
+        `with` block ended in an exception; binary mode returns the stream
+        `_open()` gave it as it is. In text mode the wrapper `open()` makes
+        does the same for any stream that has a callable `discard()`.
         """
         mode = _canonical_mode(mode, buffering, encoding, errors, newline)
         fh = self._open(mode.replace("b", ""), buffering)
         if "b" in mode:
-            return _discard.guard(fh)
+            return fh
         try:
             # io.text_encoding is 3.10+; on 3.9 pass encoding through
             # as-is (None means locale default, same effective behavior).

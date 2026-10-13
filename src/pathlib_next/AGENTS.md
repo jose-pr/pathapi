@@ -551,7 +551,10 @@ def contains(src, target) -> bool: ...
 def copy_error_predicate(ignore_error, on_error) -> OfferedOnce | None: ...
 def detect_format(name, peek=None) -> str: ...
 
-class CommitOnClose(BytesIO):
+class DiscardOnError:
+    def discard(self) -> None: ...
+
+class CommitOnClose(DiscardOnError, BytesIO):
     def __init__(self, commit, initial=None): ...
     def discard(self) -> None: ...
 ```
@@ -606,26 +609,30 @@ class CommitOnClose(BytesIO):
 - `CommitOnClose(commit, initial=None)` — an in-memory `BytesIO` that calls
   `commit(buffer)` once at `close()`, before the buffer is closed: always for
   a new file, only after a write for one opened with `initial` content. Return
-  it from `_open()` for a backend that cannot write a file piecewise.
-  `discard()` drops the buffer so that a later `close()` commits nothing; it
-  does nothing more when called twice or after `close()`, and leaving a `with`
-  block through an exception calls it before the close.
-- `discard()` on a stream returned by `_open()` — define it on a stream that
-  commits when it is closed (an upload, a rewrite of an archive), so that a
-  write which failed commits nothing. `open()` calls it, once, before it closes
-  the stream, when the `with` block over the returned file ended in an
-  exception (any `BaseException`), in binary and in text mode (the text a
-  text wrapper still holds is dropped, not written to the stream): the target
-  is left as it was, and is not created if it was absent. It is not called
-  when the block ended normally or the file is closed with `close()`; both
-  commit. `discard()` must drop what the stream holds so that the `close()`
-  that follows commits nothing, and must do nothing more when called twice
-  or after `close()`. A stream without `discard()` is used as it is, which is
+  it from `_open()` for a backend that cannot write a file piecewise. It
+  inherits `DiscardOnError`; its `discard()` drops the buffer so that a later
+  `close()` commits nothing.
+- `DiscardOnError` — mixin for a write stream that commits when it is closed
+  (an upload, a rewrite of an archive), so that a write which failed commits
+  nothing. Its `__exit__` calls `discard()` when the `with` block over the
+  stream ended in an exception (any `BaseException`) and then closes; a block
+  that ended normally just closes, and `close()` outside a `with` block
+  commits, as before. The subclass defines `discard()` (the mixin's raises
+  `NotImplementedError`): drop what was written so that `close()` commits
+  nothing, and do nothing more when called twice or after `close()`. Put the
+  mixin first in the bases (`class Upload(DiscardOnError, io.BytesIO)`), so
+  that its `__exit__` wins over `io.IOBase`'s. The target is then left as it
+  was, and is not created if it was absent.
+- A stream returned by `_open()` — in binary mode `open()` returns it
+  untouched, so its own `__exit__` is the mechanism: a stream that defines
+  `discard()` without inheriting `DiscardOnError` (or doing the same in its own
+  `__exit__`) is not discarded there. In text mode the wrapper `open()` builds
+  calls the stream's `discard()` whenever it has a callable one, mixin or not,
+  and drops the text it still holds instead of writing it to the stream; it
+  also discards when its final flush fails or when it cannot be built (an
+  unknown `encoding=`). A stream without `discard()` is used as it is, which is
   right for one that writes through as it goes (`LocalPath`, `MemPath`,
-  `sftp:`): a failed block leaves what it had written. In binary mode `open()`
-  returns the stream `_open()` gave it, still an instance of its class (the
-  class is replaced by a subclass whose `__exit__` calls `discard()`, and a
-  pickle still names the original class); `CommitOnClose` does this itself.
+  `sftp:`): a failed block leaves what it had written.
 
 ## Local filesystem (`pathlib_next.fspath`)
 
@@ -1196,10 +1203,11 @@ validates the mode like builtin `open()` (`ValueError`) and passes
 `_open()` a canonical `r`/`w`/`x`/`a` plus optional `+` (never `b`/`t`);
 text mode wraps in `TextIOWrapper` and closes the handle if wrapping fails.
 An `_open()` that cannot honor a mode raises `NotImplementedError`. A stream
-that commits on close defines `discard()`, which `open()` calls when the
-`with` block over the file raised (see "For path implementers"), so
+that commits on close inherits `providers.DiscardOnError`, so a `with` block
+over the file that raised commits nothing (see "For path implementers");
 `write_bytes()`, `write_text()` and `copy()` whose data fails half way commit
-nothing there. Derives
+nothing there either. Binary mode returns the stream `_open()` gave it as it
+is. Derives
 `read_bytes()`, `read_text()`,
 `write_bytes(data)`, `write_text()`, `copy()` (`chunk_size` defaults to `shutil.COPY_BUFSIZE`; `progress(bytes_copied, total_size | None)`; an empty file reports once).
 
@@ -1424,6 +1432,13 @@ class OfferedOnce:
     def __call__(self, error, path) -> bool: ...
 def notimplemented(method): ...
 
+class DiscardOnError:
+    def discard(self) -> None: ...
+
+class CommitOnClose(DiscardOnError, BytesIO):
+    def __init__(self, commit, initial=None): ...
+    def discard(self) -> None: ...
+
 class LRU:
     def __init__(self, func, maxsize=128, on_evict=None): ...
     def discard(self, *args) -> bool: ...
@@ -1472,6 +1487,9 @@ UNCHANGED = None
   passes it down never offers one failure twice.
 - **`notimplemented()`** — decorator; calling raises
   `NotImplementedError("Method not implemented: <name>")`.
+- **`CommitOnClose`** and **`DiscardOnError`** — the write buffer that commits
+  when it is closed, and the mixin that makes a failed `with` block commit
+  nothing; see "For path implementers".
 
 ## Testing helpers (`pathlib_next.testing`, needs `pytest`)
 

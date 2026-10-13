@@ -5,7 +5,7 @@ buffer, the LRU cache and the `contains` test.
 
 from __future__ import annotations
 
-from ._commit import CommitOnClose
+from ._commit import CommitOnClose, DiscardOnError
 from ._errorpolicy import (
     OfferedOnce,
     as_error_handler,
@@ -24,6 +24,7 @@ from .path._relation import contains
 
 __all__ = [
     "CommitOnClose",
+    "DiscardOnError",
     "LRU",
     "OfferedOnce",
     "UNCHANGED",
