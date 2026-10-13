@@ -206,6 +206,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   newer class takes the name. To replace a class on purpose, write
   `class MyHttp(UriPath, replace=True)`; otherwise give the scheme a name
   nobody holds, or remove the duplicate definition.
+- **A write stream that commits on close is not committed when its `with`
+  block raised.** `FTPPath`, the members of a zip (`ZipPath`, `ArchivePath`),
+  `http:`/`https:`, `dav:`/`davs:`, `s3:`, `gs:` and `az:` hold what is written
+  and send it when the file is closed. A `with path.open("wb") as f:` block
+  that wrote part of a file and then raised used to close the stream on the way
+  out, so the part replaced the complete remote file. Now a block that ends in
+  an exception (any `BaseException`, `KeyboardInterrupt` included) discards what
+  was written: the target keeps its previous content, or is not created, and
+  nothing is sent (no `STOR`, `PUT` or upload; a `ZipPath` inside `batch()` does
+  not stage the member, and the block's other changes still commit). The same
+  holds in text mode, where the text the wrapper still held is dropped, and for
+  `write_bytes()`, `write_text()`, `copy()` and `PathSyncer`, which open their
+  target in a `with` block. A block that ends normally, and a stream closed with
+  `close()` outside a `with` block, commit as before, and an error raised by the
+  commit still propagates and is not retried. `LocalPath`, `MemPath` and `sftp:`
+  write through as `pathlib` does and are unchanged: a failed block leaves what
+  was written. **If you relied on the partial upload**, close the stream
+  yourself instead of raising through the block (`f.close()` commits what was
+  written). A path of your own whose `_open()` returns a stream that commits on
+  close defines `discard()` on it (or returns `providers.CommitOnClose`) to get
+  the same behaviour; `open()` calls it before it closes the stream. A failed
+  `open()` of a text file (an unknown `encoding=`) no longer creates an empty
+  file on such a backend.
 
 ## [0.9.14] - 2026-10-12
 

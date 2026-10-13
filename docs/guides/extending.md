@@ -57,6 +57,20 @@ deletes when `rename()` is missing) or raise `NotImplementedError`:
 | `_chown(uid, gid, *, follow_symlinks=True)` | receives a canonical pair (`None` = unchanged); `chown()` is derived. |
 | `_utime(*, atime=None, mtime=None)` | set an existing entry's times, in seconds since the epoch (`None` = leave that one alone); whole seconds, or no access time, is fine. Raise `NotImplementedError` (the default) when the backend cannot set a time: `touch()` of an existing file then leaves it as it is, and `PathSyncer(preserve_mtime=True)` leaves the copy's own time. |
 
+A stream that commits when it is closed (an upload, a rewrite of an archive)
+should define `discard()`. `open()` calls it, once, before it closes the
+stream, when the `with` block over the file ended in an exception (any
+`BaseException`), in binary and in text mode, so a producer that fails half
+way does not replace a complete file with the partial one: the target is left
+as it was, and is not created if it was absent. `discard()` drops what the
+stream holds so that the `close()` that follows commits nothing, and does
+nothing more when it is called twice or after `close()`. A block that ended
+normally, and a file closed with `close()` outside a `with` block, commit as
+before. A stream with no `discard()` is used as it is, which is right for one
+that writes through as it goes (a local file, `MemPath`). `write_bytes()`,
+`write_text()` and `copy()` open their target in a `with` block, so they get the
+behaviour too.
+
 `rm()` is derived from `stat()`, `_scandir()`, `unlink()` and `rmdir()`. An
 implementation that overrides it to remove a tree natively still accepts
 `follow_symlinks=` and `follow_binds=` (the shared contract calls both), checks
@@ -267,7 +281,8 @@ Conventions for a scheme implementation:
 - A backend that cannot be written piecewise (an FTP `STOR`, an archive
   rewrite) is returned from `_open()` as
   `pathlib_next.providers.CommitOnClose(commit)`: `commit(buffer)` runs once,
-  when the stream is closed.
+  when the stream is closed, and not at all when the `with` block over the
+  file raised (`CommitOnClose` implements `discard()`, see Track A).
 
 The shipped API header (`AGENTS.md` inside the package) lists every one of
 these hooks and helpers with its signature, under "For path implementers" and
