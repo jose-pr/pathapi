@@ -73,6 +73,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   importing its module or loading its entry point first, and raises
   `ValueError` naming the registered schemes when there is none. They answer
   "why did `UriPath("x://...")` give a plain `UriPath`" without a dispatch.
+- **`pathlib_next.providers.name_stem()`, `name_suffix()` and
+  `name_suffixes()`.** One path component split into stem and suffix as
+  `pathlib` of the running interpreter splits it, for a class that computes
+  those itself and must agree with `Pathname`.
 - **`pathlib_next.exceptions`: `PathError`, the base of the exceptions the
   package defines.** `NonRelativePatternError` (an absolute glob pattern) is
   now a `PathError` as well as a `NotImplementedError` and a `ValueError`, so

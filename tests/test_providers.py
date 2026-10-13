@@ -229,3 +229,22 @@ def test_parse_owner_keeps_ids_names_and_the_unchanged_sentinels():
     assert providers.parse_owner(0, 0) == (0, 0)
     assert providers.parse_owner("root", None) == ("root", None)
     assert providers.parse_owner((1 << 32) - 1, -1) == ((1 << 32) - 1, None)
+
+
+@pytest.mark.parametrize(
+    "name", ["a.tar.gz", "a.txt", ".bashrc", "a", "a.", "..a", ".a.b", "a..b"]
+)
+def test_a_name_is_split_as_pathlib_of_this_interpreter_splits_it(name):
+    reference = pathlib.PurePosixPath(name)
+    assert providers.name_stem(name) == reference.stem
+    assert providers.name_suffix(name) == reference.suffix
+    assert providers.name_suffixes(name) == reference.suffixes
+
+
+def test_the_name_helpers_are_the_ones_pathname_uses():
+    from pathlib_next.mempath import MemPath
+
+    path = MemPath("/d/archive.tar.gz")
+    assert path.stem == providers.name_stem(path.name)
+    assert path.suffix == providers.name_suffix(path.name)
+    assert path.suffixes == providers.name_suffixes(path.name)

@@ -1,5 +1,6 @@
 """What a class built on `Path` calls: error and follow policies, name and
-mode checks, the commit-on-close buffer, the LRU cache and the `contains` test.
+mode checks, the split of a name into stem and suffix, the commit-on-close
+buffer, the LRU cache and the `contains` test.
 """
 
 from __future__ import annotations
@@ -16,6 +17,9 @@ from ._lru import LRU
 from ._names import is_safe_child_name, is_windows_flavoured
 from ._permissions import UNCHANGED, parse_mode, parse_owner
 from ._stubs import notimplemented
+from .path._pure import _name_stem as name_stem
+from .path._pure import _name_suffix as name_suffix
+from .path._pure import _name_suffixes as name_suffixes
 from .path._relation import contains
 
 __all__ = [
@@ -30,6 +34,9 @@ __all__ = [
     "copy_error_predicate",
     "is_safe_child_name",
     "is_windows_flavoured",
+    "name_stem",
+    "name_suffix",
+    "name_suffixes",
     "notimplemented",
     "parse_mode",
     "parse_owner",
