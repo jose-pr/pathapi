@@ -57,6 +57,19 @@ class BaseFTPBackend(object):
     def client(self) -> "_ftplib.FTP":
         """A new connected, logged-in client."""
 
+    def close(self) -> None:
+        """Closes every control connection this backend holds, whichever
+        thread opened it; one a command is running on closes when that
+        command ends. Harmless when called again; a later use connects
+        afresh."""
+        _drop_backend(self)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        self.close()
+
 
 class _SessionReuseFTP_TLS(_ftplib.FTP_TLS):
     """`FTP_TLS` whose data connections resume the control connection's TLS
@@ -163,12 +176,6 @@ class FTPBackend(BaseFTPBackend):
             ),
         )
 
-    def __enter__(self) -> "FTPBackend":
-        return self
-
-    def __exit__(self, *exc_info) -> None:
-        self.close()
-
     def _tls_context(self) -> "_ssl.SSLContext":
         if self.ssl_context is not None:
             return self.ssl_context
@@ -199,13 +206,6 @@ class FTPBackend(BaseFTPBackend):
                 close()
             raise
         return client
-
-    def close(self) -> None:
-        """Closes every control connection this backend holds, whichever
-        thread opened it; one a command is running on closes when that
-        command ends. Harmless when called again; a later use connects
-        afresh."""
-        _drop_backend(self)
 
 
 def _rebuild_backend(cls, host, port, user, password, tls, timeout, context, verify):

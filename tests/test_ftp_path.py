@@ -346,6 +346,20 @@ def test_leaving_a_with_block_closes_the_connections(server):
     assert wait_until(lambda: not server.live)
 
 
+def test_a_backend_of_your_own_closes_and_leaves_a_with_block_the_same_way(server):
+    class Mine(BaseFTPBackend):
+        def client(self):
+            return FTPBackend("127.0.0.1", server.port, timeout=5).client()
+
+    with Mine() as backend:
+        FTPPath("/pub/x", backend=backend).stat()
+        assert _cached(backend)
+        assert wait_until(lambda: len(server.live) == 1)
+    assert _cached(backend) == []
+    assert wait_until(lambda: not server.live)
+    backend.close()
+
+
 def test_close_only_ends_its_own_connections(server):
     first, second = _path(server), _path(server)
     first.stat()

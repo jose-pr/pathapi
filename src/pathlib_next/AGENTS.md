@@ -782,6 +782,9 @@ class FTPEndpoint(NamedTuple):
 class BaseFTPBackend:
     endpoint
     def client(self) -> ftplib.FTP: ...
+    def close(self) -> None: ...
+    def __enter__(self) -> Self: ...
+    def __exit__(self, *exc_info) -> None: ...
 
 class FTPBackend(BaseFTPBackend):
     host
@@ -796,9 +799,6 @@ class FTPBackend(BaseFTPBackend):
         self, host, port=21, *, user=None, password=None, tls=False,
         timeout=30.0, ssl_context=None, verify=True,
     ) -> None: ...
-    def close(self) -> None: ...
-    def __enter__(self) -> FTPBackend: ...
-    def __exit__(self, *exc_info) -> None: ...
 ```
 
 - `FTPBackend` is the connections to one server and account. A thread opens
@@ -818,7 +818,9 @@ class FTPBackend(BaseFTPBackend):
 - `close()` closes every control connection the backend holds, whichever
   thread opened it; one a command is running on closes when that command
   ends. It is harmless twice and before any use, and a later use connects
-  afresh. Leaving a `with` block calls it. A `ValueError` for an empty `host`.
+  afresh. Leaving a `with` block calls it. Both belong to `BaseFTPBackend`,
+  so a backend of your own is closed the same way. A `ValueError` for an
+  empty `host`.
 - `BaseFTPBackend.client()` is what to override to supply connections: a new
   connected, logged-in `ftplib.FTP`. `endpoint`, when set, is a hashable value
   naming the server and account (`FTPBackend`'s is an `FTPEndpoint`, which holds
