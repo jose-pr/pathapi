@@ -87,6 +87,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   declare `__all__`**, so `from pathlib_next.sync import *` publishes
   `PathSyncer`, `SyncEvent` and `PathAndStat` and nothing else, and a type
   checker reads those names as the module's exports.
+- **`pathlib_next.providers.DiscardOnError`**, a mixin for a write stream that
+  commits when it is closed: its `__exit__` calls `discard()` when the `with`
+  block raised, then closes. `CommitOnClose` inherits it and has a
+  `discard()`; see the entry under Changed.
 
 ### Changed
 - **HTTP is sent by the standard library by default, not by `requests`
@@ -225,10 +229,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   was written. **If you relied on the partial upload**, close the stream
   yourself instead of raising through the block (`f.close()` commits what was
   written). A path of your own whose `_open()` returns a stream that commits on
-  close defines `discard()` on it (or returns `providers.CommitOnClose`) to get
-  the same behaviour; `open()` calls it before it closes the stream. A failed
-  `open()` of a text file (an unknown `encoding=`) no longer creates an empty
-  file on such a backend.
+  close gets the same behaviour by returning `providers.CommitOnClose`, or by
+  giving its stream class `providers.DiscardOnError` as its first base and a
+  `discard()` that drops what was written; a stream that has `discard()` and
+  not the mixin is discarded in text mode only. A failed `open()` of a text
+  file (an unknown `encoding=`) no longer creates an empty file on such a
+  backend.
 
 ## [0.9.14] - 2026-10-12
 
