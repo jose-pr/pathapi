@@ -674,6 +674,73 @@ def test_rplus_writes_land_and_read_stream_is_read_only():
     assert bucket.objects["a.txt"] == b"Jello"
 
 
+class _Abort(Exception):
+    pass
+
+
+@pytest.mark.parametrize("spooled", [False, True], ids=["memory", "temp-file"])
+@pytest.mark.parametrize("mode, data", [("wb", b"part"), ("w", "part")])
+def test_a_write_block_that_raised_uploads_nothing(monkeypatch, mode, data, spooled):
+    if spooled:
+        monkeypatch.setattr(store.SpoolUploadStream, "spool_size", 2)
+    backend, bucket = _bucket_with(**{"old": b"OLD"})
+    for key in ("old", "new"):
+        with pytest.raises(_Abort):
+            with _gs(f"gs://bucket/{key}", backend).open(mode) as f:
+                f.write(data)
+                raise _Abort
+    assert bucket.objects == {"old": b"OLD"}
+    assert bucket.uploads == []
+
+
+@pytest.mark.parametrize("mode, data", [("r+b", b"J"), ("r+", "J")])
+def test_a_read_modify_write_block_that_raised_uploads_nothing(mode, data):
+    backend, bucket = _bucket_with(**{"a.txt": b"hello"})
+    with pytest.raises(_Abort):
+        with _gs("gs://bucket/a.txt", backend).open(mode) as f:
+            f.write(data)
+            raise _Abort
+    assert bucket.objects == {"a.txt": b"hello"}
+    assert bucket.uploads == []
+
+
+def test_an_exclusive_create_block_that_raised_uploads_nothing():
+    backend, bucket = _bucket_with()
+    with pytest.raises(_Abort):
+        with _gs("gs://bucket/job.lock", backend).open("xb") as f:
+            f.write(b"worker1")
+            raise _Abort
+    assert bucket.objects == {} and bucket.uploads == []
+
+
+@pytest.mark.parametrize("mode, data", [("wb", b"whole"), ("w", "whole")])
+def test_a_write_block_that_ended_normally_or_was_closed_uploads_once(mode, data):
+    backend, bucket = _bucket_with()
+    with _gs("gs://bucket/a", backend).open(mode) as f:
+        f.write(data)
+    f = _gs("gs://bucket/b", backend).open(mode)
+    f.write(data)
+    f.close()
+    f.close()
+    assert bucket.objects == {"a": b"whole", "b": b"whole"}
+    assert len(bucket.uploads) == 2
+
+
+@pytest.mark.parametrize("mode, data", [("wb", b"whole"), ("w", "whole")])
+def test_an_upload_that_fails_after_a_normal_block_raises_once_and_is_not_retried(
+    mode, data
+):
+    import gc
+
+    backend, bucket = _bucket_with()
+    bucket.upload_errors.append(_ServiceUnavailable("503"))
+    with pytest.raises(OSError):
+        with _gs("gs://bucket/state.json", backend).open(mode) as f:
+            f.write(data)
+    gc.collect()
+    assert bucket.objects == {} and bucket.uploads == []
+
+
 # --- rename/move of a prefix directory ---------------------------------------
 
 

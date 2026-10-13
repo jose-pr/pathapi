@@ -553,6 +553,7 @@ def detect_format(name, peek=None) -> str: ...
 
 class CommitOnClose(BytesIO):
     def __init__(self, commit, initial=None): ...
+    def discard(self) -> None: ...
 ```
 
 - `_anchor_segments()` — the leading `segments` that anchor the path instead
@@ -606,6 +607,25 @@ class CommitOnClose(BytesIO):
   `commit(buffer)` once at `close()`, before the buffer is closed: always for
   a new file, only after a write for one opened with `initial` content. Return
   it from `_open()` for a backend that cannot write a file piecewise.
+  `discard()` drops the buffer so that a later `close()` commits nothing; it
+  does nothing more when called twice or after `close()`, and leaving a `with`
+  block through an exception calls it before the close.
+- `discard()` on a stream returned by `_open()` — define it on a stream that
+  commits when it is closed (an upload, a rewrite of an archive), so that a
+  write which failed commits nothing. `open()` calls it, once, before it closes
+  the stream, when the `with` block over the returned file ended in an
+  exception (any `BaseException`), in binary and in text mode (the text a
+  text wrapper still holds is dropped, not written to the stream): the target
+  is left as it was, and is not created if it was absent. It is not called
+  when the block ended normally or the file is closed with `close()`; both
+  commit. `discard()` must drop what the stream holds so that the `close()`
+  that follows commits nothing, and must do nothing more when called twice
+  or after `close()`. A stream without `discard()` is used as it is, which is
+  right for one that writes through as it goes (`LocalPath`, `MemPath`,
+  `sftp:`): a failed block leaves what it had written. In binary mode `open()`
+  returns the stream `_open()` gave it, still an instance of its class (the
+  class is replaced by a subclass whose `__exit__` calls `discard()`, and a
+  pickle still names the original class); `CommitOnClose` does this itself.
 
 ## Local filesystem (`pathlib_next.fspath`)
 
@@ -691,7 +711,8 @@ An unknown keyword → `TypeError`.
   `NotImplementedError`. A binary handle is a `MemBytesIO`, a `BytesIO` that
   writes its buffer back into the file's `bytearray` (`dest`) on `flush()` and
   close; with `append=True` every write lands at the end. Writes are visible after `flush()`/`close()`; two
-  `a` handles on one file both land (each adds only what it wrote).
+  `a` handles on one file both land (each adds only what it wrote). A `with`
+  block that raised leaves what it had written, as a local file does.
 - `rmdir()` of the root → `OSError(EBUSY)`, so `root.rm(recursive=True)`
   empties the tree and then raises that.
 - `_utime()` sets a file's modification time (the access time is not
@@ -841,7 +862,9 @@ class FTPBackend(BaseFTPBackend):
   a directory that holds an undecodable name is answered by `MLST`, or on a
   server with `MLSD` and no `MLST` by `SIZE`/`CWD` (after a reconnect).
 - Reads download the whole file into memory; `"w"`/`"x"`/`"a"` (`APPE`)/
-  `"r+"` buffer in memory and upload on close (`"x"` checks then writes).
+  `"r+"` buffer in memory and upload on close (`"x"` checks then writes). A
+  `with` block that raised uploads nothing: the file is left as it was, or not
+  created.
 - `_utime()` sends `MFMT` (the modification time, UTC, whole seconds; the
   access time cannot be set) when the server's `FEAT` lists it (asked once
   per connection), else raises `NotImplementedError` without sending it.
@@ -1024,7 +1047,9 @@ first bytes (a `PK` magic sniff) on first use.
   `rmdir()`, `rename()` (same archive; replaces like POSIX `rename`;
   a destination below a file or a missing directory is
   `NotADirectoryError` / `FileNotFoundError`, a directory into itself
-  `OSError(EINVAL)`); parents must exist; `"a"` unsupported. Every mutation
+  `OSError(EINVAL)`); parents must exist; `"a"` unsupported. A `with` block
+  over a written member that raised changes nothing (inside `batch()` the
+  member is not staged and the block's other changes still commit). Every mutation
   replaces the archive atomically (temp file + `os.replace`) and keeps
   other members' metadata, the comment and any prefix bytes. A write uses
   the normalized name. A new member is stored deflated; an existing member that is
@@ -1170,7 +1195,11 @@ class BinaryOpen(Protocol):
 validates the mode like builtin `open()` (`ValueError`) and passes
 `_open()` a canonical `r`/`w`/`x`/`a` plus optional `+` (never `b`/`t`);
 text mode wraps in `TextIOWrapper` and closes the handle if wrapping fails.
-An `_open()` that cannot honor a mode raises `NotImplementedError`. Derives
+An `_open()` that cannot honor a mode raises `NotImplementedError`. A stream
+that commits on close defines `discard()`, which `open()` calls when the
+`with` block over the file raised (see "For path implementers"), so
+`write_bytes()`, `write_text()` and `copy()` whose data fails half way commit
+nothing there. Derives
 `read_bytes()`, `read_text()`,
 `write_bytes(data)`, `write_text()`, `copy()` (`chunk_size` defaults to `shutil.COPY_BUFSIZE`; `progress(bytes_copied, total_size | None)`; an empty file reports once).
 
@@ -2253,7 +2282,8 @@ class HTTPResponse:
 - `open("r")` streams `GET` with `Accept-Encoding: identity`; the mode is
   matched exactly, so `"r+"`, `"w+"` and `"a+"` raise `NotImplementedError`.
   `"w"`/`"x"` (an `HttpWriteStream`)
-  buffer and send `write_method` on close. `"x"` first calls `stat()`: found
+  buffer and send `write_method` on close; a `with` block that raised sends
+  nothing. `"x"` first calls `stat()`: found
   → `FileExistsError`, a failure other than not-found raises with nothing
   sent; the upload then carries `If-None-Match: *`, and a 412 reply →
   `FileExistsError` (a server that ignores the header leaves the window
@@ -2293,7 +2323,8 @@ href, resolved against the collection, names the same host and a direct
 child, and a `getcontentlength` that is not a plain number is unknown (`0`).
 `open("r")` on a collection → `IsADirectoryError`;
 `"w"`/`"x"` send `write_method` (default `PUT`) on close (`"x"` as for
-`HttpPath`, probing with `PROPFIND`); `"a"` unsupported, so `append_mode`
+`HttpPath`, probing with `PROPFIND`; a `with` block that raised sends
+nothing); `"a"` unsupported, so `append_mode`
 has no effect. `mkdir()` = `MKCOL`
 (missing parent → `FileNotFoundError`). `unlink()` refuses a collection;
 `rmdir()` checks emptiness first; `rm(recursive=True)` is one recursive
@@ -2467,6 +2498,9 @@ class BaseSftpBackend:
   if the program left it open (a text wrapper's pending text included),
   waiting at most five seconds; `write()` returns the number of bytes
   written and `truncate()` works on both backends.
+- A write goes through as the stream is used and `open("w")` truncates the
+  file at once: a `with` block that raised leaves what it had written, as a
+  local file does (the stream has no `discard()`).
 
 #### `SftpBackend` (paramiko)
 
@@ -2595,7 +2629,8 @@ of their own. A supplied backend is unaffected.
   `OSError` (`errno.ESTALE`, `EIO` where the platform has none) saying the
   object changed while it was being read, never a mix of the two; one deleted
   meanwhile is `FileNotFoundError`.
-  `"w"`/`"x"`/`"r+"` spool and upload on close; `"x"` is a
+  `"w"`/`"x"`/`"r+"` spool and upload on close (nothing is uploaded when
+  the `with` block raised); `"x"` is a
   conditional put (check-then-put above 5 GiB); `"a"` unsupported.
   `st_mtime` from `LastModified`.
 - Timeouts and retries are boto3's own: with the default configuration a
@@ -2694,7 +2729,7 @@ generation and every later request of that stream sends it as
 `ifGenerationMatch`, so each open is a snapshot of one generation;
 `"w"`/`"x"`/`"r+"` spool in memory up to 4 MiB, then in a temp file,
 and upload on close (one request up to 4 MiB, a resumable upload in 2 MiB
-requests above); `"x"` uses `if_generation_match=0`; `"a"` unsupported; `st_mtime` from `updated`.
+requests above; nothing is uploaded when the `with` block raised); `"x"` uses `if_generation_match=0`; `"a"` unsupported; `st_mtime` from `updated`.
 A file `copy()` is one `copy_blob` request, within or between the buckets
 that one client reaches, as for `S3Path`. `checksum()` is the object's `md5Hash` or `crc32c` (`supported_checksums()`
 is `{"md5", "crc32c"}`); a composite object has no `md5Hash`, and an
@@ -2747,7 +2782,8 @@ chunk. The first request reports the blob's ETag and every later request of
 that stream requires it (`If-Match`), so each open is a snapshot of one
 version; `seek(n, 2)` uses the size that response reported;
 `"w"`/`"x"`/`"r+"` spool in memory up to 4 MiB, then in a temp file,
-and upload on close (one request up to 4 MiB, blocks above);
+and upload on close (one request up to 4 MiB, blocks above; nothing is
+uploaded when the `with` block raised);
 `"x"` sends `If-None-Match: *`; `"a"` unsupported; `st_mtime` from `last_modified`.
 A file `copy()` within one container is one service copy (the call `rename()`
 waits for), as for `S3Path`. `checksum("md5")` is the blob's `Content-MD5` property (`supported_checksums()`

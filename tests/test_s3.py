@@ -1373,3 +1373,72 @@ def test_a_streamed_read_is_one_request_whatever_its_size(moto_s3):
             total += len(piece)
     assert total == 256 * 2500
     assert sent == ["GetObject"]
+
+
+# --- a write block that raised uploads nothing ----------------------------------
+
+
+class _Abort(Exception):
+    pass
+
+
+_WRITE_REQUESTS = {"PutObject", "CreateMultipartUpload", "UploadPart"}
+
+
+@pytest.mark.parametrize("spooled", [False, True], ids=["memory", "temp-file"])
+@pytest.mark.parametrize("mode, data", [("wb", b"part"), ("w", "part")])
+def test_a_write_block_that_raised_sends_no_upload_moto(
+    moto_s3, monkeypatch, mode, data, spooled
+):
+    if spooled:
+        from pathlib_next.uri.schemes.s3 import _S3WriteStream
+
+        monkeypatch.setattr(_S3WriteStream, "spool_size", 2)
+    moto_s3.put_object(Bucket="bkt", Key="old", Body=b"OLD")
+    backend, sent = _recording_backend()
+    for key in ("old", "new"):
+        with pytest.raises(_Abort):
+            with S3Path(f"s3://bkt/{key}", backend=backend).open(mode) as f:
+                f.write(data)
+                raise _Abort
+    assert _WRITE_REQUESTS.isdisjoint(sent)
+    assert _moto_keys(moto_s3) == ["old"]
+    assert _stored(moto_s3, "old") == b"OLD"
+
+
+@pytest.mark.parametrize("mode, data", [("r+b", b"J"), ("r+", "J")])
+def test_a_read_modify_write_block_that_raised_sends_no_upload_moto(
+    moto_s3, mode, data
+):
+    moto_s3.put_object(Bucket="bkt", Key="a.txt", Body=b"hello")
+    backend, sent = _recording_backend()
+    with pytest.raises(_Abort):
+        with S3Path("s3://bkt/a.txt", backend=backend).open(mode) as f:
+            f.write(data)
+            raise _Abort
+    assert _WRITE_REQUESTS.isdisjoint(sent)
+    assert _stored(moto_s3, "a.txt") == b"hello"
+
+
+def test_an_exclusive_create_block_that_raised_sends_no_upload_moto(moto_s3):
+    backend, sent = _recording_backend()
+    with pytest.raises(_Abort):
+        with S3Path("s3://bkt/job.lock", backend=backend).open("xb") as f:
+            f.write(b"worker1")
+            raise _Abort
+    assert _WRITE_REQUESTS.isdisjoint(sent)
+    assert _moto_keys(moto_s3) == []
+
+
+@pytest.mark.parametrize("mode, data", [("wb", b"whole"), ("w", "whole")])
+def test_a_write_block_that_ended_normally_or_was_closed_uploads_the_object_moto(
+    moto_s3, mode, data
+):
+    with S3Path("s3://bkt/a").open(mode) as f:
+        f.write(data)
+    f = S3Path("s3://bkt/b").open(mode)
+    f.write(data)
+    f.close()
+    f.close()
+    assert _moto_keys(moto_s3) == ["a", "b"]
+    assert _stored(moto_s3, "a") == b"whole" == _stored(moto_s3, "b")

@@ -167,6 +167,23 @@ def test_an_mlst_that_answers_without_an_entry_is_not_asked_again(make):
     assert "MLST" not in server.commands()
 
 
+# --- a write block that raised uploads nothing ------------------------------------------
+
+
+@pytest.mark.parametrize("mode, data", [("wb", b"part"), ("w", "part")])
+def test_a_write_block_that_raised_stores_nothing(make, mode, data):
+    server, path = make(
+        files={"/d/f.txt": b"hello"}, dirs=DIRS, entries={"/d/f.txt": FILE}
+    )
+    for name in ("/d/f.txt", "/d/new.txt"):
+        with pytest.raises(RuntimeError, match="stop"):
+            with path(name).open(mode) as f:
+                f.write(data)
+                raise RuntimeError("stop")
+    assert server.files == {"/d/f.txt": b"hello"}
+    assert "STOR" not in server.commands()
+
+
 # --- a name the client cannot decode makes only its own directory unlistable -------------------
 
 

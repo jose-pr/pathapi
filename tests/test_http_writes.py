@@ -260,6 +260,90 @@ def test_finished_streams_still_upload_once_on_close(wire):
     assert [r.method for r in wire.log].count("PUT") == 3
 
 
+# --- a write block that raised sends nothing ---
+
+
+class _Abort(Exception):
+    pass
+
+
+_WRITES = [("wb", b"part"), ("w", "part")]
+
+
+@pytest.mark.parametrize("scheme", ["http", "dav"])
+@pytest.mark.parametrize("mode, data", _WRITES)
+def test_a_write_block_that_raised_sends_no_upload(wire, scheme, mode, data):
+    wire.files["/old.bin"] = b"ORIGINAL"
+    for name in ("/old.bin", "/new.bin"):
+        with pytest.raises(_Abort):
+            with _path(wire, scheme, name).open(mode) as f:
+                f.write(data)
+                raise _Abort
+    gc.collect()
+    assert wire.sent("PUT", "POST", "PATCH") == []
+    assert wire.files == {"/old.bin": b"ORIGINAL"}
+
+
+@pytest.mark.parametrize("mode, data", [("ab", b"part"), ("a", "part")])
+@pytest.mark.parametrize("append_mode", ["rewrite", "patch"])
+def test_an_append_block_that_raised_sends_no_upload(wire, mode, data, append_mode):
+    wire.files["/log.txt"] = b"one\n"
+    path = _path(wire, "http", "/log.txt", append_mode=append_mode)
+    with pytest.raises(_Abort):
+        with path.open(mode) as f:
+            f.write(data)
+            raise _Abort
+    gc.collect()
+    assert wire.sent("PUT", "POST", "PATCH") == []
+    assert wire.files == {"/log.txt": b"one\n"}
+
+
+@pytest.mark.parametrize("scheme", ["http", "dav"])
+def test_an_exclusive_create_block_that_raised_sends_no_upload(wire, scheme):
+    with pytest.raises(_Abort):
+        with _path(wire, scheme, "/new.bin").open("xb") as f:
+            f.write(b"part")
+            raise _Abort
+    assert wire.sent("PUT", "POST", "PATCH") == []
+    assert wire.files == {}
+
+
+@pytest.mark.parametrize("scheme", ["http", "dav"])
+@pytest.mark.parametrize("mode, data", _WRITES)
+def test_a_write_block_that_ended_normally_uploads_once(wire, scheme, mode, data):
+    with _path(wire, scheme, "/f.bin").open(mode) as f:
+        f.write(data)
+    assert wire.files == {"/f.bin": b"part"}
+    assert [r.method for r in wire.sent("PUT")] == ["PUT"]
+
+
+@pytest.mark.parametrize("scheme", ["http", "dav"])
+@pytest.mark.parametrize("mode, data", _WRITES)
+def test_a_write_stream_closed_without_a_block_uploads_once(wire, scheme, mode, data):
+    f = _path(wire, scheme, "/f.bin").open(mode)
+    f.write(data)
+    f.close()
+    f.close()
+    assert wire.files == {"/f.bin": b"part"}
+    assert len(wire.sent("PUT")) == 1
+
+
+@pytest.mark.parametrize("scheme", ["http", "dav"])
+@pytest.mark.parametrize("mode, data", _WRITES)
+def test_an_upload_the_server_refuses_raises_once_and_is_not_retried(
+    wire, scheme, mode, data
+):
+    wire.on("PUT", "/f.bin", (500, {}, b""))
+    stream = _path(wire, scheme, "/f.bin").open(mode)
+    stream.write(data)
+    with pytest.raises(OSError):
+        stream.close()
+    del stream
+    gc.collect()
+    assert len(wire.sent("PUT")) == 1
+    assert wire.files == {}
+
+
 # --- redirects of state-changing requests ---
 
 _SCHEMES = ["http", "dav"]

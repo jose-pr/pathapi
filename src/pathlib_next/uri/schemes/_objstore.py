@@ -311,6 +311,7 @@ class SpoolUploadStream(_io.BufferedIOBase):
 
     #: Bytes kept in memory before the spool moves to a temp file.
     spool_size = SPOOL_SIZE
+    _dropped = False
 
     def __init__(self, path, exclusive=False, initial=None):
         super().__init__()
@@ -367,11 +368,17 @@ class SpoolUploadStream(_io.BufferedIOBase):
             size = self._file.tell()
         return self._file.truncate(size)
 
+    def discard(self):
+        """Drop the spool: `close()` uploads nothing. `open()` calls it when
+        the `with` block over the stream raised."""
+        self._dropped = True
+        self._file.close()
+
     def close(self):
         if self.closed:
             return
         try:
-            if self._dirty:
+            if self._dirty and not self._dropped:
                 self._upload()
         finally:
             # Closed even when the upload fails, so `IOBase.__del__` does not

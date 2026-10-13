@@ -614,6 +614,13 @@ class _UploadStream(_io.BytesIO):
     def _upload(self, data: bytes) -> None:
         raise NotImplementedError
 
+    def discard(self):
+        """Drop the buffer: `close()` sends nothing. `open()` calls it when
+        the `with` block over the stream raised."""
+        self._ready = False
+        if not self.closed:
+            self.truncate(0)
+
     def close(self):
         if self.closed:
             return

@@ -1043,6 +1043,112 @@ mutant(
     "backend_for(shared=False) returns the shared handle",
 )
 
+# --- a write stream that commits on close, and a block that raised ---------------
+
+_DISCARD = "tests/test_write_discard.py"
+mutant(
+    "write-block-that-raised-does-not-discard",
+    "_discard.py",
+    "        try:\n            if exc_type is not None:\n                self.discard()\n",
+    "        try:\n            if False:\n                self.discard()\n",
+    (
+        f"{_DISCARD}::test_a_block_that_raised_tells_the_stream_to_discard_before_it_is_closed",
+        f"{_DISCARD}::test_commit_on_close_leaving_a_block_by_an_exception_commits_nothing",
+        f"{_DISCARD}::test_ftp_a_failed_block_leaves_the_old_bytes",
+        f"{_DISCARD}::test_zip_a_failed_block_leaves_the_member_it_would_have_replaced",
+    ),
+    "a binary write stream is closed, and so committed, when its with block raised",
+)
+mutant(
+    "write-block-that-raised-does-not-discard-in-text-mode",
+    "_discard.py",
+    "        self._dropping = True\n        try:\n            self._discard()\n        finally:\n            super().__exit__(exc_type, exc_value, traceback)\n",
+    "        self._dropping = True\n        try:\n            pass\n        finally:\n            super().__exit__(exc_type, exc_value, traceback)\n",
+    (
+        f"{_DISCARD}::test_a_block_that_raised_tells_the_stream_to_discard_before_it_is_closed",
+        f"{_DISCARD}::test_ftp_a_failed_block_does_not_create_the_file",
+    ),
+    "a text write stream is committed (empty) when its with block raised",
+)
+mutant(
+    "text-wrapper-writes-the-text-of-a-failed-block",
+    "_discard.py",
+    "        if not self._dropping:\n            super().flush()\n",
+    "        if True:\n            super().flush()\n",
+    f"{_DISCARD}::test_text_pending_in_the_wrapper_never_reaches_the_stream_of_a_failed_block",
+    "the text a wrapper holds is written to the stream before a failed block closes it",
+)
+mutant(
+    "text-wrapper-that-cannot-flush-still-commits",
+    "_discard.py",
+    "            try:\n                self._discard()\n            finally:\n                super().close()\n            raise\n",
+    "            try:\n                pass\n            finally:\n                super().close()\n            raise\n",
+    f"{_DISCARD}::test_write_bytes_and_write_text_whose_write_fails_commit_nothing",
+    "a text file whose last flush failed is committed with the text it did receive",
+)
+mutant(
+    "binary-stream-with-discard-is-not-guarded",
+    "_discard.py",
+    "    guarded = _guarded_class(type(stream))\n",
+    "    guarded = None\n",
+    (
+        f"{_DISCARD}::test_a_block_that_raised_tells_the_stream_to_discard_before_it_is_closed",
+        f"{_DISCARD}::test_write_bytes_and_write_text_whose_write_fails_commit_nothing",
+        f"{_DISCARD}::test_a_guarded_stream_pickles_as_the_class_it_was",
+    ),
+    "a binary stream that has discard() but no __exit__ of its own is committed by a failed block",
+)
+mutant(
+    "open-gives-a-discarding-stream-a-stock-text-wrapper",
+    "protocols/io.py",
+    "            if callable(discard):\n",
+    "            if False:\n",
+    (
+        f"{_DISCARD}::test_a_block_that_raised_tells_the_stream_to_discard_before_it_is_closed",
+        f"{_DISCARD}::test_ftp_a_failed_block_does_not_create_the_file",
+    ),
+    "a text file over a stream with discard() is wrapped by a wrapper that flushes and commits",
+)
+mutant(
+    "open-commits-a-stream-whose-text-wrapper-failed-to-build",
+    "protocols/io.py",
+    "            _discard.abandon(fh)\n",
+    "            fh.close()\n",
+    f"{_DISCARD}::test_a_wrapper_that_fails_to_build_discards_and_closes_the_stream",
+    "an open() with an unknown encoding commits an empty file on a store that commits on close",
+)
+mutant(
+    "commit-on-close-commits-after-a-discard",
+    "_commit.py",
+    "            if self._dirty and not self._discarded:\n",
+    "            if self._dirty:\n",
+    (
+        f"{_DISCARD}::test_commit_on_close_drops_the_buffer_and_commits_nothing_after_a_discard",
+        f"{_DISCARD}::test_commit_on_close_discard_on_a_file_opened_with_content_leaves_it_alone",
+    ),
+    "close() commits a buffer that was discarded",
+)
+mutant(
+    "http-upload-stream-uploads-after-a-discard",
+    "uri/schemes/http.py",
+    "        self._ready = False\n        if not self.closed:\n",
+    "        self._ready = True\n        if not self.closed:\n",
+    f"tests/test_http_writes.py::test_a_write_block_that_raised_sends_no_upload",
+    "an http: or dav: write whose with block raised is sent on close",
+)
+mutant(
+    "objstore-upload-stream-uploads-after-a-discard",
+    "uri/schemes/_objstore.py",
+    "        self._dropped = True\n        self._file.close()\n",
+    "        pass\n",
+    (
+        "tests/test_s3.py::test_a_write_block_that_raised_sends_no_upload_moto",
+        "tests/test_gs_fake.py::test_a_write_block_that_raised_uploads_nothing",
+        "tests/test_az_fake.py::test_a_write_block_that_raised_uploads_nothing",
+    ),
+    "an s3:, gs: or az: write whose with block raised is uploaded on close",
+)
+
 # --- http transports: the guards every transport keeps --------------------------
 
 _HTTP_PKG = "uri/schemes/_http"

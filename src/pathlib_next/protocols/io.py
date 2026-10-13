@@ -4,7 +4,7 @@ import io as _io
 import shutil as _shutil
 import typing as _ty
 
-from .. import _stubs
+from .. import _discard, _stubs
 
 __all__ = ["BinaryOpen"]
 
@@ -79,27 +79,43 @@ class BinaryOpen(_ty.Protocol):
         or an encoding/errors/newline with a binary one), and `_open()`
         receives it canonical: one of "r"/"w"/"x"/"a", plus "+" if given --
         never "b" or "t", so "rt"/"wt" reach every backend as "r"/"w".
+
+        A stream that commits on close has a `discard()` method. When the
+        `with` block over the returned file ends in an exception, `open()`
+        calls the stream's `discard()` before closing it, in binary and in text
+        mode, so the close commits nothing and the target stays as it was.
         """
         mode = _canonical_mode(mode, buffering, encoding, errors, newline)
         fh = self._open(mode.replace("b", ""), buffering)
-        if "b" not in mode:
-            try:
-                # io.text_encoding is 3.10+; on 3.9 pass encoding through
-                # as-is (None means locale default, same effective behavior).
-                encoding = getattr(_io, "text_encoding", lambda e, stacklevel=1: e)(
-                    encoding
+        if "b" in mode:
+            return _discard.guard(fh)
+        try:
+            # io.text_encoding is 3.10+; on 3.9 pass encoding through
+            # as-is (None means locale default, same effective behavior).
+            encoding = getattr(_io, "text_encoding", lambda e, stacklevel=1: e)(
+                encoding
+            )
+            # buffering=1 is line buffering in text mode, as for open().
+            discard = getattr(fh, "discard", None)
+            if callable(discard):
+                return _discard.DiscardingTextIO(
+                    fh,
+                    discard,
+                    encoding,
+                    errors,
+                    newline,
+                    line_buffering=buffering == 1,
                 )
-                # buffering=1 is line buffering in text mode, as for open().
-                fh = _io.TextIOWrapper(
-                    fh, encoding, errors, newline, line_buffering=buffering == 1
-                )
-            except BaseException:
-                # An unknown encoding (LookupError) or newline (ValueError) fails after the backend
-                # handle is open; io.open closes its raw file then, and so must we: a leaked write
-                # handle could commit an empty upload at GC time.
-                fh.close()
-                raise
-        return fh
+            return _io.TextIOWrapper(
+                fh, encoding, errors, newline, line_buffering=buffering == 1
+            )
+        except BaseException:
+            # An unknown encoding (LookupError) or newline (ValueError) fails after the backend
+            # handle is open; io.open closes its raw file then, and so must we: a leaked write
+            # handle could commit an empty upload at GC time. A stream that commits on close
+            # discards first, so the failed call does not create or replace the file.
+            _discard.abandon(fh)
+            raise
 
     def read_bytes(self) -> bytes:
         """

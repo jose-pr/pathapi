@@ -618,3 +618,21 @@ def test_renaming_a_missing_path_is_file_not_found_after_one_head_and_one_listin
     with pytest.raises(FileNotFoundError):
         path.rename("other")
     assert client.calls == ["head_object", "list_objects_v2"]
+
+
+@pytest.mark.parametrize("mode, data", [("wb", b"whole"), ("w", "whole")])
+def test_an_upload_that_fails_after_a_normal_block_raises_once_and_is_not_retried(
+    moto_s3, mode, data
+):
+    import gc
+
+    denied = _failing(_reply("AccessDenied", 403, "PutObject"))
+    path, client = _path(moto_s3, upload_fileobj=denied, put_object=denied)
+    with pytest.raises(PermissionError):
+        with path.open(mode) as f:
+            f.write(data)
+    gc.collect()
+    assert [c for c in client.calls if c in ("upload_fileobj", "put_object")] == [
+        "upload_fileobj"
+    ]
+    assert _keys(moto_s3) == []

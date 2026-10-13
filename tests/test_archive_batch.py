@@ -294,6 +294,30 @@ def test_an_exception_in_the_block_leaves_the_archive_byte_for_byte(
     assert len(rewrites) == 1
 
 
+def test_a_member_write_that_raised_is_not_staged_and_the_other_changes_commit(
+    archive, rewrites
+):
+    root = UriPath(_zip_uri(archive))
+    with root.batch():
+        (root / "a.txt").write_bytes(b"A")
+        for mode, data in (("wb", b"part"), ("w", "part")):
+            with pytest.raises(RuntimeError, match="stop"):
+                with (root / "b.txt").open(mode) as f:
+                    f.write(data)
+                    raise RuntimeError("stop")
+            with pytest.raises(RuntimeError, match="stop"):
+                with (root / "keep.txt").open(mode) as f:
+                    f.write(data)
+                    raise RuntimeError("stop")
+        assert not (root / "b.txt").exists()
+        assert (root / "keep.txt").read_bytes() == b"keep"
+        (root / "c.txt").write_bytes(b"C")
+    assert len(rewrites) == 1
+    members = _members(archive)
+    assert members["a.txt"] == b"A" and members["c.txt"] == b"C"
+    assert members["keep.txt"] == b"keep" and "b.txt" not in members
+
+
 def test_an_exception_in_a_joined_block_discards_the_outer_changes_too(
     archive, rewrites
 ):
