@@ -9,8 +9,8 @@ import textwrap
 
 import pytest
 
-import pathlib_next
-from pathlib_next import providers
+import pathapi
+from pathapi import providers
 
 
 def test_lru_basic_cache_hit():
@@ -106,7 +106,7 @@ def test_paramspec_fallback_importable_without_typing_extensions():
 
         builtins.__import__ = _blocked
 
-        from pathlib_next._lru import LRU, K
+        from pathapi._lru import LRU, K
 
         assert K.args is not None, "ParamSpec fallback lost .args"
         assert K.kwargs is not None, "ParamSpec fallback lost .kwargs"
@@ -206,7 +206,7 @@ def test_parse_mode_keeps_a_mode_and_the_type_bits_of_a_st_mode(good, expected):
 
 
 def test_a_whole_st_mode_still_goes_through_chmod(tmp_path):
-    target = pathlib_next.LocalPath(tmp_path / "f")
+    target = pathapi.LocalPath(tmp_path / "f")
     target.write_text("x")
     target.chmod(target.stat().st_mode)
     target.chmod(stat.S_IMODE(target.stat().st_mode))
@@ -242,7 +242,7 @@ def test_a_name_is_split_as_pathlib_of_this_interpreter_splits_it(name):
 
 
 def test_the_name_helpers_are_the_ones_pathname_uses():
-    from pathlib_next.mempath import MemPath
+    from pathapi.mempath import MemPath
 
     path = MemPath("/d/archive.tar.gz")
     assert path.stem == providers.name_stem(path.name)

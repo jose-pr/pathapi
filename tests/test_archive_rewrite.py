@@ -13,9 +13,9 @@ import zlib
 
 import pytest
 
-from pathlib_next import LocalPath
-from pathlib_next.archive import ZipPath
-from pathlib_next.archive._zip import _ZipBackend
+from pathapi import LocalPath
+from pathapi.archive import ZipPath
+from pathapi.archive._zip import _ZipBackend
 
 
 def _zip(path, inner=""):

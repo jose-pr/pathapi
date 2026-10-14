@@ -16,12 +16,12 @@ import pytest
 
 from ftp_loopback import LoopbackFtp
 
-from pathlib_next import LocalPath, ZipPath
-from pathlib_next.ftp import FTPPath
-from pathlib_next.mempath import MemPath
-from pathlib_next.protocols.io import BinaryOpen
-from pathlib_next.providers import CommitOnClose, DiscardOnError
-from pathlib_next.sync import PathSyncer
+from pathapi import LocalPath, ZipPath
+from pathapi.ftp import FTPPath
+from pathapi.mempath import MemPath
+from pathapi.protocols.io import BinaryOpen
+from pathapi.providers import CommitOnClose, DiscardOnError
+from pathapi.sync import PathSyncer
 
 
 class Recording(io.BytesIO):
@@ -590,7 +590,7 @@ def test_zip_a_failed_block_inside_a_batch_is_not_staged_and_the_rest_commits(
 def test_zip_a_member_write_the_archive_refuses_raises_once_and_is_not_retried(
     tmp_path, monkeypatch
 ):
-    from pathlib_next.archive._zip import _ZipBackend
+    from pathapi.archive._zip import _ZipBackend
 
     archive = _zip(tmp_path, old=b"OLD")
     calls = []

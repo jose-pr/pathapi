@@ -7,8 +7,8 @@ import types
 
 import pytest
 
-from pathlib_next import LocalPath, MemPath, Path
-from pathlib_next.protocols import (
+from pathapi import LocalPath, MemPath, Path
+from pathapi.protocols import (
     BinaryOpen,
     Chmod,
     Chown,

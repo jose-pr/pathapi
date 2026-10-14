@@ -1,7 +1,7 @@
 import pytest
 import unittest.mock
-from pathlib_next.mempath import MemPath
-from pathlib_next import FileStat
+from pathapi.mempath import MemPath
+from pathapi import FileStat
 
 
 def test_rm_ignore_error_callable_false():
@@ -201,7 +201,7 @@ def test_rm_ignore_error_callable_true_suppresses():
 
 
 def test_parse_mode_parses_string_as_octal():
-    from pathlib_next import providers
+    from pathapi import providers
 
     # The whole point: "0755" is base 8, never base 10. int("0755") would be
     # 755 == 0o1363, a different *and valid* mode -- so a wrong answer here
@@ -215,14 +215,14 @@ def test_parse_mode_parses_string_as_octal():
 
 @pytest.mark.parametrize("bad", ["0899", "abc", "", "7 5", "-755"])
 def test_parse_mode_rejects_non_octal(bad):
-    from pathlib_next import providers
+    from pathapi import providers
 
     with pytest.raises(ValueError):
         providers.parse_mode(bad)
 
 
 def test_parse_owner_canonicalizes_unchanged_sentinels():
-    from pathlib_next import providers
+    from pathapi import providers
 
     # -1 (os.chown's spelling) and None both mean "leave unchanged".
     assert providers.parse_owner(None, None) == (None, None)
@@ -393,7 +393,7 @@ def test_rm_recursive_accepts_os_direntry_listing(tmp_path):
     # stdlib's own private `_scandir` does) instead of (name, stat) tuples.
     import os
 
-    from pathlib_next import LocalPath
+    from pathapi import LocalPath
 
     class _DirEntryLocalPath(LocalPath):
         def _scandir(self):
@@ -476,7 +476,7 @@ def test_copying_a_directory_onto_a_file_is_file_exists():
 
 
 def test_the_protocol_stubs_raise_not_implemented_error():
-    from pathlib_next import BinaryOpen, Stat
+    from pathapi import BinaryOpen, Stat
 
     with pytest.raises(NotImplementedError, match="stat"):
         Stat.stat(None)

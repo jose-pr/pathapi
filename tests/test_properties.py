@@ -16,7 +16,7 @@ pytest.importorskip("hypothesis")
 from hypothesis import given, settings  # noqa: E402
 from hypothesis import strategies as st  # noqa: E402
 
-from pathlib_next.mempath import MemPath, MemPathBackend  # noqa: E402
+from pathapi.mempath import MemPath, MemPathBackend  # noqa: E402
 
 # A "safe" path segment: letters/digits/-/_ only, never empty, never "."
 # or ".." -- keeps every property below unambiguous without wading into
@@ -283,7 +283,7 @@ def test_a_mempath_child_keeps_the_name_it_was_given(name):
 )
 @settings(max_examples=300)
 def test_a_name_called_safe_is_one_component_on_both_path_flavours(name):
-    from pathlib_next.providers import is_safe_child_name
+    from pathapi.providers import is_safe_child_name
 
     if is_safe_child_name(name):
         joined = pathlib.PurePosixPath("/d") / name
@@ -298,7 +298,7 @@ def test_a_name_called_safe_is_one_component_on_both_path_flavours(name):
 @given(name=st.text(alphabet="ab./: " + BACKSLASH + chr(0), max_size=14))
 @settings(max_examples=300)
 def test_an_archive_member_name_normalizes_once_and_stays_inside(name):
-    from pathlib_next.archive._names import _normalize_member_name
+    from pathapi.archive._names import _normalize_member_name
 
     normal = _normalize_member_name(name)
     if normal is None:

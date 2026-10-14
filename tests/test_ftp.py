@@ -7,7 +7,7 @@ import ftplib
 
 import pytest
 
-from pathlib_next.ftp import BaseFTPBackend, FTPPath
+from pathapi.ftp import BaseFTPBackend, FTPPath
 
 
 class _FakeFtpClient:

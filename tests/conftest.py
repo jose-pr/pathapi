@@ -11,7 +11,7 @@ import pytest
 import census as census_module
 import hermetic
 from hermetic import NetworkAccessBlocked  # noqa: F401  (re-exported for tests)
-from pathlib_next.mempath import MemPath, MemPathBackend
+from pathapi.mempath import MemPath, MemPathBackend
 
 try:
     from hypothesis import settings as _hypothesis_settings
@@ -19,8 +19,8 @@ except ImportError:  # hypothesis is a dev extra
     pass
 else:
     # A property that is slow on a busy runner is not a failure.
-    _hypothesis_settings.register_profile("pathlib-next", deadline=None)
-    _hypothesis_settings.load_profile("pathlib-next")
+    _hypothesis_settings.register_profile("pathapi", deadline=None)
+    _hypothesis_settings.load_profile("pathapi")
 
 
 @pytest.fixture
@@ -37,10 +37,10 @@ def fixture_tree(tmp_path):
           d.py
       empty_dir/
 
-    Built by the shipped `pathlib_next.testing.populate_fixture_tree()`, so
+    Built by the shipped `pathapi.testing.populate_fixture_tree()`, so
     the in-repo contracts and downstream users share one definition.
     """
-    from pathlib_next.testing import populate_fixture_tree
+    from pathapi.testing import populate_fixture_tree
 
     return populate_fixture_tree(tmp_path)
 
@@ -108,7 +108,7 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         terminalreporter.write_line(line)
     terminalreporter.write_line(
         f"{len(census.items)} alive, {len(census.library_owned())} created by "
-        "pathlib_next (known only under -X tracemalloc)"
+        "pathapi (known only under -X tracemalloc)"
     )
     if mode == "fail" and exitstatus == 0:
         # The summary runs inside `pytest_sessionfinish`; the process exits
@@ -129,7 +129,7 @@ def pytest_configure(config):
     )
     # The session's environment is set before the first test's snapshot of it
     # is taken, and put back when pytest exits.
-    home = tempfile.TemporaryDirectory(prefix="pathlib-next-home-")
+    home = tempfile.TemporaryDirectory(prefix="pathapi-home-")
     patch = pytest.MonkeyPatch()
     hermetic.isolate_environment(patch, home.name)
     config.add_cleanup(home.cleanup)
@@ -197,7 +197,7 @@ def _close_cached_ftp_connections():
     yield
     import sys
 
-    ftp = sys.modules.get("pathlib_next.ftp._backend")
+    ftp = sys.modules.get("pathapi.ftp._backend")
     if ftp is not None:
         for key in list(ftp._CACHED_CLIENTS.cache):
             ftp._CACHED_CLIENTS.discard(*key)

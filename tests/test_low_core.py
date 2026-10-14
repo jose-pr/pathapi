@@ -15,11 +15,11 @@ import types
 
 import pytest
 
-from pathlib_next import LocalPath
-from pathlib_next.mempath import MemPath, MemPathBackend
-from pathlib_next.protocols import BinaryOpen
-from pathlib_next import checksum
-from pathlib_next import FileStat
+from pathapi import LocalPath
+from pathapi.mempath import MemPath, MemPathBackend
+from pathapi.protocols import BinaryOpen
+from pathapi import checksum
+from pathapi import FileStat
 
 # --- open(): handle cleanup, mode validation, line buffering ----------------
 

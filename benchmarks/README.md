@@ -1,6 +1,6 @@
 # Benchmarks
 
-`bench.py` times `pathlib_next` hot paths: path joins, `MemPath` glob,
+`bench.py` times `pathapi` hot paths: path joins, `MemPath` glob,
 `LocalPath` against `pathlib.Path`, `PathSyncer` and recursive copy and remove.
 Method notes and past snapshots are on the docs site's Benchmarks page
 ([`docs/benchmarks.md`](../docs/benchmarks.md)).
@@ -46,19 +46,19 @@ measured on.
 A run on a developer machine is a sanity check. Performance claims in the
 changelog or release notes come from CI runs.
 
-## Result schema (`pathlib_next.bench/1`)
+## Result schema (`pathapi.bench/1`)
 
 One JSON object per run:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `schema` | string | `"pathlib_next.bench/1"`. |
+| `schema` | string | `"pathapi.bench/1"`. |
 | `name` | string | The file name without `.json`. |
 | `suite` | string | `"default"` or the suite name. |
 | `source` | string | `"ci"` when run under GitHub Actions, else `"local"`. |
 | `note` | string or null | `--note` text. |
 | `created_utc` | string | ISO 8601 UTC timestamp of the save. |
-| `package` | object | `{"name": "pathlib-next", "version": <pyproject version>}`. |
+| `package` | object | `{"name": "pathapi", "version": <pyproject version>}`. |
 | `git` | object or null | `{"commit": <HEAD sha>, "dirty": <tracked files modified>}`; null outside a git checkout. |
 | `python` | string | Implementation and version, e.g. `"CPython 3.14.6"`. |
 | `interpreter` | string | `<major.minor>-<os>-<arch>`, where `<os>` is `os.name` (`nt`/`posix`) or `darwin` and `<arch>` is the architecture the interpreter was built for (`sysconfig.get_platform()`). |
@@ -91,7 +91,7 @@ Excerpt (values illustrative):
 
 ```json
 {
-  "schema": "pathlib_next.bench/1",
+  "schema": "pathapi.bench/1",
   "name": "0.10.0-py3.14-posix-x86_64",
   "suite": "default",
   "source": "local",

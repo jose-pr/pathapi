@@ -28,7 +28,7 @@ def test_the_proxy_and_aws_settings_of_the_shell_are_gone():
 
 
 def test_the_developers_home_is_not_the_home_directory():
-    developer_home = os.environ["PATHLIB_NEXT_DEVELOPER_HOME"]
+    developer_home = os.environ["PATHAPI_DEVELOPER_HOME"]
     assert os.path.expanduser("~") != developer_home
     assert pathlib.Path.home() != pathlib.Path(developer_home)
     assert list(pathlib.Path.home().iterdir()) == []

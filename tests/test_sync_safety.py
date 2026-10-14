@@ -12,9 +12,9 @@ import sys
 import pytest
 from capabilities import requires_fifos, requires_junctions
 
-import pathlib_next
-from pathlib_next.mempath import MemPath
-from pathlib_next.sync import PathSyncer, SyncEvent
+import pathapi
+from pathapi.mempath import MemPath
+from pathapi.sync import PathSyncer, SyncEvent
 
 IS_WINDOWS = sys.platform == "win32"
 
@@ -56,8 +56,8 @@ def test_missing_root_source_raises_and_keeps_target(tmp_path, remove_missing):
 
     with pytest.raises(FileNotFoundError):
         syncer.sync(
-            pathlib_next.LocalPath(tmp_path / "typo_does_not_exist"),
-            pathlib_next.LocalPath(target),
+            pathapi.LocalPath(tmp_path / "typo_does_not_exist"),
+            pathapi.LocalPath(target),
         )
 
     assert (target / "keep" / "file.txt").read_text() == "precious"
@@ -68,7 +68,7 @@ def test_missing_root_source_dry_run_raises(tmp_path):
     _write(target / "file.txt", "precious")
     with pytest.raises(FileNotFoundError):
         PathSyncer(_size, remove_missing=True).sync(
-            MemPath("/missing"), pathlib_next.LocalPath(target), dry_run=True
+            MemPath("/missing"), pathapi.LocalPath(target), dry_run=True
         )
     assert (target / "file.txt").read_text() == "precious"
 
@@ -79,7 +79,7 @@ def test_missing_root_source_ignored_error_changes_nothing(tmp_path):
     calls, ignore = _collect()
 
     PathSyncer(_size, remove_missing=True, ignore_error=ignore).sync(
-        MemPath("/missing"), pathlib_next.LocalPath(target)
+        MemPath("/missing"), pathapi.LocalPath(target)
     )
 
     assert (target / "file.txt").read_text() == "precious"
@@ -106,7 +106,7 @@ def test_vanished_child_is_still_removed(tmp_path):
     _write(target / "ghost.txt", "stale")
     _write(target / "a.txt", "aaa")
 
-    PathSyncer(_size, remove_missing=True).sync(source, pathlib_next.LocalPath(target))
+    PathSyncer(_size, remove_missing=True).sync(source, pathapi.LocalPath(target))
 
     assert not (target / "ghost.txt").exists()
     assert (target / "a.txt").read_text() == "aaa"
@@ -152,7 +152,7 @@ def test_dotdot_child_name_raises_and_parent_survives(tmp_path, remove_missing):
 
     with pytest.raises(ValueError):
         PathSyncer(_size, remove_missing=remove_missing).sync(
-            source, pathlib_next.LocalPath(dst)
+            source, pathapi.LocalPath(dst)
         )
 
     _assert_nothing_escaped(tmp_path, mirror)
@@ -169,7 +169,7 @@ def test_name_fallback_producing_dotdot_is_rejected(tmp_path):
     calls, ignore = _collect()
 
     PathSyncer(_size, remove_missing=True, ignore_error=ignore).sync(
-        source, pathlib_next.LocalPath(dst)
+        source, pathapi.LocalPath(dst)
     )
 
     _assert_nothing_escaped(tmp_path, mirror)
@@ -180,7 +180,7 @@ def test_name_fallback_producing_dotdot_is_rejected(tmp_path):
     assert event is SyncEvent.SyncChild
     # MemPath normalizes like PurePosixPath, so the listed "../" is "/src/..".
     assert source_entry.path.as_posix() in ("/src/../", "/src/..")
-    assert target_entry.path == pathlib_next.LocalPath(dst)
+    assert target_entry.path == pathapi.LocalPath(dst)
 
 
 @pytest.mark.skipif(not IS_WINDOWS, reason="backslash/drive only split on Windows")
@@ -193,7 +193,7 @@ def test_windows_unsafe_child_name_never_lands_outside(tmp_path, name):
     mirror, dst = _escape_layout(tmp_path)
     calls, ignore = _collect()
 
-    PathSyncer(_size, ignore_error=ignore).sync(source, pathlib_next.LocalPath(dst))
+    PathSyncer(_size, ignore_error=ignore).sync(source, pathapi.LocalPath(dst))
 
     _assert_nothing_escaped(tmp_path, mirror)
     assert sorted(p.name for p in dst.iterdir()) == ["ok.txt"]
@@ -208,7 +208,7 @@ def test_windows_unsafe_child_name_default_policy_raises(tmp_path):
     mirror, dst = _escape_layout(tmp_path)
 
     with pytest.raises(ValueError):
-        PathSyncer(_size).sync(source, pathlib_next.LocalPath(dst))
+        PathSyncer(_size).sync(source, pathapi.LocalPath(dst))
 
     _assert_nothing_escaped(tmp_path, mirror)
 
@@ -270,7 +270,7 @@ def test_unknown_listing_stat_is_restatted_not_missing(tmp_path, remove_missing)
     _write(target / "doc.txt", "doc")
 
     PathSyncer(_size, follow_symlinks=False, remove_missing=remove_missing).sync(
-        source, pathlib_next.LocalPath(target)
+        source, pathapi.LocalPath(target)
     )
 
     assert (target / "doc.txt").read_text() == "doc"
@@ -292,7 +292,7 @@ def test_target_dir_symlink_is_replaced_not_written_through(tmp_path, follow_sym
     _symlink(elsewhere, dst / "conf", directory=True)
 
     PathSyncer(_size, follow_symlinks=follow_symlinks, remove_missing=True).sync(
-        pathlib_next.LocalPath(src), pathlib_next.LocalPath(dst)
+        pathapi.LocalPath(src), pathapi.LocalPath(dst)
     )
 
     assert (elsewhere / "unrelated.txt").read_text() == "unrelated"
@@ -311,12 +311,12 @@ def test_preserve_then_real_dir_second_run_keeps_outside_data(tmp_path):
     _symlink(shared, src / "conf", directory=True)
     dst = tmp_path / "dst"
     syncer = PathSyncer(_size, follow_symlinks=False, remove_missing=True)
-    syncer.sync(pathlib_next.LocalPath(src), pathlib_next.LocalPath(dst))
+    syncer.sync(pathapi.LocalPath(src), pathapi.LocalPath(dst))
     assert (dst / "conf").is_symlink()
 
     (src / "conf").unlink()
     _write(src / "conf" / "app.ini", "ini")
-    syncer.sync(pathlib_next.LocalPath(src), pathlib_next.LocalPath(dst))
+    syncer.sync(pathapi.LocalPath(src), pathapi.LocalPath(dst))
 
     assert (shared / "team.ini").read_text() == "team"
     assert sorted(p.name for p in shared.iterdir()) == ["team.ini"]
@@ -335,7 +335,7 @@ def test_target_dangling_file_symlink_is_not_written_through(tmp_path, follow_sy
     _symlink(outside / "planted.txt", dst / "a.txt")
 
     PathSyncer(_size, follow_symlinks=follow_symlinks).sync(
-        pathlib_next.LocalPath(src), pathlib_next.LocalPath(dst)
+        pathapi.LocalPath(src), pathapi.LocalPath(dst)
     )
 
     assert list(outside.iterdir()) == []
@@ -355,7 +355,7 @@ def test_root_target_symlink_is_followed(tmp_path, follow_symlinks):
     _write(src / "a.txt", "aaa")
 
     PathSyncer(_size, follow_symlinks=follow_symlinks).sync(
-        pathlib_next.LocalPath(src), pathlib_next.LocalPath(link)
+        pathapi.LocalPath(src), pathapi.LocalPath(link)
     )
 
     assert link.is_symlink()
@@ -372,7 +372,7 @@ def test_source_inside_target_raises_and_source_survives(tmp_path):
 
     with pytest.raises(ValueError):
         PathSyncer(_size, remove_missing=True).sync(
-            pathlib_next.LocalPath(data / "src"), pathlib_next.LocalPath(data)
+            pathapi.LocalPath(data / "src"), pathapi.LocalPath(data)
         )
 
     assert (data / "src" / "only_copy.txt").read_text() == "the only copy"
@@ -426,7 +426,7 @@ def test_overlap_hidden_behind_symlink_is_detected(tmp_path):
 
     with pytest.raises(ValueError):
         PathSyncer(_size, remove_missing=True).sync(
-            pathlib_next.LocalPath(data / "src"), pathlib_next.LocalPath(link)
+            pathapi.LocalPath(data / "src"), pathapi.LocalPath(link)
         )
 
     assert (data / "src" / "only_copy.txt").read_text() == "the only copy"
@@ -437,8 +437,8 @@ def test_sibling_prefix_is_not_an_overlap(tmp_path):
     _write(tmp_path / "data" / "a.txt", "aaa")
 
     PathSyncer(_size).sync(
-        pathlib_next.LocalPath(tmp_path / "data"),
-        pathlib_next.LocalPath(tmp_path / "data2"),
+        pathapi.LocalPath(tmp_path / "data"),
+        pathapi.LocalPath(tmp_path / "data2"),
     )
 
     assert (tmp_path / "data2" / "a.txt").read_text() == "aaa"
@@ -450,7 +450,7 @@ def test_sibling_prefix_is_not_an_overlap(tmp_path):
 import errno
 import stat as stat_module
 
-from pathlib_next import FileStat
+from pathapi import FileStat
 
 
 def _events():
@@ -479,7 +479,7 @@ def test_preserve_onto_backend_without_symlinks_keeps_existing_entry(tmp_path):
     calls, ignore = _collect()
 
     PathSyncer(_size, follow_symlinks=False, ignore_error=ignore).sync(
-        pathlib_next.LocalPath(source), target
+        pathapi.LocalPath(source), target
     )
 
     assert (target / "data" / "precious.txt").read_text() == "precious"
@@ -504,10 +504,10 @@ def test_preserve_runtime_symlink_refusal_keeps_existing_file(tmp_path, monkeypa
     def refuse(self, target, target_is_directory=False):
         raise PermissionError(errno.EPERM, "no symlink privilege", str(self))
 
-    monkeypatch.setattr(pathlib_next.LocalPath, "_symlink_to", refuse)
+    monkeypatch.setattr(pathapi.LocalPath, "_symlink_to", refuse)
     with pytest.raises(PermissionError):
         PathSyncer(_size, follow_symlinks=False).sync(
-            pathlib_next.LocalPath(source), pathlib_next.LocalPath(target)
+            pathapi.LocalPath(source), pathapi.LocalPath(target)
         )
 
     assert (target / "link.txt").read_text() == "previous regular file"
@@ -523,7 +523,7 @@ def test_preserve_replaces_existing_file_with_link(tmp_path):
     _write(target / "link.txt", "old")
 
     PathSyncer(_size, follow_symlinks=False).sync(
-        pathlib_next.LocalPath(source), pathlib_next.LocalPath(target)
+        pathapi.LocalPath(source), pathapi.LocalPath(target)
     )
 
     assert (target / "link.txt").is_symlink()
@@ -573,7 +573,7 @@ def test_failed_copy_keeps_previous_local_version(tmp_path):
     _write(target / "data.bin", "previous good version")
 
     with pytest.raises(ConnectionResetError):
-        PathSyncer(_size).sync(_flaky_source(), pathlib_next.LocalPath(target))
+        PathSyncer(_size).sync(_flaky_source(), pathapi.LocalPath(target))
 
     assert (target / "data.bin").read_text() == "previous good version"
     # The temporary sibling is gone too.
@@ -587,7 +587,7 @@ def test_failed_copy_ignored_keeps_previous_version_and_continues(tmp_path):
     _write(target / "data.bin", "previous good version")
     calls, ignore = _collect()
 
-    PathSyncer(_size, ignore_error=ignore).sync(source, pathlib_next.LocalPath(target))
+    PathSyncer(_size, ignore_error=ignore).sync(source, pathapi.LocalPath(target))
 
     assert (target / "data.bin").read_text() == "previous good version"
     assert (target / "z.txt").read_text() == "later sibling"
@@ -601,7 +601,7 @@ def test_copy_replaces_changed_local_file(tmp_path):
     target = tmp_path / "dst"
     _write(target / "a.txt", "old")
 
-    PathSyncer(_size).sync(source, pathlib_next.LocalPath(target))
+    PathSyncer(_size).sync(source, pathapi.LocalPath(target))
 
     assert (target / "a.txt").read_text() == "new, longer content"
     assert sorted(p.name for p in target.iterdir()) == ["a.txt"]
@@ -654,14 +654,14 @@ def test_dry_run_over_new_subdirectory_with_remove_missing(tmp_path):
 
     dry_events, dry_hook = _events()
     PathSyncer(_size, remove_missing=True, hook=dry_hook).sync(
-        pathlib_next.LocalPath(source), pathlib_next.LocalPath(target), dry_run=True
+        pathapi.LocalPath(source), pathapi.LocalPath(target), dry_run=True
     )
 
     assert sorted(str(p.relative_to(tmp_path)) for p in tmp_path.rglob("*")) == before
 
     real_events, real_hook = _events()
     PathSyncer(_size, remove_missing=True, hook=real_hook).sync(
-        pathlib_next.LocalPath(source), pathlib_next.LocalPath(target)
+        pathapi.LocalPath(source), pathapi.LocalPath(target)
     )
     assert _mutations(dry_events) == _mutations(real_events)
     assert (target / "newsub" / "deep" / "f.txt").read_text() == "f"
@@ -674,7 +674,7 @@ def test_dry_run_onto_absent_root_with_remove_missing(tmp_path):
     target = tmp_path / "dst"
 
     PathSyncer(_size, remove_missing=True).sync(
-        pathlib_next.LocalPath(source), pathlib_next.LocalPath(target), dry_run=True
+        pathapi.LocalPath(source), pathapi.LocalPath(target), dry_run=True
     )
 
     assert not target.exists()
@@ -716,7 +716,7 @@ def test_removed_missing_event_names_the_removed_entry(tmp_path):
     events, hook = _events()
 
     PathSyncer(_size, remove_missing=True, hook=hook).sync(
-        source, pathlib_next.LocalPath(target), dry_run=True
+        source, pathapi.LocalPath(target), dry_run=True
     )
 
     removed = sorted(t for e, _, t, _ in events if e is SyncEvent.RemovedMissing)
@@ -737,7 +737,7 @@ def _nested_trees(tmp_path):
     (source / "l1" / "l2" / "f.txt").write_text("source")
     target = tmp_path / "dst"
     _write(target / "l1" / "l2" / "f.txt", "target")
-    return source, pathlib_next.LocalPath(target)
+    return source, pathapi.LocalPath(target)
 
 
 def test_checksum_error_reaches_policy_once_with_the_file(tmp_path):
@@ -772,7 +772,7 @@ def test_copy_error_reaches_policy_once(tmp_path):
 
     with pytest.raises(ConnectionResetError):
         PathSyncer(_size, ignore_error=decline).sync(
-            _flaky_source(), pathlib_next.LocalPath(target)
+            _flaky_source(), pathapi.LocalPath(target)
         )
 
     assert calls == [(str(target / "data.bin"), SyncEvent.Copy)]
@@ -787,8 +787,8 @@ def test_root_file_pair_checksum_error_reaches_policy(tmp_path):
     calls, ignore = _collect()
 
     PathSyncer(bad_checksum, ignore_error=ignore).sync(
-        pathlib_next.LocalPath(tmp_path / "a.txt"),
-        pathlib_next.LocalPath(tmp_path / "b.txt"),
+        pathapi.LocalPath(tmp_path / "a.txt"),
+        pathapi.LocalPath(tmp_path / "b.txt"),
     )
 
     assert [event for _, _, _, event in calls] == [SyncEvent.Compare]
@@ -796,8 +796,8 @@ def test_root_file_pair_checksum_error_reaches_policy(tmp_path):
 
     with pytest.raises(RuntimeError):
         PathSyncer(bad_checksum).sync(
-            pathlib_next.LocalPath(tmp_path / "a.txt"),
-            pathlib_next.LocalPath(tmp_path / "b.txt"),
+            pathapi.LocalPath(tmp_path / "a.txt"),
+            pathapi.LocalPath(tmp_path / "b.txt"),
         )
 
 
@@ -816,9 +816,7 @@ def test_tolerated_compare_error_does_not_stop_siblings(tmp_path):
     _write(target / "good.txt", "old")
     calls, ignore = _collect()
 
-    PathSyncer(checksum, ignore_error=ignore).sync(
-        source, pathlib_next.LocalPath(target)
-    )
+    PathSyncer(checksum, ignore_error=ignore).sync(source, pathapi.LocalPath(target))
 
     assert len(calls) == 1
     assert (target / "bad.txt").read_text() == "target"
@@ -856,7 +854,7 @@ def test_special_source_entry_is_skipped_not_made_a_directory(
 
     PathSyncer(
         _size, remove_missing=True, follow_symlinks=follow_symlinks, hook=hook
-    ).sync(source, pathlib_next.LocalPath(target))
+    ).sync(source, pathapi.LocalPath(target))
 
     assert (target / "fifo").read_text() == "a regular target file"
     assert (target / "z.txt").read_text() == "later sibling"
@@ -875,9 +873,7 @@ def test_real_fifo_is_skipped(tmp_path):
     target = tmp_path / "dst"
     _write(target / "pipe", "keep me")
 
-    PathSyncer(_size).sync(
-        pathlib_next.LocalPath(source), pathlib_next.LocalPath(target)
-    )
+    PathSyncer(_size).sync(pathapi.LocalPath(source), pathapi.LocalPath(target))
 
     assert (target / "pipe").read_text() == "keep me"
     assert (target / "z.txt").read_text() == "z"
@@ -885,7 +881,7 @@ def test_real_fifo_is_skipped(tmp_path):
 
 # --- a listed entry is never "missing" ---------------------------------------
 
-from pathlib_next.sync import PathAndStat
+from pathapi.sync import PathAndStat
 
 
 def _dangling_layout(tmp_path):
@@ -910,7 +906,7 @@ def test_dangling_source_link_is_an_error_not_a_removal(
     calls, ignore = _collect()
 
     PathSyncer(_size, remove_missing=remove_missing, ignore_error=ignore).sync(
-        pathlib_next.LocalPath(src), pathlib_next.LocalPath(dst), dry_run=dry_run
+        pathapi.LocalPath(src), pathapi.LocalPath(dst), dry_run=dry_run
     )
 
     assert (dst / "data" / "precious.txt").read_text() == "precious"
@@ -934,7 +930,7 @@ def test_dangling_source_link_raises_by_default_and_keeps_target(
 
     with pytest.raises(FileNotFoundError):
         PathSyncer(_size, remove_missing=remove_missing).sync(
-            pathlib_next.LocalPath(src), pathlib_next.LocalPath(dst)
+            pathapi.LocalPath(src), pathapi.LocalPath(dst)
         )
 
     assert (dst / "data" / "precious.txt").read_text() == "precious"
@@ -952,7 +948,7 @@ def test_source_link_loop_is_an_error_for_that_entry_only(tmp_path):
     calls, ignore = _collect()
 
     PathSyncer(_size, remove_missing=True, ignore_error=ignore).sync(
-        pathlib_next.LocalPath(src), pathlib_next.LocalPath(dst)
+        pathapi.LocalPath(src), pathapi.LocalPath(dst)
     )
 
     assert (dst / "a").read_text() == "precious a"
@@ -966,7 +962,7 @@ def test_dangling_link_is_synced_as_a_link_when_links_are_not_followed(tmp_path)
     src, dst = _dangling_layout(tmp_path)
 
     PathSyncer(_size, follow_symlinks=False, remove_missing=True).sync(
-        pathlib_next.LocalPath(src), pathlib_next.LocalPath(dst)
+        pathapi.LocalPath(src), pathapi.LocalPath(dst)
     )
 
     assert (dst / "data").is_symlink() and (dst / "file.txt").is_symlink()
@@ -1058,12 +1054,12 @@ def test_junction_in_target_is_replaced_and_what_it_names_is_untouched(
     events, hook = _events()
 
     PathSyncer(_size, remove_missing=remove_missing, hook=hook).sync(
-        pathlib_next.LocalPath(src), pathlib_next.LocalPath(dst)
+        pathapi.LocalPath(src), pathapi.LocalPath(dst)
     )
 
     assert (outside / "unrelated.txt").read_text() == "unrelated"
     assert sorted(p.name for p in outside.iterdir()) == ["unrelated.txt"]
-    assert not pathlib_next.LocalPath(dst / "sub").is_junction()
+    assert not pathapi.LocalPath(dst / "sub").is_junction()
     assert (dst / "sub" / "new.txt").read_text() == "new"
     mismatches = [t for e, _, t, _ in events if e is SyncEvent.TypeMismatch]
     assert mismatches == [str(dst / "sub")]
@@ -1082,13 +1078,13 @@ def test_dry_run_leaves_a_junction_in_target_and_reports_its_replacement(tmp_pat
     real_events, real_hook = _events()
 
     PathSyncer(_size, remove_missing=True, hook=dry_hook).sync(
-        pathlib_next.LocalPath(src), pathlib_next.LocalPath(dst), dry_run=True
+        pathapi.LocalPath(src), pathapi.LocalPath(dst), dry_run=True
     )
 
-    assert pathlib_next.LocalPath(dst / "sub").is_junction()
+    assert pathapi.LocalPath(dst / "sub").is_junction()
     assert sorted(p.name for p in outside.iterdir()) == ["unrelated.txt"]
     PathSyncer(_size, remove_missing=True, hook=real_hook).sync(
-        pathlib_next.LocalPath(src), pathlib_next.LocalPath(dst)
+        pathapi.LocalPath(src), pathapi.LocalPath(dst)
     )
     assert _mutations(dry_events) == _mutations(real_events)
     assert sorted(p.name for p in outside.iterdir()) == ["unrelated.txt"]
@@ -1107,7 +1103,7 @@ def test_junction_missing_from_source_is_removed_without_emptying_what_it_names(
     _junction(outside, dst / "gone")
 
     PathSyncer(_size, remove_missing=True).sync(
-        pathlib_next.LocalPath(src), pathlib_next.LocalPath(dst)
+        pathapi.LocalPath(src), pathapi.LocalPath(dst)
     )
 
     assert not (dst / "gone").exists()
@@ -1118,12 +1114,12 @@ def test_junction_missing_from_source_is_removed_without_emptying_what_it_names(
 def mount_named_mounted(monkeypatch):
     """`is_mount()` answers True for a directory called `mounted`; creating a
     real mount point needs privileges."""
-    real_is_mount = pathlib_next.LocalPath.is_mount
+    real_is_mount = pathapi.LocalPath.is_mount
 
     def fake_is_mount(self):
         return self.name == "mounted" or real_is_mount(self)
 
-    monkeypatch.setattr(pathlib_next.LocalPath, "is_mount", fake_is_mount)
+    monkeypatch.setattr(pathapi.LocalPath, "is_mount", fake_is_mount)
 
 
 def test_mount_point_in_target_is_part_of_the_tree(tmp_path, mount_named_mounted):
@@ -1136,9 +1132,7 @@ def test_mount_point_in_target_is_part_of_the_tree(tmp_path, mount_named_mounted
     _write(dst / "mounted" / "theirs.txt", "theirs")
     events, hook = _events()
 
-    PathSyncer(_size, hook=hook).sync(
-        pathlib_next.LocalPath(src), pathlib_next.LocalPath(dst)
-    )
+    PathSyncer(_size, hook=hook).sync(pathapi.LocalPath(src), pathapi.LocalPath(dst))
 
     assert (dst / "mounted" / "new.txt").read_text() == "new"
     assert (dst / "mounted" / "theirs.txt").read_text() == "theirs"
@@ -1155,7 +1149,7 @@ def test_mount_point_in_target_follows_remove_missing_like_a_directory(
     _write(dst / "mounted" / "stale.txt", "stale")
 
     PathSyncer(_size, remove_missing=True).sync(
-        pathlib_next.LocalPath(src), pathlib_next.LocalPath(dst)
+        pathapi.LocalPath(src), pathapi.LocalPath(dst)
     )
 
     assert sorted(p.name for p in (dst / "mounted").iterdir()) == ["new.txt"]
@@ -1172,9 +1166,9 @@ def test_junction_that_is_a_mount_point_is_synced_into(tmp_path, mount_named_mou
     dst.mkdir()
     _junction(outside, dst / "mounted")
 
-    PathSyncer(_size).sync(pathlib_next.LocalPath(src), pathlib_next.LocalPath(dst))
+    PathSyncer(_size).sync(pathapi.LocalPath(src), pathapi.LocalPath(dst))
 
-    assert pathlib_next.LocalPath(dst / "mounted").is_junction()
+    assert pathapi.LocalPath(dst / "mounted").is_junction()
     assert (outside / "new.txt").read_text() == "new"
     assert (outside / "theirs.txt").read_text() == "theirs"
 
@@ -1187,7 +1181,7 @@ def test_root_target_that_is_a_mount_point_is_used_as_given(
     dst = tmp_path / "mounted"
     _write(dst / "theirs.txt", "theirs")
 
-    PathSyncer(_size).sync(pathlib_next.LocalPath(src), pathlib_next.LocalPath(dst))
+    PathSyncer(_size).sync(pathapi.LocalPath(src), pathapi.LocalPath(dst))
 
     assert (dst / "new.txt").read_text() == "new"
     assert (dst / "theirs.txt").read_text() == "theirs"
@@ -1207,7 +1201,7 @@ def _mount_trees(tmp_path):
     _write(src / "own.txt", "own")
     dst = tmp_path / "dst"
     _write(dst / "mounted" / "theirs.txt", "theirs")
-    return pathlib_next.LocalPath(src), pathlib_next.LocalPath(dst), dst
+    return pathapi.LocalPath(src), pathapi.LocalPath(dst), dst
 
 
 def test_follow_mounts_true_syncs_into_a_mount_point_as_by_default(
@@ -1301,7 +1295,7 @@ def test_follow_mounts_false_still_uses_a_root_target_that_is_a_mount_point(
     _write(dst / "theirs.txt", "theirs")
 
     PathSyncer(_size, follow_mounts=False).sync(
-        pathlib_next.LocalPath(src), pathlib_next.LocalPath(dst)
+        pathapi.LocalPath(src), pathapi.LocalPath(dst)
     )
 
     assert (dst / "new.txt").read_text() == "new"
@@ -1320,10 +1314,10 @@ def test_junction_is_replaced_under_either_follow_mounts(tmp_path, follow_mounts
     _junction(outside, dst / "sub")
 
     PathSyncer(_size, follow_mounts=follow_mounts).sync(
-        pathlib_next.LocalPath(src), pathlib_next.LocalPath(dst)
+        pathapi.LocalPath(src), pathapi.LocalPath(dst)
     )
 
-    assert not pathlib_next.LocalPath(dst / "sub").is_junction()
+    assert not pathapi.LocalPath(dst / "sub").is_junction()
     assert (dst / "sub" / "new.txt").read_text() == "new"
     assert (outside / "unrelated.txt").read_text() == "unrelated"
     assert sorted(p.name for p in outside.iterdir()) == ["unrelated.txt"]
@@ -1346,8 +1340,8 @@ def test_follow_mounts_false_does_not_ask_a_class_that_cannot_say(tmp_path):
 import re
 import time
 
-from pathlib_next.mempath import MemPathBackend
-from pathlib_next.sync._replace import _is_leftover, _temp_sibling
+from pathapi.mempath import MemPathBackend
+from pathapi.sync._replace import _is_leftover, _temp_sibling
 
 DAY = 24 * 60 * 60
 
@@ -1451,7 +1445,7 @@ def test_unlink_refused_during_the_fallback_keeps_the_old_version():
     assert sorted(backend["dst"]) == ["f.txt"]
 
 
-class _FailingRenameLocal(pathlib_next.LocalPath):
+class _FailingRenameLocal(pathapi.LocalPath):
     """A local path whose rename of a temporary file fails."""
 
     def rename(self, target):
@@ -1469,7 +1463,7 @@ def test_failed_rename_of_a_replacing_link_keeps_the_temporary_link(tmp_path):
 
     with pytest.raises(ConnectionResetError) as caught:
         PathSyncer(_size, follow_symlinks=False).sync(
-            pathlib_next.LocalPath(source), _FailingRenameLocal(target)
+            pathapi.LocalPath(source), _FailingRenameLocal(target)
         )
 
     kept = _leftovers(os.listdir(target))
@@ -1480,7 +1474,7 @@ def test_failed_rename_of_a_replacing_link_keeps_the_temporary_link(tmp_path):
 
 
 def test_failed_creation_of_a_replacing_link_keeps_the_previous_entry(tmp_path):
-    class NoLinks(pathlib_next.LocalPath):
+    class NoLinks(pathapi.LocalPath):
         def _symlink_to(self, target, target_is_directory=False):
             raise PermissionError(errno.EPERM, "denied", str(self))
 
@@ -1492,7 +1486,7 @@ def test_failed_creation_of_a_replacing_link_keeps_the_previous_entry(tmp_path):
 
     with pytest.raises(PermissionError):
         PathSyncer(_size, follow_symlinks=False).sync(
-            pathlib_next.LocalPath(source), NoLinks(target)
+            pathapi.LocalPath(source), NoLinks(target)
         )
 
     assert (target / "lnk").read_text() == "previous regular file"
@@ -1560,7 +1554,7 @@ def test_temp_sibling_fits_the_name_limit_and_keeps_its_suffix(name):
         assert temp.parent == path.parent
         assert len(temp.name.encode("utf-8")) <= 255
         assert _is_leftover(temp.name)
-        assert temp.name.endswith(".pathlib-next-tmp")
+        assert temp.name.endswith(".pathapi-tmp")
     assert first != second
     if len(name.encode("utf-8")) <= 200:
         assert first.name.startswith("." + name + ".")
@@ -1569,8 +1563,8 @@ def test_temp_sibling_fits_the_name_limit_and_keeps_its_suffix(name):
 def test_changed_local_file_with_a_250_character_name_is_updated(tmp_path):
     prefix = "\\\\?\\" if IS_WINDOWS else ""
     name = "n" * 246 + ".txt"
-    source = pathlib_next.LocalPath(prefix + str(tmp_path / "src"))
-    target = pathlib_next.LocalPath(prefix + str(tmp_path / "dst"))
+    source = pathapi.LocalPath(prefix + str(tmp_path / "src"))
+    target = pathapi.LocalPath(prefix + str(tmp_path / "dst"))
     source.mkdir()
     (source / name).write_text("first")
     try:
@@ -1598,22 +1592,22 @@ def _put(directory, name, text="partial", age=0.0):
     return path
 
 
-STALE = ".big.bin.aaaaaaaaaaaa.pathlib-next-tmp"
-FRESH = ".big.bin.bbbbbbbbbbbb.pathlib-next-tmp"
+STALE = ".big.bin.aaaaaaaaaaaa.pathapi-tmp"
+FRESH = ".big.bin.bbbbbbbbbbbb.pathapi-tmp"
 
 
 def test_only_the_full_temp_pattern_is_a_leftover():
     assert _is_leftover(STALE)
-    assert _is_leftover("..dot.0123456789ab.pathlib-next-tmp")
+    assert _is_leftover("..dot.0123456789ab.pathapi-tmp")
     for name in (
         "x-tmp",
-        "x.pathlib-next-tmp",
-        ".x.pathlib-next-tmp",
-        ".x.0123456789AB.pathlib-next-tmp",
-        ".x.0123456789a.pathlib-next-tmp",
-        "..0123456789ab.pathlib-next-tmp",
-        ".x.0123456789ab.pathlib-next-tmp.bak",
-        "a.0123456789ab.pathlib-next-tmp",
+        "x.pathapi-tmp",
+        ".x.pathapi-tmp",
+        ".x.0123456789AB.pathapi-tmp",
+        ".x.0123456789a.pathapi-tmp",
+        "..0123456789ab.pathapi-tmp",
+        ".x.0123456789ab.pathapi-tmp.bak",
+        "a.0123456789ab.pathapi-tmp",
     ):
         assert not _is_leftover(name), name
 
@@ -1622,7 +1616,7 @@ def test_only_the_full_temp_pattern_is_a_leftover():
 def test_a_leftover_is_never_a_sync_source(remove_missing):
     source = MemPath("/src")
     source.mkdir()
-    for name in ("big.bin", STALE, "report-tmp", ".x.pathlib-next-tmp"):
+    for name in ("big.bin", STALE, "report-tmp", ".x.pathapi-tmp"):
         (source / name).write_text("content")
     target = MemPath("/dst")
     events, hook = _events()
@@ -1630,7 +1624,7 @@ def test_a_leftover_is_never_a_sync_source(remove_missing):
     PathSyncer(_size, remove_missing=remove_missing, hook=hook).sync(source, target)
 
     assert sorted(target.backend["dst"]) == [
-        ".x.pathlib-next-tmp",
+        ".x.pathapi-tmp",
         "big.bin",
         "report-tmp",
     ]
@@ -1661,8 +1655,8 @@ def leftover_layout():
     _put(target, STALE, age=2 * DAY)
     _put(target, FRESH, age=3600)
     _put(target, "x-tmp", age=2 * DAY)
-    _put(target, ".big.bin.nothex.pathlib-next-tmp", age=2 * DAY)
-    (target / ".dir.cccccccccccc.pathlib-next-tmp").mkdir()
+    _put(target, ".big.bin.nothex.pathapi-tmp", age=2 * DAY)
+    (target / ".dir.cccccccccccc.pathapi-tmp").mkdir()
     source = MemPath("/src")
     source.mkdir()
     (source / "big.bin").write_text("new content, longer")
@@ -1683,8 +1677,8 @@ def test_stale_leftover_is_removed_where_a_file_is_rewritten(leftover_layout):
             "big.bin",
             FRESH,
             "x-tmp",
-            ".big.bin.nothex.pathlib-next-tmp",
-            ".dir.cccccccccccc.pathlib-next-tmp",
+            ".big.bin.nothex.pathapi-tmp",
+            ".dir.cccccccccccc.pathapi-tmp",
         ]
     )
     removed = [t for e, _, t, _ in events if e is SyncEvent.RemovedMissing]
@@ -1716,7 +1710,7 @@ def test_remove_missing_removes_a_stale_leftover_and_keeps_a_fresh_one(
     PathSyncer(_size, remove_missing=True).sync(source, target)
 
     assert sorted(backend["dst"]) == sorted(
-        ["big.bin", FRESH, ".dir.cccccccccccc.pathlib-next-tmp"]
+        ["big.bin", FRESH, ".dir.cccccccccccc.pathapi-tmp"]
     )
 
 
@@ -1777,7 +1771,7 @@ def _link_source(tmp_path):
     _write(source / "a.txt", "aaa")
     _symlink("a.txt", source / "lnk")
     _write(source / "z.txt", "zzz")
-    return pathlib_next.LocalPath(source)
+    return pathapi.LocalPath(source)
 
 
 @pytest.mark.parametrize("remove_missing", [False, True])
@@ -1859,7 +1853,7 @@ def _mem_tree():
     ],
 )
 def test_overlap_sees_one_mempath_tree_under_another_spelling(spelling, overlap):
-    from pathlib_next.sync._paths import _paths_overlap
+    from pathapi.sync._paths import _paths_overlap
 
     backend, root = _mem_tree()
     other = MemPath(spelling, backend=backend)

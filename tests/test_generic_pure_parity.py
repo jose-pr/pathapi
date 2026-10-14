@@ -12,8 +12,8 @@ import types
 
 import pytest
 
-from pathlib_next.path import _pure as path_module
-from pathlib_next.mempath import MemPath
+from pathapi.path import _pure as path_module
+from pathapi.mempath import MemPath
 
 GENERIC = [MemPath]
 

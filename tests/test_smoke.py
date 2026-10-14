@@ -1,7 +1,7 @@
 """Regression lock-in for currently-correct behavior (safety net).
 
 These are the snippets from README.md's Quick start that don't touch the
-network, plus the no-dependency contract: `pip install pathlib-next` installs
+network, plus the no-dependency contract: `pip install pathapi` installs
 nothing else, so the package and everything it ships must import and work with
 the standard library alone.
 """
@@ -17,11 +17,11 @@ import textwrap
 
 import pytest
 
-import pathlib_next
-from pathlib_next import Path, glob
-from pathlib_next.mempath import MemPath
+import pathapi
+from pathapi import Path, glob
+from pathapi.mempath import MemPath
 
-PACKAGE = pathlib.Path(pathlib_next.__file__).resolve().parent
+PACKAGE = pathlib.Path(pathapi.__file__).resolve().parent
 
 #: Third-party packages a Python environment commonly holds. Blocking them in a
 #: child interpreter shows that nothing the package imports needs one.
@@ -56,18 +56,18 @@ def _run_python(code: str, *, block_third_party: bool = False) -> str:
 
 
 def test_import_bare():
-    import pathlib_next  # noqa: F401
+    import pathapi  # noqa: F401
 
 
 def test_the_package_and_its_providers_import_and_work_with_third_party_packages_blocked():
     out = _run_python(
         """
-        import pathlib_next
-        from pathlib_next import LocalPath, Path, glob, sync
-        from pathlib_next.mempath import MemPath
-        import pathlib_next.archive, pathlib_next.ftp, pathlib_next.http
+        import pathapi
+        from pathapi import LocalPath, Path, glob, sync
+        from pathapi.mempath import MemPath
+        import pathapi.archive, pathapi.ftp, pathapi.http
 
-        assert not hasattr(pathlib_next, "UriPath")
+        assert not hasattr(pathapi, "UriPath")
         path = MemPath("a") / "b.txt"
         path.parent.mkdir(parents=True)
         path.write_text("x")
@@ -81,7 +81,7 @@ def test_the_package_and_its_providers_import_and_work_with_third_party_packages
 def test_importing_the_root_loads_no_third_party_package():
     out = _run_python("""
         import sys
-        import pathlib_next
+        import pathapi
         print(sorted(m for m in %r if m in sys.modules))
         """ % (BLOCKED,))
     assert out.split("\n")[0] == "[]"
@@ -144,7 +144,7 @@ def test_no_module_of_the_package_needs_anything_outside_the_standard_library():
             else:
                 continue
             for top in tops:
-                if top != "pathlib_next" and not _is_standard_library(top):
+                if top != "pathapi" and not _is_standard_library(top):
                     found.setdefault(top, set()).add(
                         path.relative_to(PACKAGE).as_posix()
                     )
@@ -153,7 +153,7 @@ def test_no_module_of_the_package_needs_anything_outside_the_standard_library():
 
 def test_readme_local_path():
     local_path = Path("./my_folder")
-    assert isinstance(local_path, pathlib_next.LocalPath)
+    assert isinstance(local_path, pathapi.LocalPath)
 
 
 def test_example_mempath_roundtrip(tmp_path):

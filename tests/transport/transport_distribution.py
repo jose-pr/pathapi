@@ -11,9 +11,9 @@ import subprocess
 import sys
 import textwrap
 
-import pathlib_next
+import pathapi
 
-_SRC = pathlib.Path(pathlib_next.__file__).resolve().parent.parent
+_SRC = pathlib.Path(pathapi.__file__).resolve().parent.parent
 
 
 def install(directory, name, entry_points, modules):
@@ -38,7 +38,7 @@ def install(directory, name, entry_points, modules):
 
 def run(code, *directories, env=None):
     """Runs `code` in a child interpreter whose import path starts with this
-    checkout of `pathlib_next` and `directories`, with `env` added to its
+    checkout of `pathapi` and `directories`, with `env` added to its
     environment, and returns what it printed as JSON (the last line)."""
     child = {**os.environ, **(env or {})}
     child["PYTHONPATH"] = os.pathsep.join(

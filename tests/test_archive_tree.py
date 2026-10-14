@@ -10,9 +10,9 @@ import zipfile
 
 import pytest
 
-from pathlib_next.archive import TarPath, ZipPath
-from pathlib_next.mempath import MemPath
-from pathlib_next.archive._zip import _ZipBackend
+from pathapi.archive import TarPath, ZipPath
+from pathapi.mempath import MemPath
+from pathapi.archive._zip import _ZipBackend
 
 
 def _zip(path, inner=""):

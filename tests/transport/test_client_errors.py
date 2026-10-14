@@ -8,7 +8,7 @@ import traceback
 
 import pytest
 
-from pathlib_next.http import (
+from pathapi.http import (
     HTTPClient,
     HTTPStatusError,
     os_error,

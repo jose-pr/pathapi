@@ -4,8 +4,8 @@ command it receives (tests/ftp_loopback.py)."""
 
 import pytest
 
-from pathlib_next.ftp import FTPBackend, FTPPath
-from pathlib_next.ftp import _backend as ftp_mod
+from pathapi.ftp import FTPBackend, FTPPath
+from pathapi.ftp import _backend as ftp_mod
 
 from ftp_loopback import LoopbackFtp
 

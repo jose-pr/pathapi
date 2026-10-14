@@ -12,10 +12,10 @@ import itertools
 
 import pytest
 
-from pathlib_next import LocalPath
-from pathlib_next.mempath import MemPath
-from pathlib_next import FileStat
-from pathlib_next.sync import PathSyncer, SyncEvent
+from pathapi import LocalPath
+from pathapi.mempath import MemPath
+from pathapi import FileStat
+from pathapi.sync import PathSyncer, SyncEvent
 
 UNSAFE = ["a/b", "..", ".", ""]
 

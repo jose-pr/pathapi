@@ -5,9 +5,9 @@ import stat as _stat
 
 import pytest
 
-from pathlib_next.mempath import MemPath
-from pathlib_next import FileStat
-from pathlib_next.sync import PathSyncer, SyncEvent
+from pathapi.mempath import MemPath
+from pathapi import FileStat
+from pathapi.sync import PathSyncer, SyncEvent
 
 DIRECTORIES = 3
 FILES_PER_DIRECTORY = 4

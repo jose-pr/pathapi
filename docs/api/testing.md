@@ -1,10 +1,10 @@
 # Testing Contracts API
 
-::: pathlib_next.testing
+::: pathapi.testing
 
 ## HTTP transport suite
 
 Testing support, not part of the stable API: its contents may change in any
 release.
 
-::: pathlib_next.http.testing
+::: pathapi.http.testing

@@ -9,8 +9,8 @@ import io
 
 import pytest
 
-from pathlib_next import FileStat, MemPath, Path, Pathname, checksum, glob, sync
-from pathlib_next.protocols import (
+from pathapi import FileStat, MemPath, Path, Pathname, checksum, glob, sync
+from pathapi.protocols import (
     BinaryOpen,
     Copy,
     Listing,
@@ -157,8 +157,8 @@ def test_a_second_sync_changes_nothing(root):
 
 
 def test_a_contract_test_skips_for_a_protocol_the_class_lacks_and_names_it(root):
-    from pathlib_next.protocols import Create, Listing
-    from pathlib_next.testing import ReadPathContract
+    from pathapi.protocols import Create, Listing
+    from pathapi.testing import ReadPathContract
 
     contract = ReadPathContract()
     contract._support(root, Listing)

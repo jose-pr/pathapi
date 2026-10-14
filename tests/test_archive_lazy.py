@@ -11,8 +11,8 @@ import zipfile
 
 import pytest
 
-from pathlib_next.archive import ArchivePath, TarPath, ZipPath
-from pathlib_next.mempath import MemPath, MemPathBackend
+from pathapi.archive import ArchivePath, TarPath, ZipPath
+from pathapi.mempath import MemPath, MemPathBackend
 
 
 def _zip_bytes(members):

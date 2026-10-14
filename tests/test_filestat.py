@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import stat
 
-from pathlib_next import FileStat
+from pathapi import FileStat
 
 
 def test_repr_shows_a_small_size_as_a_plain_number():
@@ -83,7 +83,7 @@ def test_filestat_methods():
 
 
 def test_stat_protocol_helpers():
-    from pathlib_next.protocols.fs import Stat
+    from pathapi.protocols.fs import Stat
 
     class StubStatPath(Stat):
         def __init__(self, mode):

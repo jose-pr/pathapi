@@ -238,12 +238,12 @@ def test_the_isolated_environment_has_no_proxy_cloud_or_home_setting(
             "NETRC": "x",
             "REQUESTS_CA_BUNDLE": "x",
             "SSH_AUTH_SOCK": "x",
-            "PATHLIB_NEXT_KEEP": "yes",
+            "PATHAPI_KEEP": "yes",
         }.items():
             patch.setenv(name, value)
         hermetic.isolate_environment(patch, tmp_path)
 
-        assert os.environ["PATHLIB_NEXT_KEEP"] == "yes"
+        assert os.environ["PATHAPI_KEEP"] == "yes"
         for gone in (
             "HTTP_PROXY",
             "https_proxy",
@@ -273,7 +273,7 @@ def test_the_isolated_environment_has_no_proxy_cloud_or_home_setting(
 def test_a_proxy_in_the_developers_shell_is_not_used_by_the_built_in_transport(
     http_server,
 ):
-    from pathlib_next.http import HTTPClient
+    from pathapi.http import HTTPClient
 
     with HTTPClient() as client:
         assert client.request("GET", f"{http_server}/a.txt").read() == b"a"
@@ -297,7 +297,7 @@ def _probe(name, tmp_path, extra_env=None):
         AWS_ENDPOINT_URL="http://127.0.0.1:9",
         HOME=str(home),
         USERPROFILE=str(home),
-        PATHLIB_NEXT_DEVELOPER_HOME=str(home),
+        PATHAPI_DEVELOPER_HOME=str(home),
     )
     env.update(extra_env or {})
     env["PYTHONPATH"] = os.pathsep.join(
@@ -336,4 +336,4 @@ def test_a_test_that_leaves_the_environment_changed_fails_at_teardown(tmp_path):
     assert result.returncode != 0
     assert "2 passed, 1 error" in result.stdout, result.stdout
     assert "left the process environment changed" in result.stdout
-    assert "PATHLIB_NEXT_LEAKED: None -> 'yes'" in result.stdout
+    assert "PATHAPI_LEAKED: None -> 'yes'" in result.stdout

@@ -5,24 +5,24 @@ the protocols it lists (`stat`, `_open`, `iterdir`, `unlink`, `readlink`, ...) a
 inherits everything derived from them; `supports()` and `capabilities()` say which
 primitives a class has.
 
-::: pathlib_next.protocols
+::: pathapi.protocols
     options:
       members:
         - supports
         - capabilities
 
-::: pathlib_next.protocols.pure
+::: pathapi.protocols.pure
 
-::: pathlib_next.protocols.fs
+::: pathapi.protocols.fs
 
-::: pathlib_next.protocols.io
+::: pathapi.protocols.io
 
-::: pathlib_next.protocols.tree
+::: pathapi.protocols.tree
 
-::: pathlib_next.protocols.links
+::: pathapi.protocols.links
 
-::: pathlib_next.protocols.resolve
+::: pathapi.protocols.resolve
 
-::: pathlib_next.protocols.transfer
+::: pathapi.protocols.transfer
 
-::: pathlib_next.protocols.checksum
+::: pathapi.protocols.checksum

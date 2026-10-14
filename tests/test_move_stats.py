@@ -7,8 +7,8 @@ import collections
 
 import pytest
 
-from pathlib_next.path import _transfer
-from pathlib_next.mempath import MemPath
+from pathapi.path import _transfer
+from pathapi.mempath import MemPath
 
 
 class Counted(MemPath):

@@ -16,10 +16,10 @@ import pytest
 
 from waits import wait_until
 
-from pathlib_next import LocalPath
-from pathlib_next.ftp import FTPBackend, FTPPath
-from pathlib_next.ftp import _backend as ftp_mod
-from pathlib_next.ftp._facts import facts_to_filestat
+from pathapi import LocalPath
+from pathapi.ftp import FTPBackend, FTPPath
+from pathapi.ftp import _backend as ftp_mod
+from pathapi.ftp._facts import facts_to_filestat
 
 
 def _backend(url, **options):

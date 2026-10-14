@@ -1,7 +1,7 @@
 import os
 import unittest.mock
-from pathlib_next.mempath import MemPath
-from pathlib_next.fspath import LocalPath
+from pathapi.mempath import MemPath
+from pathapi.fspath import LocalPath
 
 
 def populate_mempath_tree(root: MemPath):

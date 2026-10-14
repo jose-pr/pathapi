@@ -17,7 +17,7 @@ import time
 
 import pytest
 
-from pathlib_next.ftp import FTPBackend, FTPPath
+from pathapi.ftp import FTPBackend, FTPPath
 
 # --- loopback servers -------------------------------------------------------
 

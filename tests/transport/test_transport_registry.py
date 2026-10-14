@@ -1,18 +1,18 @@
 """The HTTP transports a distribution can provide: listed without importing
-them, loaded by name from the `pathlib_next.http_transports` entry-point group,
-and chosen by `PATHLIB_NEXT_HTTP_TRANSPORT`."""
+them, loaded by name from the `pathapi.http_transports` entry-point group,
+and chosen by `PATHAPI_HTTP_TRANSPORT`."""
 
 from __future__ import annotations
 
 import pytest
 
-from pathlib_next.http import HTTPClient, HTTPTransport, _transports, get_transport
-from pathlib_next.http import transport_names
+from pathapi.http import HTTPClient, HTTPTransport, _transports, get_transport
+from pathapi.http import transport_names
 from transport_distribution import install, run
 
 REQUESTS_MESSAGE = (
-    "the 'requests' HTTP transport is provided by the pathlib-next-requests "
-    "distribution: pip install pathlib-next-requests"
+    "the 'requests' HTTP transport is provided by the pathapi-requests "
+    "distribution: pip install pathapi-requests"
 )
 
 
@@ -51,7 +51,7 @@ def test_an_entry_of_the_group_is_listed(monkeypatch):
 
 
 def test_the_group_is_the_one_distributions_declare():
-    assert _transports.TRANSPORT_GROUP == "pathlib_next.http_transports"
+    assert _transports.TRANSPORT_GROUP == "pathapi.http_transports"
 
 
 def test_the_built_in_transport_needs_no_entry_point(nothing_declared):
@@ -86,7 +86,7 @@ def test_a_transport_provided_elsewhere_that_is_not_installed_names_the_distribu
     with pytest.raises(ImportError) as raised:
         get_transport("requests")
     assert str(raised.value) == REQUESTS_MESSAGE
-    assert raised.value.name == "pathlib_next_requests"
+    assert raised.value.name == "pathapi_requests"
 
 
 @pytest.mark.parametrize("name", ["", "Requests", "BUILTIN", "urllib3", None, 3])
@@ -101,7 +101,7 @@ def test_a_name_that_is_not_a_transport_is_a_value_error_naming_the_choices(
 def test_the_requests_transport_asked_for_by_the_environment_names_the_distribution(
     nothing_declared, monkeypatch
 ):
-    monkeypatch.setenv("PATHLIB_NEXT_HTTP_TRANSPORT", "requests")
+    monkeypatch.setenv("PATHAPI_HTTP_TRANSPORT", "requests")
     with HTTPClient() as client:
         with pytest.raises(ImportError) as raised:
             client.transport
@@ -137,7 +137,7 @@ def provider(tmp_path):
         tmp_path,
         "fake-transports",
         {
-            "pathlib_next.http_transports": {
+            "pathapi.http_transports": {
                 "requests": "fake_transports:Fake",
                 "other": "fake_transports:Other",
                 "builtin": "fake_transports:NotBuiltin",
@@ -151,7 +151,7 @@ def test_an_installed_distribution_is_listed_without_being_imported(provider):
     found = run(
         """
         import json, sys
-        from pathlib_next.http import transport_names
+        from pathapi.http import transport_names
         print(json.dumps([list(transport_names()), "fake_transports" in sys.modules]))
         """,
         provider,
@@ -163,7 +163,7 @@ def test_an_installed_distribution_provides_the_transport_by_name(provider):
     found = run(
         """
         import json
-        from pathlib_next.http import get_transport
+        from pathapi.http import get_transport
         import fake_transports
         print(json.dumps([
             get_transport("requests") is fake_transports.Fake,
@@ -181,13 +181,13 @@ def test_the_variable_names_an_installed_transport(provider, name, cls):
     found = run(
         """
         import json
-        from pathlib_next.http import HTTPClient
+        from pathapi.http import HTTPClient
         with HTTPClient() as client:
             transport = client.transport
             print(json.dumps([type(transport).__name__, transport.closed]))
         """,
         provider,
-        env={"PATHLIB_NEXT_HTTP_TRANSPORT": name},
+        env={"PATHAPI_HTTP_TRANSPORT": name},
     )
     assert found == [cls, 0]
 
@@ -196,16 +196,16 @@ def test_a_value_the_variable_cannot_resolve_names_the_choices(provider):
     found = run(
         """
         import json
-        from pathlib_next.http import HTTPClient
+        from pathapi.http import HTTPClient
         try:
             HTTPClient().transport
         except ValueError as error:
             print(json.dumps(str(error)))
         """,
         provider,
-        env={"PATHLIB_NEXT_HTTP_TRANSPORT": "Other"},
+        env={"PATHAPI_HTTP_TRANSPORT": "Other"},
     )
     assert found == (
-        "PATHLIB_NEXT_HTTP_TRANSPORT='Other' is not an HTTP transport "
+        "PATHAPI_HTTP_TRANSPORT='Other' is not an HTTP transport "
         "(expected one of 'builtin', 'other', 'requests')"
     )

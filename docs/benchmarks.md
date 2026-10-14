@@ -1,6 +1,6 @@
 # Benchmarks
 
-`pathlib_next` includes a benchmark harness at `benchmarks/bench.py` for
+`pathapi` includes a benchmark harness at `benchmarks/bench.py` for
 checking hot-path behavior of the local and in-memory classes and of
 `PathSyncer`. It needs nothing beyond the package:
 `pip install -e ".[dev]"`.
@@ -34,7 +34,7 @@ python benchmarks/bench.py --save --samples 9 syncer
 Options go before the suite name. `--samples N` applies one sample count to
 every case; without it each case uses its own (1-5). The result schema and the
 committed baselines are described in
-[`benchmarks/README.md`](https://github.com/jose-pr/pathlib-next/blob/main/benchmarks/README.md).
+[`benchmarks/README.md`](https://github.com/jose-pr/pathapi/blob/main/benchmarks/README.md).
 
 Compare two runs on their medians, and only between runs from the same machine
 and interpreter. A run on a developer machine is a sanity check; performance

@@ -2,8 +2,8 @@
 
 The suite checks one transport per run (`--http-transports`), against servers
 on the loopback interface only, and needs nothing but `pytest`, the standard
-library and `pathlib_next` (the TLS tests also need `cryptography`, and skip
-without it). It is shipped with `pathlib_next.http.testing` so that another
+library and `pathapi` (the TLS tests also need `cryptography`, and skip
+without it). It is shipped with `pathapi.http.testing` so that another
 distribution can hold its transport to the same promises.
 """
 
@@ -20,7 +20,7 @@ def pytest_addoption(parser):
         "--http-transports",
         default="builtin",
         help="the HTTP transports the transport suite runs against, by the "
-        "names of pathlib_next.http.transport_names(), separated by commas "
+        "names of pathapi.http.transport_names(), separated by commas "
         "(for example builtin,requests)",
     )
 
@@ -28,7 +28,7 @@ def pytest_addoption(parser):
 def pytest_configure(config):
     # The session's environment is set before the first test's snapshot of it
     # is taken, and put back when pytest exits.
-    home = tempfile.TemporaryDirectory(prefix="pathlib-next-transport-home-")
+    home = tempfile.TemporaryDirectory(prefix="pathapi-transport-home-")
     patch = pytest.MonkeyPatch()
     transport_guard.isolate_environment(patch, home.name)
     config.add_cleanup(home.cleanup)
@@ -75,9 +75,9 @@ def pytest_generate_tests(metafunc):
 def http_transport_kind(request, monkeypatch):
     """Runs the test once per HTTP transport (`--http-transports`): the
     default transport of every client the test builds is that kind
-    (`PATHLIB_NEXT_HTTP_TRANSPORT`), and `transport_fakes.make_transport(kind)`
+    (`PATHAPI_HTTP_TRANSPORT`), and `transport_fakes.make_transport(kind)`
     builds one of it."""
-    monkeypatch.setenv("PATHLIB_NEXT_HTTP_TRANSPORT", request.param)
+    monkeypatch.setenv("PATHAPI_HTTP_TRANSPORT", request.param)
     return request.param
 
 

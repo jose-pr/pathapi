@@ -6,8 +6,8 @@ database-backed virtual filesystem, a key-value store, a remote server.
 surface; everything else
 (`open`/`read_text`/`write_text`/`glob`/`walk`/`touch`/`rm`/`copy`/`move`/
 `exists`/`is_dir`/`is_file`/...) is *derived* from the protocols in
-`pathlib_next.protocols`. `FTPPath`, `ZipPath` and `TarPath` are built the same
-way, on `pathlib_next.providers.TreePath`, and so are the classes of the
+`pathapi.protocols`. `FTPPath`, `ZipPath` and `TarPath` are built the same
+way, on `pathapi.providers.TreePath`, and so are the classes of the
 distributions that add SFTP, object stores, repository hosts and URIs.
 
 Run the shared contract suite against your implementation -- see
@@ -15,7 +15,7 @@ Run the shared contract suite against your implementation -- see
 
 ## Compose a class from protocols
 
-`Path` is a class statement over the protocols of `pathlib_next.protocols`: `Stat`, `Chmod`,
+`Path` is a class statement over the protocols of `pathapi.protocols`: `Stat`, `Chmod`,
 `Chown`, `Owned`, `Utime`, `Create`, `BinaryOpen`, `Listing`, `Remove`, `Readlink`, `Symlink`,
 `Hardlink`, `Resolve`, `Identity`, `Copy` and `Move`. There is one protocol for each primitive a
 backend can have without the others (an archive reads links and makes none), so `supports()` can
@@ -28,8 +28,8 @@ before the ones it is built on (`Listing` before `Stat`).
 `supports()` and `capabilities()` tell what a class has, without a call that raises:
 
 ```python
-from pathlib_next import MemPath
-from pathlib_next.protocols import Create, Readlink, supports
+from pathapi import MemPath
+from pathapi.protocols import Create, Readlink, supports
 
 assert supports(MemPath, Create)
 assert not supports(MemPath, Readlink)
@@ -100,7 +100,7 @@ deletes when `rename()` is missing) or raise `NotImplementedError`:
 | `_utime(*, atime=None, mtime=None)` | set an existing entry's times, in seconds since the epoch (`None` = leave that one alone); whole seconds, or no access time, is fine. Raise `NotImplementedError` (the default) when the backend cannot set a time: `touch()` of an existing file then leaves it as it is, and `PathSyncer(preserve_mtime=True)` leaves the copy's own time. |
 
 A stream that commits when it is closed (an upload, a rewrite of an archive)
-inherits `pathlib_next.providers.DiscardOnError`, first in its bases
+inherits `pathapi.providers.DiscardOnError`, first in its bases
 (`class Upload(DiscardOnError, io.BytesIO)`), and defines `discard()`. The
 mixin's `__exit__` calls `discard()` when the `with` block over the file ended
 in an exception (any `BaseException`) and then closes, so a producer that fails
@@ -120,10 +120,10 @@ which is right for one that writes through as it goes (a local file,
 `rm()` is derived from `stat()`, `_scandir()`, `unlink()` and `rmdir()`. An
 implementation that overrides it to remove a tree natively still accepts
 `follow_symlinks=` and `follow_binds=` (the shared contract calls both), checks
-them with `pathlib_next.providers.check_follow(name, policy)` before it removes
+them with `pathapi.providers.check_follow(name, policy)` before it removes
 anything, and forwards them to `super().rm()` wherever it falls back to the
 generic walk. An override of `copy()` that copies a tree natively refuses a
-target inside the source with `pathlib_next.providers.contains(source, target)`.
+target inside the source with `pathapi.providers.contains(source, target)`.
 
 When a method accepts a `str` path, turn it into a path with
 `self.with_segments(value)`, never `type(self)(value)`, which drops
@@ -188,7 +188,7 @@ can accept any: `move()` then copies).
 
 ## Testing your implementation
 
-To ensure custom implementations comply with `pathlib_next`'s expected behaviors, the library offers three contract levels in `pathlib_next.testing` which can be mixed into your `pytest` suite:
+To ensure custom implementations comply with `pathapi`'s expected behaviors, the library offers three contract levels in `pathapi.testing` which can be mixed into your `pytest` suite:
 
 1. **`PurePathContract`**: Covers logical pure-path operations (joining, parents, stems, suffix checks, and glob matching) that do not require any physical I/O.
 2. **`ReadPathContract`**: Extends `PurePathContract` to verify read-only I/O: `exists()`/`is_file()`/`is_dir()`, `read_text()`/`read_bytes()`, `open()` read modes, `iterdir()`, `stat()`, `glob()`/`rglob()` and `walk()`, plus the error paths with pathlib's exception types (a missing path raises `FileNotFoundError`, listing a file `NotADirectoryError`, reading a directory `IsADirectoryError` or, as pathlib does on Windows, `PermissionError`).
@@ -202,8 +202,8 @@ Both I/O levels need a `root` fixture pointing at a **fresh, function-scoped** d
 ```python
 import pytest
 
-from pathlib_next import LocalPath as MyPath  # your Path subclass here
-from pathlib_next.testing import PathContract, populate_fixture_tree
+from pathapi import LocalPath as MyPath  # your Path subclass here
+from pathapi.testing import PathContract, populate_fixture_tree
 
 
 class TestMyPath(PathContract):

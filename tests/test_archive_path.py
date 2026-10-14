@@ -1,4 +1,4 @@
-"""`pathlib_next.archive`: `ZipPath`, `TarPath` and `ArchivePath`, the members
+"""`pathapi.archive`: `ZipPath`, `TarPath` and `ArchivePath`, the members
 of an archive file that is any `Path`, with no URI. How they are built, which
 paths share a handle, what is decided and when, what each text form shows, and
 the filesystem contracts over a local file and over an in-memory one."""
@@ -19,11 +19,11 @@ import pytest
 
 from capabilities import stores_question_marks
 
-import pathlib_next
-from pathlib_next import LocalPath
-from pathlib_next.archive import ArchivePath, LinkTarget, TarPath, ZipPath
-from pathlib_next.mempath import MemPath
-from pathlib_next.testing import PathContract, ReadPathContract
+import pathapi
+from pathapi import LocalPath
+from pathapi.archive import ArchivePath, LinkTarget, TarPath, ZipPath
+from pathapi.mempath import MemPath
+from pathapi.testing import PathContract, ReadPathContract
 
 
 def make_zip(path, members=None):
@@ -296,7 +296,7 @@ def test_batch_writes_every_change_in_one_replacement(tmp_path, monkeypatch):
     root = ZipPath("", archive=archive)
     root.joinpath("seed").write_bytes(b"s")
     replaced = []
-    from pathlib_next.archive._zip import _ZipBackend
+    from pathapi.archive._zip import _ZipBackend
 
     original = _ZipBackend._replace_outer
     monkeypatch.setattr(
@@ -380,7 +380,7 @@ def test_an_archive_may_be_a_member_of_another(tmp_path):
 
 def _run(code, blocked=()):
     prelude = "".join(f"import sys; sys.modules[{name!r}] = None\n" for name in blocked)
-    source = os.path.dirname(os.path.dirname(pathlib_next.__file__))
+    source = os.path.dirname(os.path.dirname(pathapi.__file__))
     return subprocess.run(
         [sys.executable, "-c", prelude + textwrap.dedent(code)],
         capture_output=True,
@@ -397,15 +397,15 @@ def _run(code, blocked=()):
 def test_the_root_exports_the_archive_paths_without_importing_them_early():
     result = _run("""
         import sys
-        import pathlib_next
-        print("pathlib_next.archive" in sys.modules)
-        print(pathlib_next.ZipPath.__module__, pathlib_next.TarPath is not None,
-              pathlib_next.ArchivePath is not None)
+        import pathapi
+        print("pathapi.archive" in sys.modules)
+        print(pathapi.ZipPath.__module__, pathapi.TarPath is not None,
+              pathapi.ArchivePath is not None)
         """)
     assert result.returncode == 0, result.stderr
     assert result.stdout.splitlines() == [
         "False",
-        "pathlib_next.archive._path True True",
+        "pathapi.archive._path True True",
     ]
 
 

@@ -9,10 +9,10 @@ import stat
 import pytest
 from capabilities import requires_posix_modes
 
-import pathlib_next
-from pathlib_next.mempath import MemPath
-from pathlib_next import FileStat
-from pathlib_next.sync import PathSyncer
+import pathapi
+from pathapi.mempath import MemPath
+from pathapi import FileStat
+from pathapi.sync import PathSyncer
 
 # --- touch() on a generic backend -----------------------------------------
 
@@ -184,7 +184,7 @@ def _writable(path):
 def test_copy_from_synthetic_mode_backend_leaves_target_writable(tmp_path):
     src = MemPath("/a.txt")
     src.write_text("one")
-    target = pathlib_next.LocalPath(tmp_path / "a.txt")
+    target = pathapi.LocalPath(tmp_path / "a.txt")
     src.copy(target)
     assert target.read_text() == "one"
     # MemPath reports the placeholder 0o444, which used to be chmod'ed onto
@@ -231,10 +231,10 @@ def test_copy_applies_a_backend_reported_mode():
 
 
 def test_copy_between_local_paths_still_preserves_a_real_readonly_mode(tmp_path):
-    src = pathlib_next.LocalPath(tmp_path / "ro.txt")
+    src = pathapi.LocalPath(tmp_path / "ro.txt")
     src.write_text("x")
     os.chmod(src, stat.S_IREAD)
-    target = pathlib_next.LocalPath(tmp_path / "copy.txt")
+    target = pathapi.LocalPath(tmp_path / "copy.txt")
     try:
         src.copy(target)
         assert not _writable(target)
@@ -250,7 +250,7 @@ def test_sync_from_synthetic_mode_backend_can_resync(tmp_path):
 
     root = MemPath("/")
     (root / "a.txt").write_text("aaa")
-    target = pathlib_next.LocalPath(tmp_path)
+    target = pathapi.LocalPath(tmp_path)
     PathSyncer(checksum).sync(root, target)
     assert _writable(tmp_path / "a.txt")
     (root / "a.txt").write_text("changed content")

@@ -1,4 +1,4 @@
-# pathlib_next
+# pathapi
 
 A **robust, extensible pathlib-like base** for any resource addressable as a
 path. Same method names, signatures, semantics and exception types as
@@ -13,11 +13,11 @@ reasons, in [Divergences from pathlib](divergences.md).
 ## Installation
 
 ```bash
-pip install pathlib-next
+pip install pathapi
 ```
 
 There are no extras: everything runs on the standard library. `pytest` is
-needed only to import `pathlib_next.testing` and `pathlib_next.http.testing`.
+needed only to import `pathapi.testing` and `pathapi.http.testing`.
 
 Paths for other places are separate distributions built on this one:
 
@@ -27,14 +27,14 @@ Paths for other places are separate distributions built on this one:
 | [`sftppath`](https://github.com/jose-pr/sftppath) | `SFTPPath` (paramiko or asyncssh) |
 | [`objpath`](https://github.com/jose-pr/objpath) | `S3Path`, `GSPath` and `AZPath` |
 | [`repopath`](https://github.com/jose-pr/repopath) | `RepoPath`, `GitHubPath` and `GitLabPath` |
-| [`pathlib-next-requests`](https://github.com/jose-pr/pathlib-next-requests) | `RequestsTransport` for `pathlib_next.http` |
+| [`pathapi-requests`](https://github.com/jose-pr/pathapi-requests) | `RequestsTransport` for `pathapi.http` |
 
 ## Tour
 
 **Local filesystem**, as `pathlib.Path`:
 
 ```python
-from pathlib_next import Path
+from pathapi import Path
 
 p = Path("data") / "report.txt"
 p.parent.mkdir(parents=True, exist_ok=True)
@@ -45,7 +45,7 @@ print(p.read_text())
 **In memory**, a virtual filesystem for tests and mocks:
 
 ```python
-from pathlib_next.mempath import MemPath
+from pathapi.mempath import MemPath
 
 p = MemPath("/config/settings.json")
 p.parent.mkdir(parents=True, exist_ok=True)
@@ -57,7 +57,7 @@ print(p.stat().st_size, [child.name for child in p.parent.iterdir()])
 
 ```python
 import zipfile
-from pathlib_next import ZipPath
+from pathapi import ZipPath
 
 with zipfile.ZipFile("backup.zip", "w") as archive:
     archive.writestr("etc/config.ini", "[main]\n")
@@ -70,7 +70,7 @@ print(member.read_text())
 
 <!-- example: skip: reads from a remote host -->
 ```python
-from pathlib_next import FTPPath
+from pathapi import FTPPath
 
 for child in FTPPath("/pub", host="ftp.example.com", user="anonymous").iterdir():
     print(child.name, child.stat().st_size)

@@ -9,9 +9,9 @@ import sys
 
 import pytest
 
-import pathlib_next
+import pathapi
 
-HEADER = pathlib.Path(pathlib_next.__file__).with_name("AGENTS.md")
+HEADER = pathlib.Path(pathapi.__file__).with_name("AGENTS.md")
 
 PREDICATES = [
     "is_dir",
@@ -23,7 +23,7 @@ PREDICATES = [
 ]
 
 
-class Denied(pathlib_next.LocalPath):
+class Denied(pathapi.LocalPath):
     __slots__ = ()
 
     def stat(self, *, follow_symlinks=True):

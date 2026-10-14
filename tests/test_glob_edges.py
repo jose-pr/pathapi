@@ -15,12 +15,12 @@ import sys
 
 import pytest
 
-import pathlib_next
-from pathlib_next.mempath import MemPath
-from pathlib_next import NonRelativePatternError
-from pathlib_next import glob as _glob
-from pathlib_next.glob import _recursion, _selection
-from pathlib_next import FileStat
+import pathapi
+from pathapi.mempath import MemPath
+from pathapi import NonRelativePatternError
+from pathapi import glob as _glob
+from pathapi.glob import _recursion, _selection
+from pathapi import FileStat
 
 WINDOWS = os.name == "nt"
 
@@ -101,8 +101,8 @@ def _compare(tree, impl_base, method, pattern, **kwargs):
 
 @pytest.mark.skipif(not WINDOWS, reason="extended-length paths are a Windows spelling")
 def test_a_carried_pattern_under_an_extended_length_anchor_is_expanded(tree):
-    plain = pathlib_next.LocalPath(tree, "*.py")
-    extended = pathlib_next.LocalPath("\\\\?\\" + str(tree) + "\\*.py")
+    plain = pathapi.LocalPath(tree, "*.py")
+    extended = pathapi.LocalPath("\\\\?\\" + str(tree) + "\\*.py")
 
     found = sorted(p.name for p in extended.glob(None))
 
@@ -112,7 +112,7 @@ def test_a_carried_pattern_under_an_extended_length_anchor_is_expanded(tree):
 
 @pytest.mark.skipif(not WINDOWS, reason="extended-length paths are a Windows spelling")
 def test_a_carried_extended_length_path_without_a_wildcard_is_found(tree):
-    extended = pathlib_next.LocalPath("\\\\?\\" + str(tree / "b.py"))
+    extended = pathapi.LocalPath("\\\\?\\" + str(tree / "b.py"))
     assert [p.name for p in extended.glob(None)] == ["b.py"]
 
 
@@ -142,14 +142,14 @@ _CASE_PATTERNS = [
 def test_explicit_case_sensitive_matches_pathlib(tree, pattern, case_sensitive):
     _compare(
         tree,
-        pathlib_next.LocalPath(tree),
+        pathapi.LocalPath(tree),
         "glob",
         pattern,
         case_sensitive=case_sensitive,
     )
     _compare(
         tree,
-        pathlib_next.LocalPath(tree),
+        pathapi.LocalPath(tree),
         "rglob",
         pattern,
         case_sensitive=case_sensitive,
@@ -251,7 +251,7 @@ _LITERAL_PATTERNS = [
 @pytest.mark.parametrize("method", ["glob", "rglob"])
 @pytest.mark.parametrize("pattern", _LITERAL_PATTERNS)
 def test_localpath_checks_literals_like_the_running_pathlib(tree, method, pattern):
-    _compare(tree, pathlib_next.LocalPath(tree), method, pattern)
+    _compare(tree, pathapi.LocalPath(tree), method, pattern)
 
 
 @pytest.mark.parametrize("method", ["glob", "rglob"])
@@ -269,7 +269,7 @@ def test_a_carried_pattern_checks_its_literals_like_pathlib(tree):
     # `glob(None)` splits at the first wildcard; the literals before it are
     # the base, the ones after it are checked as a pattern's are.
     for tail in ("a.txt/..", "sub/c.py/..", "nonexistent/.."):
-        carried = pathlib_next.LocalPath(tree, tail)
+        carried = pathapi.LocalPath(tree, tail)
         oracle = {
             p.as_posix() for p in pathlib.Path(tree, *tail.split("/")[:-1]).glob("..")
         }
@@ -281,19 +281,19 @@ def test_a_carried_pattern_checks_its_literals_like_pathlib(tree):
 
 @pytest.mark.parametrize("pattern", [".", "./", "./."])
 def test_rglob_of_a_pattern_with_no_component_matches_pathlib(tree, pattern):
-    _compare(tree, pathlib_next.LocalPath(tree), "rglob", pattern)
+    _compare(tree, pathapi.LocalPath(tree), "rglob", pattern)
     _compare(tree, _mem_twin(tree), "rglob", pattern)
 
 
 def test_rglob_still_refuses_an_absolute_pattern(tree):
-    for base in (pathlib_next.LocalPath(tree), _mem_twin(tree)):
+    for base in (pathapi.LocalPath(tree), _mem_twin(tree)):
         with pytest.raises(NotImplementedError):
             base.rglob("/x")
 
 
 def test_glob_of_a_pattern_with_no_component_is_a_value_error(tree):
     with pytest.raises(ValueError):
-        pathlib_next.LocalPath(tree).glob(".")
+        pathapi.LocalPath(tree).glob(".")
     with pytest.raises(ValueError):
         _mem_twin(tree).glob("")
 
@@ -330,7 +330,7 @@ def links(tree):
 )
 def test_a_literal_naming_a_dangling_link_matches_pathlib(links, pattern):
     for method in ("glob", "rglob"):
-        _compare(links, pathlib_next.LocalPath(links), method, pattern)
+        _compare(links, pathapi.LocalPath(links), method, pattern)
 
 
 # --- an unlistable base is reported, whatever the first component is --------
@@ -345,7 +345,7 @@ def _reported(base, method, pattern):
 @pytest.mark.parametrize("pattern", ["*", "**", "**/*", "x/*", "*/x"])
 def test_on_error_hears_of_a_missing_base_for_every_first_component(tmp_path, pattern):
     for base in (
-        pathlib_next.LocalPath(tmp_path, "missing"),
+        pathapi.LocalPath(tmp_path, "missing"),
         MemPath("/missing"),
     ):
         assert _reported(base, "glob", pattern) == [FileNotFoundError]
@@ -354,14 +354,14 @@ def test_on_error_hears_of_a_missing_base_for_every_first_component(tmp_path, pa
 @pytest.mark.parametrize("pattern", ["*", "**", "**/*"])
 def test_on_error_hears_of_a_file_used_as_a_base(tree, pattern):
     for base in (
-        pathlib_next.LocalPath(tree, "a.txt"),
+        pathapi.LocalPath(tree, "a.txt"),
         _mem_twin(tree) / "a.txt",
     ):
         assert _reported(base, "glob", pattern) == [NotADirectoryError]
 
 
 def test_on_error_is_not_told_about_a_base_that_lists(tree):
-    for base in (pathlib_next.LocalPath(tree), _mem_twin(tree)):
+    for base in (pathapi.LocalPath(tree), _mem_twin(tree)):
         assert _reported(base, "glob", "**") == []
         assert _reported(base, "glob", "**/*.py") == []
 
@@ -437,7 +437,7 @@ def test_the_listing_a_recursive_step_hands_on_is_the_directorys_own():
 
 @pytest.mark.parametrize("pattern", ["**/*/**/*", "**/**/*/*"])
 def test_two_recursive_components_yield_a_path_once(tree, pattern):
-    found = [p.as_posix() for p in pathlib_next.LocalPath(tree).glob(pattern)]
+    found = [p.as_posix() for p in pathapi.LocalPath(tree).glob(pattern)]
     assert len(found) == len(set(found))
     assert set(found) == {p.as_posix() for p in tree.glob(pattern)}
 
@@ -449,16 +449,16 @@ def test_two_recursive_components_yield_a_path_once(tree, pattern):
     sys.version_info >= (3, 13), reason="a partial ** is a plain wildcard from 3.13"
 )
 def test_a_carried_partial_recursive_component_raises_at_the_call(tree):
-    carried = pathlib_next.LocalPath(tree, "a**")
+    carried = pathapi.LocalPath(tree, "a**")
     with pytest.raises(ValueError):
         carried.glob(None)
     with pytest.raises(ValueError):
-        pathlib_next.LocalPath(tree, "sub", "a**").glob(None, recursive=True)
+        pathapi.LocalPath(tree, "sub", "a**").glob(None, recursive=True)
     assert [p.name for p in carried.glob(None, native=False)] == ["a.txt"]
 
 
 def test_a_carried_pattern_selects_lazily(tree):
-    carried = pathlib_next.LocalPath(tree, "*.py")
+    carried = pathapi.LocalPath(tree, "*.py")
     selection = carried.glob(None)
     assert iter(selection) is selection
     assert sorted(p.name for p in selection) == sorted(
@@ -468,7 +468,7 @@ def test_a_carried_pattern_selects_lazily(tree):
 
 def test_an_absolute_pattern_is_a_notimplementederror_and_a_valueerror(tree):
     with pytest.raises(NonRelativePatternError) as info:
-        pathlib_next.LocalPath(tree).glob("/abs")
+        pathapi.LocalPath(tree).glob("/abs")
     assert isinstance(info.value, NotImplementedError)
     assert isinstance(info.value, ValueError)
 
@@ -484,7 +484,7 @@ sys.addaudithook(
 )
 root = sys.argv[1]
 sys.path.insert(0, sys.argv[2])
-from pathlib_next import LocalPath
+from pathapi import LocalPath
 calls = [
     ("glob", "*.py"), ("rglob", "*.py"), ("glob", "**/*"), ("glob", ""),
     ("rglob", ""), ("glob", "/x"), ("rglob", "sub/*"), ("glob", "sub/"),
@@ -505,7 +505,7 @@ print(json.dumps(out))
 
 
 def test_localpath_raises_the_audit_events_pathlib_raises(tree):
-    src = str(pathlib.Path(pathlib_next.__file__).resolve().parents[1])
+    src = str(pathlib.Path(pathapi.__file__).resolve().parents[1])
     done = subprocess.run(
         [sys.executable, "-c", _AUDIT_SCRIPT, str(tree), src],
         capture_output=True,
@@ -603,7 +603,7 @@ def test_a_literal_typed_in_another_case_matches_pathlib(tree, pattern):
     if not (tree / "SUB").exists():
         pytest.skip("the filesystem tells names apart by case")
     for method in ("glob", "rglob"):
-        _compare(tree, pathlib_next.LocalPath(tree), method, pattern)
+        _compare(tree, pathapi.LocalPath(tree), method, pattern)
 
 
 # --- recurse_symlinks=True: "**" descends through symlinks to directories ---
@@ -643,7 +643,7 @@ def _walked(top, pattern):
 
 
 _LINKED_IMPLS = {
-    "LocalPath": lambda top: pathlib_next.LocalPath(top),
+    "LocalPath": lambda top: pathapi.LocalPath(top),
 }
 
 
@@ -701,7 +701,7 @@ def test_recurse_symlinks_matches_pathlib_where_there_is_no_loop(
     }
     ours = {
         _relative(p, linked)
-        for p in getattr(pathlib_next.LocalPath(linked), method)(
+        for p in getattr(pathapi.LocalPath(linked), method)(
             pattern, recurse_symlinks=True
         )
     }
@@ -727,7 +727,7 @@ _LOOP_BOUND = 5000
 
 @pytest.mark.parametrize("pattern", ["**", "**/*", "**/*.txt", "**/", "a/**/h.txt"])
 def test_a_loop_of_links_ends_and_lists_each_entry_once(looped, pattern):
-    base = pathlib_next.LocalPath(looped)
+    base = pathapi.LocalPath(looped)
 
     found = list(
         itertools.islice(
@@ -740,7 +740,7 @@ def test_a_loop_of_links_ends_and_lists_each_entry_once(looped, pattern):
 
 
 def test_a_loop_of_links_keeps_its_links_as_entries_and_does_not_enter_them(looped):
-    base = pathlib_next.LocalPath(looped)
+    base = pathapi.LocalPath(looped)
 
     found = {
         _relative(p, looped)

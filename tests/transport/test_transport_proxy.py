@@ -9,7 +9,7 @@ import traceback
 import pytest
 
 from transport_wire import Proxy, Wire, make_authority, refusing_port, response
-from pathlib_next.http import HTTPTransport
+from pathapi.http import HTTPTransport
 
 TIMEOUT = (5, 5)
 
@@ -311,7 +311,7 @@ def test_a_proxy_scheme_that_is_not_http_is_refused_naming_the_other_transport(
         get(transport_for(Provider(url)), "http://backend.test/f")
     assert excinfo.value.errno == errno.EPROTONOSUPPORT
     message = str(excinfo.value)
-    assert scheme in message and "pathlib-next-requests" in message
+    assert scheme in message and "pathapi-requests" in message
     assert "PROXYSECRET" not in message and "carol" not in message
 
 
@@ -329,7 +329,7 @@ def test_proxy_credentials_are_in_no_error_of_an_unreachable_proxy(transport_for
 def test_proxy_credentials_are_in_no_repr(transport_for):
     transport = transport_for(Provider("http://carol:PROXYSECRET@127.0.0.1:1"))
     assert "PROXYSECRET" not in repr(transport) + str(transport)
-    from pathlib_next.http._proxies import ProxyAddress, _address
+    from pathapi.http._proxies import ProxyAddress, _address
 
     address = _address("http://carol:PROXYSECRET@proxy.example:3128")
     assert isinstance(address, ProxyAddress)
@@ -405,14 +405,14 @@ def test_a_cidr_block_names_no_host_that_is_not_an_ip_literal(
     ],
 )
 def test_which_hosts_a_no_proxy_cidr_block_holds(host, no_proxy, inside):
-    from pathlib_next.http._proxies import _in_no_proxy_network
+    from pathapi.http._proxies import _in_no_proxy_network
 
     assert _in_no_proxy_network(host, no_proxy) is inside
 
 
 def test_proxy_rules_see_the_host_in_lower_case(monkeypatch):
-    from pathlib_next.http._headers import check_url
-    from pathlib_next.http._proxies import proxies_for
+    from pathapi.http._headers import check_url
+    from pathapi.http._proxies import proxies_for
 
     monkeypatch.setenv("http_proxy", "http://proxy.example:3128")
     monkeypatch.setenv("no_proxy", "NASA.Example,.Internal")

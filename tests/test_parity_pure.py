@@ -7,7 +7,7 @@ import pathlib
 
 import pytest
 
-from pathlib_next.fspath import PosixPathname
+from pathapi.fspath import PosixPathname
 
 PATHS = [
     "a/b/c",

@@ -9,7 +9,7 @@ import io
 import pytest
 
 from transport_wire import Drop, Wire, response
-from pathlib_next.http import HTTPTransport, _body
+from pathapi.http import HTTPTransport, _body
 
 TIMEOUT = (5, 5)
 PAYLOAD = b"0123456789abcdef"

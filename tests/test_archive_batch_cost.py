@@ -15,12 +15,12 @@ import pytest
 
 from test_archive_batch import _fields, _members, _write_zip
 
-from pathlib_next import LocalPath
-from pathlib_next.archive import ZipPath
-from pathlib_next.archive import _snapshot as _base
-from pathlib_next.archive._zip import _ZipBackend
-from pathlib_next.archive._zipentries import _NO_LINK
-from pathlib_next.sync import PathSyncer
+from pathapi import LocalPath
+from pathapi.archive import ZipPath
+from pathapi.archive import _snapshot as _base
+from pathapi.archive._zip import _ZipBackend
+from pathapi.archive._zipentries import _NO_LINK
+from pathapi.sync import PathSyncer
 
 DERIVATIONS = 2
 MEMBERS = 1000
@@ -152,7 +152,7 @@ def test_a_sync_that_changes_existing_members_derives_the_member_list_a_constant
     assert len(derived) <= DERIVATIONS
     members = _members(archive)
     assert members["tree/d3/f13.txt"] == b"y" * 60
-    assert not [name for name in members if ".pathlib-next-tmp" in name]
+    assert not [name for name in members if ".pathapi-tmp" in name]
 
 
 def test_a_change_to_a_name_the_archive_spells_twice_derives_it_again_and_is_one_set(
@@ -343,7 +343,7 @@ def test_a_run_of_mixed_changes_in_a_batch_is_the_run_one_at_a_time(
 
 
 def test_a_member_list_that_loses_one_entry_equals_one_built_without_it():
-    from pathlib_next.archive._zipentries import _new_info
+    from pathapi.archive._zipentries import _new_info
 
     names = [
         "a/b/c.txt",
@@ -384,7 +384,7 @@ def test_a_member_list_that_loses_one_entry_equals_one_built_without_it():
 
 
 def test_a_member_list_cannot_drop_a_name_it_holds_under_two_spellings():
-    from pathlib_next.archive._zipentries import _new_info
+    from pathapi.archive._zipentries import _new_info
 
     entries = {"x": _new_info("x", 1), "./x": _new_info("./x", 2)}
     snapshot = _base._Snapshot(_ZipBackend, list(entries.items()))

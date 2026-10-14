@@ -9,7 +9,7 @@ import threading
 import pytest
 
 from transport_wire import Drop, Reply, Wire, response
-from pathlib_next.http import HTTPTransport, _builtin
+from pathapi.http import HTTPTransport, _builtin
 from transport_wire import wait_until
 
 TIMEOUT = (5, 5)

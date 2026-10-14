@@ -1,4 +1,4 @@
-"""`pathlib_next.ftp.FTPPath`: an FTP tree that needs no URI. How it is built
+"""`pathapi.ftp.FTPPath`: an FTP tree that needs no URI. How it is built
 (an endpoint or a shared backend), what its text forms show, which paths it
 treats as one tree, what it sends to the server, and what `close()` ends."""
 
@@ -18,10 +18,10 @@ from capabilities import stores_question_marks
 from ftp_loopback import LoopbackFtp
 from waits import wait_until
 
-import pathlib_next
-from pathlib_next.ftp import BaseFTPBackend, FTPBackend, FTPEndpoint, FTPPath
-from pathlib_next.ftp import _backend as ftp_backend
-from pathlib_next.testing import PathContract
+import pathapi
+from pathapi.ftp import BaseFTPBackend, FTPBackend, FTPEndpoint, FTPPath
+from pathapi.ftp import _backend as ftp_backend
+from pathapi.testing import PathContract
 
 FILE = "type=file;size=5;modify=20240101000000;"
 DIRS = {"/", "/pub", "/pub/sub"}
@@ -374,7 +374,7 @@ def test_close_only_ends_its_own_connections(server):
 
 def _run(code, blocked=()):
     prelude = "".join(f"import sys; sys.modules[{name!r}] = None\n" for name in blocked)
-    source = pathlib_next.__file__.rsplit("pathlib_next", 1)[0]
+    source = pathapi.__file__.rsplit("pathapi", 1)[0]
     return subprocess.run(
         [sys.executable, "-c", prelude + textwrap.dedent(code)],
         capture_output=True,
@@ -392,13 +392,13 @@ def _pythonpath(source):
 def test_importing_the_root_loads_neither_ftplib_nor_ssl():
     result = _run("""
         import sys
-        import pathlib_next
-        print(sorted(set(sys.modules) & {"ftplib", "ssl", "pathlib_next.ftp"}))
-        pathlib_next.FTPPath
-        print("ftplib" in sys.modules, pathlib_next.FTPPath.__module__)
+        import pathapi
+        print(sorted(set(sys.modules) & {"ftplib", "ssl", "pathapi.ftp"}))
+        pathapi.FTPPath
+        print("ftplib" in sys.modules, pathapi.FTPPath.__module__)
         """)
     assert result.returncode == 0, result.stderr
-    assert result.stdout.splitlines() == ["[]", "True pathlib_next.ftp._path"]
+    assert result.stdout.splitlines() == ["[]", "True pathapi.ftp._path"]
 
 
 # --- the contract ---------------------------------------------------------------------

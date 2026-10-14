@@ -17,10 +17,10 @@ import zipfile
 
 import pytest
 
-from pathlib_next import LocalPath
-from pathlib_next.mempath import MemPath
-from pathlib_next.archive import TarPath, ZipPath
-from pathlib_next.archive import make_archive, unpack_archive
+from pathapi import LocalPath
+from pathapi.mempath import MemPath
+from pathapi.archive import TarPath, ZipPath
+from pathapi.archive import make_archive, unpack_archive
 
 
 def _zip(path, inner=""):

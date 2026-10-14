@@ -1,4 +1,4 @@
-"""The shipped `pathlib_next.testing` contracts themselves: the documented
+"""The shipped `pathapi.testing` contracts themselves: the documented
 example runs verbatim, capability opt-outs skip instead of passing, and the
 negative-path tests fail on a backend that breaks pathlib's rules.
 """
@@ -13,16 +13,16 @@ import textwrap
 
 import pytest
 
-import pathlib_next
-from pathlib_next import testing
-from pathlib_next.mempath import MemBytesIO, MemPath, _MemReader
-from pathlib_next.testing import (
+import pathapi
+from pathapi import testing
+from pathapi.mempath import MemBytesIO, MemPath, _MemReader
+from pathapi.testing import (
     FIXTURE_TREE,
     PathContract,
     ReadPathContract,
     populate_fixture_tree,
 )
-from pathlib_next import FileStat
+from pathapi import FileStat
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 
@@ -181,7 +181,7 @@ def test_negative_path_contract_passes_on_localpath(tmp_path):
         root = tmp_path / name
         root.mkdir()
         try:
-            getattr(contract, name)(populate_fixture_tree(pathlib_next.LocalPath(root)))
+            getattr(contract, name)(populate_fixture_tree(pathapi.LocalPath(root)))
         except pytest.skip.Exception:
             skipped.append(name)
     assert skipped == [

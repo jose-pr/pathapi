@@ -8,12 +8,12 @@ private name the guards used to sniff, which made two hosts holding
 
 import pytest
 
-from pathlib_next import Path
-from pathlib_next.mempath import MemPath
-from pathlib_next.path._relation import _same_file
-from pathlib_next.providers import contains
-from pathlib_next.sync import PathSyncer
-from pathlib_next.sync._paths import _paths_overlap
+from pathapi import Path
+from pathapi.mempath import MemPath
+from pathapi.path._relation import _same_file
+from pathapi.providers import contains
+from pathapi.sync import PathSyncer
+from pathapi.sync._paths import _paths_overlap
 
 
 class FrontPath(Path):
@@ -273,7 +273,7 @@ class _ByBackend(MemPath):
 
 
 def test_the_default_tells_two_stores_apart_and_one_store_together():
-    from pathlib_next.mempath import MemPathBackend
+    from pathapi.mempath import MemPathBackend
 
     a = _ByBackend("/x", backend=MemPathBackend())
     b = _ByBackend("/x", backend=MemPathBackend())

@@ -1,7 +1,7 @@
 """The seam between the core and the classes other distributions build on it.
 
-Every helper a provider calls is a public name of `pathlib_next.providers` or
-`pathlib_next.archive`, listed in that module's `__all__` and documented in the
+Every helper a provider calls is a public name of `pathapi.providers` or
+`pathapi.archive`, listed in that module's `__all__` and documented in the
 implementer sections of the shipped header.
 """
 
@@ -14,21 +14,21 @@ import re
 
 import pytest
 
-import pathlib_next
+import pathapi
 
-PACKAGE = pathlib.Path(pathlib_next.__file__).resolve().parent
+PACKAGE = pathlib.Path(pathapi.__file__).resolve().parent
 HEADER = PACKAGE / "AGENTS.md"
 IMPLEMENTER_HEADINGS = ("For path implementers",)
 
 # (module, public name): documented helpers a provider calls, defined in a
 # private module and listed in the public module's `__all__`.
 PROVIDER_HELPERS = [
-    ("pathlib_next.archive", "detect_format"),
-    ("pathlib_next.providers", "CommitOnClose"),
-    ("pathlib_next.providers", "DiscardOnError"),
-    ("pathlib_next.providers", "check_follow"),
-    ("pathlib_next.providers", "contains"),
-    ("pathlib_next.providers", "copy_error_predicate"),
+    ("pathapi.archive", "detect_format"),
+    ("pathapi.providers", "CommitOnClose"),
+    ("pathapi.providers", "DiscardOnError"),
+    ("pathapi.providers", "check_follow"),
+    ("pathapi.providers", "contains"),
+    ("pathapi.providers", "copy_error_predicate"),
 ]
 
 

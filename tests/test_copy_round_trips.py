@@ -7,10 +7,10 @@ import errno
 
 import pytest
 
-import pathlib_next
+import pathapi
 
-from pathlib_next.mempath import MemPath, MemPathBackend
-from pathlib_next import FileStat
+from pathapi.mempath import MemPath, MemPathBackend
+from pathapi import FileStat
 
 
 class Counting(MemPath):
@@ -154,21 +154,21 @@ def test_an_unknown_source_stat_falls_back_to_the_old_flow():
 
 
 def test_filestat_has_no_identity_to_compare():
-    from pathlib_next.path._transfer import _same_identity
+    from pathapi.path._transfer import _same_identity
 
     assert _same_identity(FileStat(), FileStat()) is False
 
 
 def test_localpath_copy_and_move_are_the_generic_ones():
-    assert pathlib_next.LocalPath.copy is pathlib_next.Path.copy
-    assert pathlib_next.LocalPath.move is pathlib_next.Path.move
+    assert pathapi.LocalPath.copy is pathapi.Path.copy
+    assert pathapi.LocalPath.move is pathapi.Path.move
     for name in ("copy", "move"):
-        defined = vars(pathlib_next.LocalPath).get(name)
-        assert defined is None or defined is getattr(pathlib_next.Path, name)
+        defined = vars(pathapi.LocalPath).get(name)
+        assert defined is None or defined is getattr(pathapi.Path, name)
 
 
 def test_the_junction_alias_and_the_unused_alias_are_gone():
-    from pathlib_next import path
+    from pathapi import path
 
     assert not hasattr(path.Path, "_is_junction_link")
     assert not hasattr(path, "_FsPathLike")

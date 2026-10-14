@@ -14,9 +14,9 @@ import time
 import pytest
 from capabilities import requires_junctions
 
-import pathlib_next
-from pathlib_next.mempath import MemPath
-from pathlib_next import glob as _glob
+import pathapi
+from pathapi.mempath import MemPath
+from pathapi import glob as _glob
 
 _FILES = (
     "a.txt",
@@ -63,7 +63,7 @@ _PATTERNS = [
     "**/.hd/**",
 ]
 # A trailing separator selects directories only from 3.11; older pathlib
-# ignored it, while pathlib_next applies it on every version.
+# ignored it, while pathapi applies it on every version.
 _TRAILING_SEP_WILDCARD = ["*/", "sub/*/", "**/*/"]
 
 _RGLOB_PATTERNS = ["*.py", "*", "rep", "nested/*", ".*", ""]
@@ -108,7 +108,7 @@ def _mempath(root: pathlib.Path) -> MemPath:
 
 
 _IMPLS = {
-    "LocalPath": lambda root: pathlib_next.LocalPath(root),
+    "LocalPath": lambda root: pathapi.LocalPath(root),
     "MemPath": _mempath,
 }
 
@@ -203,7 +203,7 @@ def test_glob_does_not_recurse_into_directory_symlinks(loop_tree, method, patter
     last = pattern.rstrip("/").split("/")[-1]
     if pattern.endswith("/") and last != "**" and sys.version_info < (3, 11):
         pytest.skip("pathlib < 3.11 ignores a trailing separator")
-    base = pathlib_next.LocalPath(loop_tree)
+    base = pathapi.LocalPath(loop_tree)
     start = time.monotonic()
     assert _ours(base, method, pattern) == _stdlib(loop_tree, method, pattern)
     assert time.monotonic() - start < 10
@@ -228,7 +228,7 @@ def test_absolute_pattern_raises_like_pathlib(impl):
 
 
 def test_localpath_anchored_patterns_raise(tree):
-    root = pathlib_next.LocalPath(tree)
+    root = pathapi.LocalPath(tree)
     outside = tree.parent / "outside"
     outside.mkdir()
     (outside / "secret.txt").write_text("s")
@@ -246,7 +246,7 @@ def test_localpath_anchored_patterns_raise(tree):
 
 @pytest.mark.skipif(os.name != "nt", reason="drive syntax is Windows-only")
 def test_localpath_drive_inside_pattern_stays_under_self(tree):
-    root = pathlib_next.LocalPath(tree)
+    root = pathapi.LocalPath(tree)
     assert list(root.glob("sub/C:/Windows/*")) == []
     assert list(root.glob("sub\\*.py")) == [root / "sub" / "c.py"]
 
@@ -260,7 +260,7 @@ def test_recurse_symlinks_adds_nothing_where_the_tree_has_no_links(impl):
 
 
 def test_module_glob_excludes_hidden_by_default(tree):
-    pattern = pathlib_next.LocalPath(tree) / "**" / "*.py"
+    pattern = pathapi.LocalPath(tree) / "**" / "*.py"
     names = {p.name for p in _glob.glob(pattern, recursive=True)}
     assert names == {"b.py", "c.py", "d.py", "g.py"}
     hidden = {p.name for p in _glob.glob(pattern, recursive=True, include_hidden=True)}
@@ -312,7 +312,7 @@ def test_glob_none_expands_the_pattern_the_path_carries(tree):
     """`glob("")` raises like pathlib; `glob(None)` is the supported way to
     expand a path that IS a pattern -- what yaconfiglib's `glob("")` did
     before 0.9.4."""
-    root = pathlib_next.LocalPath(tree)
+    root = pathapi.LocalPath(tree)
     carrier = root / "*.py"
     got = sorted(p.name for p in carrier.glob(None))
     assert got == sorted(p.name for p in root.glob("*.py"))
@@ -320,7 +320,7 @@ def test_glob_none_expands_the_pattern_the_path_carries(tree):
 
 
 def test_glob_none_recursive_and_rglob_none(tree):
-    root = pathlib_next.LocalPath(tree)
+    root = pathapi.LocalPath(tree)
     carrier = root / "**" / "*.py"
     expected = sorted(p.name for p in root.rglob("*.py"))
     assert sorted(p.name for p in carrier.glob(None, recursive=True)) == expected
@@ -330,7 +330,7 @@ def test_glob_none_recursive_and_rglob_none(tree):
 def test_glob_empty_string_still_raises(tree):
     """The parity fix stands: only `None` opts into the carried-pattern
     form, so `glob("")` keeps raising exactly what pathlib raises."""
-    root = pathlib_next.LocalPath(tree)
+    root = pathapi.LocalPath(tree)
     with pytest.raises(ValueError):
         list(root.glob(""))
     with pytest.raises(ValueError):
@@ -343,21 +343,21 @@ def test_glob_empty_string_still_raises(tree):
 def test_native_true_matches_the_running_interpreter_for_a_trailing_slash(tree):
     """Before 3.11 pathlib ignores a trailing separator; from 3.11 it selects
     directories only. The default follows whichever is running."""
-    root = pathlib_next.LocalPath(tree)
+    root = pathapi.LocalPath(tree)
     ours = {p.name for p in root.glob("*/")}
     stdlib = {p.name for p in pathlib.Path(tree).glob("*/")}
     assert ours == stdlib
 
 
 def test_native_false_selects_directories_on_every_version(tree):
-    root = pathlib_next.LocalPath(tree)
+    root = pathapi.LocalPath(tree)
     got = {p.name for p in root.glob("*/", native=False)}
     assert got == {p.name for p in root.iterdir() if p.is_dir()}
 
 
 def test_native_true_follows_the_interpreter_for_a_partial_doublestar(tree):
     """ "a**" is a plain wildcard from 3.13 and a ValueError before it."""
-    root = pathlib_next.LocalPath(tree)
+    root = pathapi.LocalPath(tree)
     if sys.version_info >= (3, 13):
         assert {p.name for p in root.glob("**.py")} == {
             p.name for p in pathlib.Path(tree).glob("**.py")
@@ -370,7 +370,7 @@ def test_native_true_follows_the_interpreter_for_a_partial_doublestar(tree):
 
 
 def test_native_false_treats_a_partial_doublestar_as_a_wildcard(tree):
-    root = pathlib_next.LocalPath(tree)
+    root = pathapi.LocalPath(tree)
     assert {p.name for p in root.glob("**.py", native=False)} == {
         p.name for p in root.glob("*.py", native=False)
     }
@@ -399,25 +399,25 @@ def unreadable_tree(tmp_path, monkeypatch):
     (tmp_path / "ok" / "a.json").write_text("{}")
     (tmp_path / "locked").mkdir()
     (tmp_path / "locked" / "b.json").write_text("{}")
-    real = pathlib_next.LocalPath._scandir
+    real = pathapi.LocalPath._scandir
 
     def refusing(self):
         if self.name == "locked":
             raise PermissionError(13, "Permission denied", str(self))
         return real(self)
 
-    monkeypatch.setattr(pathlib_next.LocalPath, "_scandir", refusing)
+    monkeypatch.setattr(pathapi.LocalPath, "_scandir", refusing)
     return tmp_path
 
 
 def test_a_failed_listing_is_silent_without_the_hook(unreadable_tree):
     """pathlib's behaviour, and the default: the layer simply vanishes."""
-    root = pathlib_next.LocalPath(unreadable_tree)
+    root = pathapi.LocalPath(unreadable_tree)
     assert sorted(p.name for p in root.glob("**/*.json")) == ["a.json"]
 
 
 def test_on_error_reports_the_failed_listing_and_keeps_going(unreadable_tree):
-    root = pathlib_next.LocalPath(unreadable_tree)
+    root = pathapi.LocalPath(unreadable_tree)
     seen = []
     found = sorted(p.name for p in root.glob("**/*.json", on_error=seen.append))
     assert found == ["a.json"]
@@ -428,7 +428,7 @@ def test_on_error_reports_the_failed_listing_and_keeps_going(unreadable_tree):
 
 def test_on_error_may_raise_to_make_it_fatal(unreadable_tree):
     """The point of the hook: a caller who wants the error back gets it."""
-    root = pathlib_next.LocalPath(unreadable_tree)
+    root = pathapi.LocalPath(unreadable_tree)
 
     def reraise(error):
         raise error
@@ -452,7 +452,7 @@ def test_bound_loops_bounds_a_windows_junction_loop(tmp_path):
     (tmp_path / "b").mkdir()
     (tmp_path / "b" / "x.json").write_text("{}")
     _winapi.CreateJunction(str(tmp_path / "b"), str(tmp_path / "b" / "self"))
-    base = pathlib_next.LocalPath(tmp_path)
+    base = pathapi.LocalPath(tmp_path)
 
     # Unbounded, the one file is reached again through every extra "self"
     # (pathlib does the same, and on 3.9 it eventually raises WinError 1921
@@ -465,7 +465,7 @@ def test_bound_loops_bounds_a_windows_junction_loop(tmp_path):
 def test_bound_loops_keeps_a_plain_tree_intact(tree):
     """Bounding must not drop ordinary directories: every match the default
     finds is still found."""
-    root = pathlib_next.LocalPath(tree)
+    root = pathapi.LocalPath(tree)
     plain = sorted(str(p) for p in root.glob("**/*.py"))
     assert sorted(str(p) for p in root.glob("**/*.py", bound_loops=True)) == plain
 
@@ -507,7 +507,7 @@ def test_bound_loops_keeps_a_directory_shared_under_two_names(tmp_path):
     _junction(conf / "site-a", shared)
     _junction(conf / "site-b", shared)
 
-    base = pathlib_next.LocalPath(tmp_path)
+    base = pathapi.LocalPath(tmp_path)
     expected = sorted(
         str(q.relative_to(tmp_path)).replace("\\", "/")
         for q in base.glob("conf/**/*.yaml")
@@ -531,7 +531,7 @@ def test_bound_loops_still_bounds_a_loop_back_to_an_ancestor(tmp_path):
     (conf / "deep" / "20-extra.yaml").write_text("b")
     _junction(conf / "deep" / "loop", conf)
 
-    base = pathlib_next.LocalPath(tmp_path)
+    base = pathapi.LocalPath(tmp_path)
     assert len(list(base.glob("conf/**/*.yaml"))) > 2
     assert sorted(q.name for q in base.glob("conf/**/*.yaml", bound_loops=True)) == [
         "10-base.yaml",

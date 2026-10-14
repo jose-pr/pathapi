@@ -13,9 +13,9 @@ import zipfile
 
 import pytest
 
-from pathlib_next import LocalPath, MemPath
-from pathlib_next.archive import TarPath, ZipPath
-from pathlib_next.protocols import Hardlink, Readlink, Resolve, Symlink, supports
+from pathapi import LocalPath, MemPath
+from pathapi.archive import TarPath, ZipPath
+from pathapi.protocols import Hardlink, Readlink, Resolve, Symlink, supports
 
 LOOPS_ARE_ERRORS = sys.version_info < (3, 13)
 

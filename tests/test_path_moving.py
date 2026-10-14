@@ -9,8 +9,8 @@ import sys
 
 import pytest
 
-import pathlib_next
-from pathlib_next.mempath import MemPath, MemPathBackend
+import pathapi
+from pathapi.mempath import MemPath, MemPathBackend
 
 
 @pytest.fixture
@@ -139,7 +139,7 @@ def test_replace_does_not_put_a_file_over_a_directory(tree):
 
 
 def _local(tmp_path):
-    root = pathlib_next.LocalPath(tmp_path)
+    root = pathapi.LocalPath(tmp_path)
     (root / "src").mkdir()
     (root / "src" / "f.txt").write_text("payload")
     (root / "dst").mkdir()
@@ -148,13 +148,11 @@ def _local(tmp_path):
 
 def test_localpath_resolves_the_into_methods_to_this_library(tmp_path):
     for name in ("copy_into", "move_into"):
-        assert getattr(pathlib_next.LocalPath, name).__module__.startswith(
-            "pathlib_next"
-        )
+        assert getattr(pathapi.LocalPath, name).__module__.startswith("pathapi")
 
 
 def test_localpath_keeps_stdlibs_replace():
-    assert pathlib_next.LocalPath.replace is pathlib.Path.replace
+    assert pathapi.LocalPath.replace is pathlib.Path.replace
 
 
 def test_localpath_copy_into_does_what_a_generic_path_does(tmp_path):
@@ -187,8 +185,8 @@ def test_localpath_replace_swaps_a_file_in_one_step(tmp_path):
 
 
 def test_a_downstream_local_class_gets_the_into_methods_of_this_library(tmp_path):
-    from pathlib_next.fspath import _BaseFSPathname
-    from pathlib_next.path import Path
+    from pathapi.fspath import _BaseFSPathname
+    from pathapi.path import Path
 
     class Downstream(
         pathlib.WindowsPath if os.name == "nt" else pathlib.PosixPath,

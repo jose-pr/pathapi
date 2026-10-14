@@ -7,8 +7,8 @@ import pathlib
 
 import pytest
 
-import pathlib_next
-from pathlib_next.mempath import MemPath, MemPathBackend
+import pathapi
+from pathapi.mempath import MemPath, MemPathBackend
 
 TEXTS = ["./t/", "t//x", "../up/./t", "t/"]
 
@@ -32,14 +32,14 @@ def test_localpath_stores_the_target_text_as_pathlib_does(tmp_path, text):
         stdlib.symlink_to(text)
     except (OSError, NotImplementedError) as error:
         pytest.skip(f"symlinks are unavailable: {error}")
-    pathlib_next.LocalPath(ours).symlink_to(text)
+    pathapi.LocalPath(ours).symlink_to(text)
     assert _stored(ours) == _stored(stdlib)
 
 
 @posix_only
 def test_a_downstream_local_class_stores_the_target_text_as_pathlib_does(tmp_path):
-    from pathlib_next.fspath import _BaseFSPathname
-    from pathlib_next.path import Path
+    from pathapi.fspath import _BaseFSPathname
+    from pathapi.path import Path
 
     class Downstream(
         pathlib.WindowsPath if os.name == "nt" else pathlib.PosixPath,
@@ -60,7 +60,7 @@ def test_a_downstream_local_class_stores_the_target_text_as_pathlib_does(tmp_pat
 def test_a_relative_target_written_with_slashes_resolves(tmp_path):
     (tmp_path / "real.txt").write_text("real")
     (tmp_path / "sub").mkdir()
-    link = pathlib_next.LocalPath(tmp_path / "sub" / "link")
+    link = pathapi.LocalPath(tmp_path / "sub" / "link")
     try:
         link.symlink_to("../real.txt")
     except (OSError, NotImplementedError) as error:

@@ -15,8 +15,8 @@ import sys
 
 import pytest
 
-from pathlib_next.fspath import LocalPath, PosixPathname, WindowsPathname
-from pathlib_next.mempath import MemPath, MemPathBackend
+from pathapi.fspath import LocalPath, PosixPathname, WindowsPathname
+from pathapi.mempath import MemPath, MemPathBackend
 
 GENERIC = [MemPath]
 
@@ -698,7 +698,7 @@ def test_generic_match_follows_312_semantics(cls, path, pattern, expected, monke
     change what only the 3.12 CI job would catch."""
     import types
 
-    from pathlib_next.path import _pure as path_module
+    from pathapi.path import _pure as path_module
 
     monkeypatch.setattr(
         path_module, "_sys", types.SimpleNamespace(version_info=(3, 12, 7))
@@ -726,7 +726,7 @@ def test_double_slash_root_is_not_modelled_by_the_generic_classes():
 def test_double_slash_is_a_unc_drive_on_the_windows_flavour():
     """The local classes inherit pathlib's parsing, so they agree exactly:
     `//server/share/x` is a UNC drive, not a special root."""
-    from pathlib_next.fspath import WindowsPathname
+    from pathapi.fspath import WindowsPathname
 
     for cls in (WindowsPathname, LocalPath):
         assert str(cls("//server/share/x")) == str(

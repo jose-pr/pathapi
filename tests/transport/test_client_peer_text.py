@@ -4,7 +4,7 @@ to a length, whichever transport sent the request."""
 
 import pytest
 
-from pathlib_next.http import HTTPClient, peer_text, raise_for_status, translate_errors
+from pathapi.http import HTTPClient, peer_text, raise_for_status, translate_errors
 from transport_wire import Reply, Wire
 
 pytestmark = pytest.mark.usefixtures("http_transport_kind")

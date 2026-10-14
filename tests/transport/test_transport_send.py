@@ -14,7 +14,7 @@ import zlib
 import pytest
 
 from transport_wire import Drop, Hang, Reply, Wire, refusing_port, response
-from pathlib_next.http import HTTPResponse, HTTPTransport
+from pathapi.http import HTTPResponse, HTTPTransport
 from transport_wire import wait_until
 
 TIMEOUT = (5, 5)
@@ -517,7 +517,7 @@ def test_a_single_number_is_both_halves_of_the_timeout(http_transport):
 def test_the_connect_half_bounds_the_connection_and_the_read_half_the_waits(
     monkeypatch,
 ):
-    from pathlib_next.http import _builtin
+    from pathapi.http import _builtin
 
     seen = {}
 

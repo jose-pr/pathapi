@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import pytest
 
-from pathlib_next import LocalPath
-from pathlib_next.mempath import MemPath
-from pathlib_next.sync import PathSyncer
+from pathapi import LocalPath
+from pathapi.mempath import MemPath
+from pathapi.sync import PathSyncer
 
 
 class Stop(Exception):

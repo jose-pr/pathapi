@@ -7,7 +7,7 @@ import errno
 
 import pytest
 
-from pathlib_next.http import HTTPClient, HTTPTransport
+from pathapi.http import HTTPClient, HTTPTransport
 from transport_wire import Wire, make_authority, response
 
 pytestmark = pytest.mark.usefixtures("http_transport_kind")

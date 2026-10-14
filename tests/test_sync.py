@@ -2,10 +2,10 @@ import logging
 
 import pytest
 
-import pathlib_next
-from pathlib_next.mempath import MemPath
-from pathlib_next import FileStat
-from pathlib_next.sync import PathAndStat, PathSyncer
+import pathapi
+from pathapi.mempath import MemPath
+from pathapi import FileStat
+from pathapi.sync import PathAndStat, PathSyncer
 
 
 def checksum(entry: PathAndStat):
@@ -22,7 +22,7 @@ def _mem_tree():
 
 def test_sync_mem_to_local_creates_tree(tmp_path):
     source = _mem_tree()
-    target = pathlib_next.LocalPath(tmp_path)
+    target = pathapi.LocalPath(tmp_path)
     syncer = PathSyncer(checksum)
     syncer.sync(source, target)
     assert (tmp_path / "a.txt").read_text() == "aaa"
@@ -31,7 +31,7 @@ def test_sync_mem_to_local_creates_tree(tmp_path):
 
 def test_sync_dry_run_makes_no_changes(tmp_path):
     source = _mem_tree()
-    target = pathlib_next.LocalPath(tmp_path)
+    target = pathapi.LocalPath(tmp_path)
     syncer = PathSyncer(checksum)
     syncer.sync(source, target, dry_run=True)
     assert list(tmp_path.iterdir()) == []
@@ -39,13 +39,13 @@ def test_sync_dry_run_makes_no_changes(tmp_path):
 
 def test_sync_skips_matching_checksum(tmp_path):
     source = _mem_tree()
-    target = pathlib_next.LocalPath(tmp_path)
+    target = pathapi.LocalPath(tmp_path)
     (tmp_path / "a.txt").write_text("aaa")  # already matches source's size
     syncer = PathSyncer(checksum)
     events = []
     syncer._hook = lambda s, t, e, dry: events.append(e)
     syncer.sync(source, target)
-    from pathlib_next.sync import SyncEvent
+    from pathapi.sync import SyncEvent
 
     # a.txt already has the same checksum -- no Copy event for it, only
     # for sub/b.txt.
@@ -54,7 +54,7 @@ def test_sync_skips_matching_checksum(tmp_path):
 
 def test_sync_remove_missing_deletes_extra_target_files(tmp_path):
     source = _mem_tree()
-    target = pathlib_next.LocalPath(tmp_path)
+    target = pathapi.LocalPath(tmp_path)
     (tmp_path / "extra.txt").write_text("gone soon")
     syncer = PathSyncer(checksum, remove_missing=True)
     syncer.sync(source, target)
@@ -64,7 +64,7 @@ def test_sync_remove_missing_deletes_extra_target_files(tmp_path):
 
 def test_sync_remove_missing_false_keeps_extra_files(tmp_path):
     source = _mem_tree()
-    target = pathlib_next.LocalPath(tmp_path)
+    target = pathapi.LocalPath(tmp_path)
     (tmp_path / "extra.txt").write_text("stays")
     syncer = PathSyncer(checksum, remove_missing=False)
     syncer.sync(source, target)
@@ -81,7 +81,7 @@ def test_sync_ignore_error_callable_invoked(tmp_path):
         ignore_error=lambda err, source, target, event: calls.append(err) or True,
     )
     source = _mem_tree()
-    target = pathlib_next.LocalPath(tmp_path)
+    target = pathapi.LocalPath(tmp_path)
     # a.txt already exists as a file with a checksum mismatch (forces the
     # checksum() call, which raises)
     (tmp_path / "a.txt").write_text("different")
@@ -96,7 +96,7 @@ def test_sync_local_to_local(tmp_path):
     src_dir.mkdir()
     (src_dir / "f.txt").write_text("data")
     syncer = PathSyncer(checksum)
-    syncer.sync(pathlib_next.LocalPath(src_dir), pathlib_next.LocalPath(dst_dir))
+    syncer.sync(pathapi.LocalPath(src_dir), pathapi.LocalPath(dst_dir))
     assert (dst_dir / "f.txt").read_text() == "data"
 
 
@@ -105,12 +105,12 @@ def test_sync_local_to_local(tmp_path):
 
 def test_sync_log_uses_logging_not_print(tmp_path, capsys, caplog):
     source = _mem_tree()
-    target = pathlib_next.LocalPath(tmp_path)
+    target = pathapi.LocalPath(tmp_path)
     syncer = PathSyncer(checksum)
-    with caplog.at_level(logging.INFO, logger="pathlib_next.sync"):
+    with caplog.at_level(logging.INFO, logger="pathapi.sync"):
         syncer.sync(source, target)
     assert capsys.readouterr().out == ""  # nothing printed to stdout
-    assert any(r.name == "pathlib_next.sync" for r in caplog.records)
+    assert any(r.name == "pathapi.sync" for r in caplog.records)
 
 
 # --- B22: PathAndStat.__getattr__ raises AttributeError for unknown attrs ---
@@ -140,7 +140,7 @@ def test_pathandstat_missing_path_is_methods_return_false():
 
 def test_sync_default_checksum(tmp_path):
     source = _mem_tree()
-    target = pathlib_next.LocalPath(tmp_path)
+    target = pathapi.LocalPath(tmp_path)
     syncer = PathSyncer()
     syncer.sync(source, target)
     assert (tmp_path / "a.txt").read_text() == "aaa"
@@ -203,7 +203,7 @@ def _symlink_source(tmp_path):
         os.symlink(real, link)
     except (OSError, NotImplementedError) as error:
         pytest.skip(f"symlink unavailable: {error}")
-    return pathlib_next.LocalPath(link)
+    return pathapi.LocalPath(link)
 
 
 def _symlink_syncer(**kwargs):
@@ -220,34 +220,34 @@ def _symlink_syncer(**kwargs):
 
 def test_sync_symlink_ignore_error_ctor_bool_true(tmp_path):
     source = _symlink_source(tmp_path)
-    target = pathlib_next.LocalPath(tmp_path / "out.txt")
+    target = pathapi.LocalPath(tmp_path / "out.txt")
     # Was TypeError: 'bool' object is not callable.
     _symlink_syncer(ignore_error=True).sync(source, target)
 
 
 def test_sync_symlink_ignore_error_param_bool_true(tmp_path):
     source = _symlink_source(tmp_path)
-    target = pathlib_next.LocalPath(tmp_path / "out.txt")
+    target = pathapi.LocalPath(tmp_path / "out.txt")
     _symlink_syncer().sync(source, target, ignore_error=True)
 
 
 def test_sync_symlink_ignore_error_default_raises(tmp_path):
     source = _symlink_source(tmp_path)
-    target = pathlib_next.LocalPath(tmp_path / "out.txt")
+    target = pathapi.LocalPath(tmp_path / "out.txt")
     with pytest.raises(NotImplementedError):
         _symlink_syncer().sync(source, target)
 
 
 def test_sync_symlink_ignore_error_bool_false_raises(tmp_path):
     source = _symlink_source(tmp_path)
-    target = pathlib_next.LocalPath(tmp_path / "out.txt")
+    target = pathapi.LocalPath(tmp_path / "out.txt")
     with pytest.raises(NotImplementedError):
         _symlink_syncer(ignore_error=False).sync(source, target)
 
 
 def test_sync_symlink_ignore_error_callable_true_tolerates(tmp_path):
     source = _symlink_source(tmp_path)
-    target = pathlib_next.LocalPath(tmp_path / "out.txt")
+    target = pathapi.LocalPath(tmp_path / "out.txt")
     calls = []
     _symlink_syncer().sync(
         source,
@@ -260,7 +260,7 @@ def test_sync_symlink_ignore_error_callable_true_tolerates(tmp_path):
 
 def test_sync_symlink_ignore_error_callable_false_raises(tmp_path):
     source = _symlink_source(tmp_path)
-    target = pathlib_next.LocalPath(tmp_path / "out.txt")
+    target = pathapi.LocalPath(tmp_path / "out.txt")
     with pytest.raises(NotImplementedError):
         _symlink_syncer().sync(source, target, ignore_error=lambda *args: False)
 
@@ -269,7 +269,7 @@ def test_sync_symlink_ctor_policy_reaches_symlink_branch(tmp_path):
     # The constructor-supplied policy used to be silently ineffective for
     # this branch, because only the (shadowing) parameter was consulted.
     source = _symlink_source(tmp_path)
-    target = pathlib_next.LocalPath(tmp_path / "out.txt")
+    target = pathapi.LocalPath(tmp_path / "out.txt")
     calls = []
     _symlink_syncer(
         ignore_error=lambda err, s, t, event: calls.append(err) or True
@@ -281,7 +281,7 @@ def test_sync_param_ignore_error_none_uses_instance_policy(tmp_path):
     # None means "use the policy given to __init__", not "override with
     # False" (the old default silently shadowed the constructor).
     source = _symlink_source(tmp_path)
-    target = pathlib_next.LocalPath(tmp_path / "out.txt")
+    target = pathapi.LocalPath(tmp_path / "out.txt")
     _symlink_syncer(ignore_error=True).sync(source, target, ignore_error=None)
 
 
@@ -303,7 +303,7 @@ def _relative_symlink_source(tmp_path):
         _os.symlink("real.txt", link)  # relative target, not resolved
     except (OSError, NotImplementedError) as error:
         pytest.skip(f"symlink unavailable: {error}")
-    return pathlib_next.LocalPath(link)
+    return pathapi.LocalPath(link)
 
 
 def _preserve_syncer(**kwargs):
@@ -317,7 +317,7 @@ def test_symlink_mode_invalid_value_raises():
 
 def test_sync_symlink_preserve_default_creates_relative_symlink(tmp_path):
     source = _relative_symlink_source(tmp_path)
-    target = pathlib_next.LocalPath(tmp_path / "link_copy.txt")
+    target = pathapi.LocalPath(tmp_path / "link_copy.txt")
     _preserve_syncer().sync(source, target)  # symlink_mode defaults "preserve"
     assert target.is_symlink()
     # Raw, unresolved target preserved exactly -- not resolved against
@@ -330,7 +330,7 @@ def test_sync_symlink_preserve_default_creates_relative_symlink(tmp_path):
 
 def test_sync_symlink_preserve_explicit_mode_matches_default(tmp_path):
     source = _relative_symlink_source(tmp_path)
-    target = pathlib_next.LocalPath(tmp_path / "link_copy.txt")
+    target = pathapi.LocalPath(tmp_path / "link_copy.txt")
     _preserve_syncer(symlink_mode="preserve").sync(source, target)
     assert target.is_symlink()
     assert target.readlink().as_posix() == "real.txt"
@@ -341,7 +341,7 @@ def test_sync_symlink_reject_mode_still_raises(tmp_path):
     # NotImplementedError) remains available verbatim via the explicit
     # opt-out, unchanged by the new "preserve" default.
     source = _relative_symlink_source(tmp_path)
-    target = pathlib_next.LocalPath(tmp_path / "link_copy.txt")
+    target = pathapi.LocalPath(tmp_path / "link_copy.txt")
     with pytest.raises(NotImplementedError):
         _preserve_syncer(symlink_mode="reject").sync(source, target)
     assert not target.exists()
@@ -355,8 +355,8 @@ def test_sync_symlink_preserve_dangling_link(tmp_path):
         _os.symlink("does_not_exist.txt", link)
     except (OSError, NotImplementedError) as error:
         pytest.skip(f"symlink unavailable: {error}")
-    source = pathlib_next.LocalPath(link)
-    target = pathlib_next.LocalPath(tmp_path / "dangling_copy.txt")
+    source = pathapi.LocalPath(link)
+    target = pathapi.LocalPath(tmp_path / "dangling_copy.txt")
 
     _preserve_syncer().sync(source, target)
 
@@ -371,7 +371,7 @@ def test_sync_symlink_preserve_replaces_file_target(tmp_path):
     source = _relative_symlink_source(tmp_path)
     target_path = tmp_path / "link_copy.txt"
     target_path.write_text("stale regular file content")
-    target = pathlib_next.LocalPath(target_path)
+    target = pathapi.LocalPath(target_path)
 
     _preserve_syncer().sync(source, target)
 
@@ -388,7 +388,7 @@ def test_sync_symlink_preserve_replaces_dir_target(tmp_path):
     target_path = tmp_path / "link_copy.txt"
     target_path.mkdir()
     (target_path / "nested.txt").write_text("stale nested content")
-    target = pathlib_next.LocalPath(target_path)
+    target = pathapi.LocalPath(target_path)
 
     _preserve_syncer(remove_missing=True).sync(source, target)
 
@@ -427,20 +427,20 @@ def test_sync_symlink_preserve_unsupported_target_ignore_error_tolerates(
 
 def test_sync_symlink_preserve_fires_symlink_event(tmp_path):
     source = _relative_symlink_source(tmp_path)
-    target = pathlib_next.LocalPath(tmp_path / "link_copy.txt")
+    target = pathapi.LocalPath(tmp_path / "link_copy.txt")
     events = []
     syncer = _preserve_syncer()
     syncer._hook = lambda s, t, e, dry: events.append(e)
     syncer.sync(source, target)
 
-    from pathlib_next.sync import SyncEvent
+    from pathapi.sync import SyncEvent
 
     assert SyncEvent.Symlink in events
 
 
 def test_sync_symlink_preserve_dry_run_makes_no_changes(tmp_path):
     source = _relative_symlink_source(tmp_path)
-    target = pathlib_next.LocalPath(tmp_path / "link_copy.txt")
+    target = pathapi.LocalPath(tmp_path / "link_copy.txt")
     _preserve_syncer().sync(source, target, dry_run=True)
     assert not target.exists()
     assert not target.is_symlink()

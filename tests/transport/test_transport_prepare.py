@@ -8,7 +8,7 @@ import io
 
 import pytest
 
-from pathlib_next.http import HTTPResponse, PreparedRequest, prepare_request
+from pathapi.http import HTTPResponse, PreparedRequest, prepare_request
 
 
 def prepare(method="GET", url="http://h/x", **arguments):

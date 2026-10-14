@@ -7,11 +7,11 @@ fallback coverage lives in `tests/test_sftp.py`, following that module's
 
 import pytest
 
-from pathlib_next.mempath import MemPath
-from pathlib_next.protocols.checksum import NativeChecksum
-from pathlib_next import checksum as checksum_utils
-from pathlib_next import FileStat
-from pathlib_next.sync import PathSyncer
+from pathapi.mempath import MemPath
+from pathapi.protocols.checksum import NativeChecksum
+from pathapi import checksum as checksum_utils
+from pathapi import FileStat
+from pathapi.sync import PathSyncer
 
 
 class _NativeChecksumMemPath(MemPath, NativeChecksum):
@@ -135,7 +135,7 @@ def test_native_helper_returns_none_for_path_without_protocol():
 
 
 def test_shared_native_algorithm_prefers_md5_when_both_advertise_it():
-    from pathlib_next.sync._compare import _shared_native_algorithm
+    from pathapi.sync._compare import _shared_native_algorithm
 
     source = _NativeChecksumMemPath("/a.txt")
     source.write_text("x")
@@ -148,7 +148,7 @@ def test_shared_native_algorithm_prefers_md5_when_both_advertise_it():
 
 
 def test_shared_native_algorithm_none_when_no_overlap():
-    from pathlib_next.sync._compare import _shared_native_algorithm
+    from pathapi.sync._compare import _shared_native_algorithm
 
     source = _NativeChecksumMemPath("/a.txt")
     source.write_text("x")
@@ -160,7 +160,7 @@ def test_shared_native_algorithm_none_when_no_overlap():
 
 
 def test_shared_native_algorithm_none_when_either_side_lacks_advertisement():
-    from pathlib_next.sync._compare import _shared_native_algorithm
+    from pathapi.sync._compare import _shared_native_algorithm
 
     source = _NativeChecksumMemPath("/a.txt")
     source.write_text("x")
@@ -215,7 +215,7 @@ def test_pathsyncer_zero_open_calls_when_both_sides_native():
     syncer._hook = lambda s, t, e, dry: events.append(e)
     syncer.sync(source, target)
 
-    from pathlib_next.sync import SyncEvent
+    from pathapi.sync import SyncEvent
 
     assert SyncEvent.Copy not in events
     assert src_file.open_calls == []
@@ -255,7 +255,7 @@ def test_pathsyncer_mixed_capability_falls_back_to_streaming_both_sides():
     syncer._hook = lambda s, t, e, dry: events.append(e)
     syncer.sync(source, target)
 
-    from pathlib_next.sync import SyncEvent
+    from pathapi.sync import SyncEvent
 
     # Content is identical -- streaming fallback on both sides correctly
     # detects "in sync", no Copy event, despite source's native digest
@@ -375,7 +375,7 @@ def test_quick_check_skips_checksum_when_size_and_mtime_match():
     syncer._hook = lambda s, t, e, dry: events.append(e)
     syncer.sync(source, target)
 
-    from pathlib_next.sync import SyncEvent
+    from pathapi.sync import SyncEvent
 
     assert SyncEvent.Copy not in events
     # Neither side's content was streamed -- size+mtime already agreed, so
@@ -402,7 +402,7 @@ def test_quick_check_mismatched_mtime_falls_through_to_real_checksum():
     syncer._hook = lambda s, t, e, dry: events.append(e)
     syncer.sync(source, target)
 
-    from pathlib_next.sync import SyncEvent
+    from pathapi.sync import SyncEvent
 
     # Content is identical -- the real checksum fallback correctly finds
     # "in sync" despite the mtime mismatch quick_check couldn't trust.
@@ -443,7 +443,7 @@ def test_quick_check_false_disables_pre_check():
     syncer._hook = lambda s, t, e, dry: events.append(e)
     syncer.sync(source, target)
 
-    from pathlib_next.sync import SyncEvent
+    from pathapi.sync import SyncEvent
 
     # Still correctly in sync (content matches) -- but reached via the real
     # checksum path this time, proving quick_check=False actually disabled
@@ -463,7 +463,7 @@ def test_quick_check_does_not_apply_to_local_to_local_pairs(tmp_path):
     import os
     import time
 
-    import pathlib_next
+    import pathapi
 
     calls = []
 
@@ -482,7 +482,7 @@ def test_quick_check_does_not_apply_to_local_to_local_pairs(tmp_path):
     os.utime(dst_dir / "a.txt", (same_time, same_time))
 
     syncer = PathSyncer(spy_checksum)  # quick_check=True (default)
-    syncer.sync(pathlib_next.LocalPath(src_dir), pathlib_next.LocalPath(dst_dir))
+    syncer.sync(pathapi.LocalPath(src_dir), pathapi.LocalPath(dst_dir))
 
     # The checksum callable WAS invoked despite matching size+mtime --
     # proves quick_check's skip-the-checksum-call behavior never engaged
@@ -513,8 +513,8 @@ def test_quick_check_zero_mtime_is_unknown_not_in_sync(source_mtime, target_mtim
 
 
 def test_checksum_helpers(tmp_path):
-    from pathlib_next import LocalPath
-    from pathlib_next.checksum import md5, sha256
+    from pathapi import LocalPath
+    from pathapi.checksum import md5, sha256
     import hashlib
 
     p = LocalPath(tmp_path / "test.txt")

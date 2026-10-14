@@ -1,4 +1,4 @@
-"""pathlib_next benchmark runner.
+"""pathapi benchmark runner.
 
 Run `python benchmarks/bench.py --help` for the suites. `--save` writes the
 run as structured JSON into `benchmarks/results/`; the schema is documented in
@@ -22,17 +22,17 @@ import time
 import datetime
 from pathlib import Path as StdlibPath
 
-# Add src to sys.path so we can import pathlib_next without installing it
+# Add src to sys.path so we can import pathapi without installing it
 import sys
 
 REPO_ROOT = StdlibPath(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from pathlib_next import LocalPath
-from pathlib_next.mempath import MemPath, MemPathBackend
-from pathlib_next.sync import PathSyncer
+from pathapi import LocalPath
+from pathapi.mempath import MemPath, MemPathBackend
+from pathapi.sync import PathSyncer
 
-SCHEMA = "pathlib_next.bench/1"
+SCHEMA = "pathapi.bench/1"
 MAX_SAMPLES = 100
 
 
@@ -88,14 +88,14 @@ def _timeit(stmt, *, number, name, group, setup="pass", repeat=5):
 
 def benchmark_path_join():
     # Join paths using / operator 10,000 times
-    setup = "from pathlib_next import MemPath; p = MemPath('/host/path')"
+    setup = "from pathapi import MemPath; p = MemPath('/host/path')"
     code = "p / 'sub' / 'child'"
     return _timeit(code, setup=setup, number=10000, name="mem: path join", group="mem")
 
 
 def benchmark_segments_name_access():
     # Access .segments and .name 10,000 times
-    setup = "from pathlib_next import MemPath; u = MemPath('/host/a/b/c/d/e')"
+    setup = "from pathapi import MemPath; u = MemPath('/host/a/b/c/d/e')"
     code = "_ = u.segments; _ = u.name"
     return _timeit(
         code, setup=setup, number=10000, name="mem: segments + name access", group="mem"
@@ -104,7 +104,7 @@ def benchmark_segments_name_access():
 
 def benchmark_suffix_stem():
     # Access .suffix and .stem 10,000 times
-    setup = "from pathlib_next import MemPath; u = MemPath('/host/path/file.tar.gz')"
+    setup = "from pathapi import MemPath; u = MemPath('/host/path/file.tar.gz')"
     code = "_ = u.suffix; _ = u.stem"
     return _timeit(
         code, setup=setup, number=10000, name="mem: suffix + stem access", group="mem"
@@ -140,7 +140,7 @@ def benchmark_localpath_vs_stdlib():
         temp_file.write_text("hello")
 
         setup_local = (
-            f"from pathlib_next import LocalPath; p = LocalPath({repr(str(temp_file))})"
+            f"from pathapi import LocalPath; p = LocalPath({repr(str(temp_file))})"
         )
         code_local = "p.stat()"
         t_local = _timeit(
@@ -574,7 +574,7 @@ def build_result(suite, *, name, note=None):
         "created_utc": datetime.datetime.now(datetime.timezone.utc)
         .replace(microsecond=0)
         .isoformat(),
-        "package": {"name": "pathlib-next", "version": _pyproject_version()},
+        "package": {"name": "pathapi", "version": _pyproject_version()},
         "git": _git_state(),
         "python": f"{platform.python_implementation()} {platform.python_version()}",
         "interpreter": _interpreter_tag(),
@@ -624,7 +624,7 @@ def cli(argv=None):
     global _SAMPLES_OVERRIDE
 
     parser = argparse.ArgumentParser(
-        description="Run pathlib_next benchmarks (the default suite when no suite is named).",
+        description="Run pathapi benchmarks (the default suite when no suite is named).",
         epilog=(
             "Options go before the suite name, e.g. "
             "`python benchmarks/bench.py --save --samples 5 syncer`."

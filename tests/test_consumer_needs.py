@@ -7,10 +7,10 @@ from __future__ import annotations
 
 import pytest
 
-from pathlib_next import MemPath
-from pathlib_next.protocols import Create, Remove, supports
-from pathlib_next.providers import notimplemented
-from pathlib_next.testing import PathContract, ReadPathContract, populate_fixture_tree
+from pathapi import MemPath
+from pathapi.protocols import Create, Remove, supports
+from pathapi.providers import notimplemented
+from pathapi.testing import PathContract, ReadPathContract, populate_fixture_tree
 
 
 class NoRemove(MemPath):
@@ -115,9 +115,9 @@ def test_move_from_a_class_without_remove_still_reports_a_missing_source():
 
 
 def test_a_derived_method_counts_only_through_its_primitive():
-    from pathlib_next import Path
-    from pathlib_next.protocols import Listing
-    from pathlib_next.providers import derived_from
+    from pathapi import Path
+    from pathapi.protocols import Listing
+    from pathapi.providers import derived_from
 
     class Base(MemPath):
         __slots__ = ()
@@ -141,8 +141,8 @@ def test_a_derived_method_counts_only_through_its_primitive():
 
 
 def test_a_default_that_raises_its_own_error_reads_as_absent():
-    from pathlib_next.protocols import Listing
-    from pathlib_next.providers import primitive
+    from pathapi.protocols import Listing
+    from pathapi.providers import primitive
 
     class Single(MemPath):
         __slots__ = ()

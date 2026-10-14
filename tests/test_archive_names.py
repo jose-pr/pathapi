@@ -6,7 +6,7 @@ import tarfile
 
 import pytest
 
-from pathlib_next.archive import TarPath
+from pathapi.archive import TarPath
 
 
 @pytest.fixture

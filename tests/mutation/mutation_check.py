@@ -7,10 +7,10 @@ import os
 
 
 def pytest_sessionstart(session):
-    import pathlib_next
+    import pathapi
 
     expected = os.path.normcase(os.path.abspath(os.environ["MUTATION_ROOT"]))
-    loaded = os.path.normcase(os.path.abspath(pathlib_next.__file__))
+    loaded = os.path.normcase(os.path.abspath(pathapi.__file__))
     if not loaded.startswith(expected + os.sep):
-        raise RuntimeError(f"pathlib_next was loaded from {loaded}, not {expected}")
-    print(f"\nmutation copy loaded: {pathlib_next.__file__}")
+        raise RuntimeError(f"pathapi was loaded from {loaded}, not {expected}")
+    print(f"\nmutation copy loaded: {pathapi.__file__}")

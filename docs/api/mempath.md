@@ -1,6 +1,6 @@
 # Memory Path API
 
-::: pathlib_next.mempath
+::: pathapi.mempath
     options:
       show_if_no_docstring: true
       filters: ["!^_"]

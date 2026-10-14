@@ -14,9 +14,9 @@ import stat
 import pytest
 from capabilities import requires_posix_modes
 
-from pathlib_next import LocalPath
-from pathlib_next.mempath import MemPath
-from pathlib_next import FileStat
+from pathapi import LocalPath
+from pathapi.mempath import MemPath
+from pathapi import FileStat
 
 posix_only = requires_posix_modes
 

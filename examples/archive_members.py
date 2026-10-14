@@ -11,7 +11,7 @@ import tarfile
 import tempfile
 import zipfile
 
-from pathlib_next import Path, TarPath, ZipPath
+from pathapi import Path, TarPath, ZipPath
 
 
 def zip_archive_example(tmpdir_path: Path):

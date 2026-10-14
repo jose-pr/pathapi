@@ -10,10 +10,10 @@ import os
 
 import pytest
 
-from pathlib_next.mempath import MemPath
-from pathlib_next import FileStat
-from pathlib_next.sync import PathAndStat, PathSyncer
-from pathlib_next.sync._compare import _quick_check_in_sync
+from pathapi.mempath import MemPath
+from pathapi import FileStat
+from pathapi.sync import PathAndStat, PathSyncer
+from pathapi.sync._compare import _quick_check_in_sync
 
 # --- FileStat ------------------------------------------------------------
 

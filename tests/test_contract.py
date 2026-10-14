@@ -11,9 +11,9 @@ import pytest
 
 from capabilities import stores_question_marks
 
-import pathlib_next
-from pathlib_next.mempath import MemPath
-from pathlib_next.testing import PathContract, populate_fixture_tree
+import pathapi
+from pathapi.mempath import MemPath
+from pathapi.testing import PathContract, populate_fixture_tree
 
 
 class TestLocalContract(PathContract):
@@ -21,7 +21,7 @@ class TestLocalContract(PathContract):
 
     @pytest.fixture
     def root(self, fixture_tree):
-        return pathlib_next.LocalPath(fixture_tree)
+        return pathapi.LocalPath(fixture_tree)
 
 
 class TestMemContract(PathContract):

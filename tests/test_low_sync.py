@@ -14,13 +14,13 @@ import sys
 
 import pytest
 
-import pathlib_next
-from pathlib_next.mempath import MemPath
-from pathlib_next import FileStat
-from pathlib_next.sync import PathAndStat, PathSyncer, SyncEvent
+import pathapi
+from pathapi.mempath import MemPath
+from pathapi import FileStat
+from pathapi.sync import PathAndStat, PathSyncer, SyncEvent
 
 IS_WINDOWS = sys.platform == "win32"
-LOGGER = "pathlib_next.sync"
+LOGGER = "pathapi.sync"
 
 
 def _size(entry):
@@ -269,7 +269,7 @@ def test_dir_to_symlink_without_remove_missing_keeps_tree(tmp_path):
 
     with pytest.raises(IsADirectoryError):
         PathSyncer(_size, follow_symlinks=False).sync(
-            pathlib_next.LocalPath(source), pathlib_next.LocalPath(target)
+            pathapi.LocalPath(source), pathapi.LocalPath(target)
         )
 
     assert (target / "link" / "keep.txt").read_text() == "keep"
@@ -348,16 +348,16 @@ def test_directory_symlink_is_created_as_directory_link(tmp_path, monkeypatch):
     source = _dir_link_source(tmp_path)
     target = tmp_path / "dst"
     calls = {}
-    original = pathlib_next.LocalPath._symlink_to
+    original = pathapi.LocalPath._symlink_to
 
     def recording(self, link_target, target_is_directory=False):
         calls[self.name] = target_is_directory
         return original(self, link_target, target_is_directory)
 
-    monkeypatch.setattr(pathlib_next.LocalPath, "_symlink_to", recording)
+    monkeypatch.setattr(pathapi.LocalPath, "_symlink_to", recording)
 
     PathSyncer(_size, follow_symlinks=False).sync(
-        pathlib_next.LocalPath(source), pathlib_next.LocalPath(target)
+        pathapi.LocalPath(source), pathapi.LocalPath(target)
     )
 
     assert calls == {"a_dirlink": True, "a_filelink": False}
@@ -375,7 +375,7 @@ def test_dangling_directory_link_keeps_its_kind(tmp_path):
     target = tmp_path / "dst"
 
     PathSyncer(_size, follow_symlinks=False).sync(
-        pathlib_next.LocalPath(source), pathlib_next.LocalPath(target)
+        pathapi.LocalPath(source), pathapi.LocalPath(target)
     )
 
     attributes = os.lstat(target / "dangling").st_file_attributes
@@ -391,7 +391,7 @@ def test_file_link_to_directory_from_earlier_run_is_repaired(tmp_path):
     _symlink("z_real", target / "a_dirlink")
 
     PathSyncer(_size, follow_symlinks=False).sync(
-        pathlib_next.LocalPath(source), pathlib_next.LocalPath(target)
+        pathapi.LocalPath(source), pathapi.LocalPath(target)
     )
 
     assert sorted(os.listdir(target / "a_dirlink")) == ["f.txt"]
@@ -407,18 +407,18 @@ def test_identical_symlink_is_not_recreated(tmp_path, monkeypatch):
     _symlink("real.txt", source / "link")
     target = tmp_path / "dst"
     syncer = PathSyncer(_size, follow_symlinks=False)
-    syncer.sync(pathlib_next.LocalPath(source), pathlib_next.LocalPath(target))
+    syncer.sync(pathapi.LocalPath(source), pathapi.LocalPath(target))
     before = os.lstat(target / "link")
 
     created = []
     monkeypatch.setattr(
-        pathlib_next.LocalPath,
+        pathapi.LocalPath,
         "_symlink_to",
         lambda self, *args, **kwargs: created.append(self),
     )
     events, hook = _recorder()
     syncer._hook = hook
-    syncer.sync(pathlib_next.LocalPath(source), pathlib_next.LocalPath(target))
+    syncer.sync(pathapi.LocalPath(source), pathapi.LocalPath(target))
 
     assert created == []
     assert SyncEvent.Symlink not in [e for _, _, e, _ in events]
@@ -440,10 +440,10 @@ def test_changed_symlink_is_still_replaced(tmp_path):
     events, hook = _recorder()
 
     PathSyncer(_size, follow_symlinks=False, hook=hook).sync(
-        pathlib_next.LocalPath(source), pathlib_next.LocalPath(target)
+        pathapi.LocalPath(source), pathapi.LocalPath(target)
     )
 
-    assert pathlib_next.LocalPath(target / "link").readlink().as_posix() == "new.txt"
+    assert pathapi.LocalPath(target / "link").readlink().as_posix() == "new.txt"
     assert SyncEvent.Symlink in [e for _, _, e, _ in events]
 
 
@@ -453,7 +453,7 @@ def test_changed_symlink_is_still_replaced(tmp_path):
 def test_pathandstat_follows_symlinks_by_default(tmp_path):
     (tmp_path / "real.txt").write_text("x")
     _symlink("real.txt", tmp_path / "link")
-    link = pathlib_next.LocalPath(tmp_path / "link")
+    link = pathapi.LocalPath(tmp_path / "link")
 
     entry = PathAndStat(link)
     assert entry.is_file() is True

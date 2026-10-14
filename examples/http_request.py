@@ -1,4 +1,4 @@
-"""Send HTTP requests with `pathlib_next.http`: redirects followed under the
+"""Send HTTP requests with `pathapi.http`: redirects followed under the
 rule that `Authorization` never reaches another origin, a failed status turned
 into the `OSError` that `pathlib` raises. Requires network access --
 guarded under `if __name__ == "__main__"` so importing this module is always
@@ -13,7 +13,7 @@ Run directly:
 import os
 import sys
 
-from pathlib_next.http import HTTPClient, raise_for_status, translate_errors
+from pathapi.http import HTTPClient, raise_for_status, translate_errors
 
 
 def fetch(url: str) -> bytes:

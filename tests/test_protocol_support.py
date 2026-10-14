@@ -8,11 +8,11 @@ import types
 
 import pytest
 
-from pathlib_next import LocalPath, MemPath, Path, Pathname
-from pathlib_next import _stubs
-from pathlib_next.ftp import FTPPath
-from pathlib_next.archive import TarPath, ZipPath
-from pathlib_next.protocols import (
+from pathapi import LocalPath, MemPath, Path, Pathname
+from pathapi import _stubs
+from pathapi.ftp import FTPPath
+from pathapi.archive import TarPath, ZipPath
+from pathapi.protocols import (
     BinaryOpen,
     Chmod,
     Chown,

@@ -6,7 +6,7 @@ from __future__ import annotations
 import os
 import typing
 
-from pathlib_next.http import HTTPResponse, get_transport
+from pathapi.http import HTTPResponse, get_transport
 
 _REASONS = {
     200: "OK",
@@ -25,7 +25,7 @@ _REASONS = {
 
 def current_kind():
     """The transport kind the test runs with: what `http_transport_kind` set."""
-    return os.environ.get("PATHLIB_NEXT_HTTP_TRANSPORT", "builtin")
+    return os.environ.get("PATHAPI_HTTP_TRANSPORT", "builtin")
 
 
 def is_client_error(error):

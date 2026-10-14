@@ -4,7 +4,7 @@ import pickle
 
 import pytest
 
-from pathlib_next.mempath import MemFile, MemPath, MemPathBackend
+from pathapi.mempath import MemFile, MemPath, MemPathBackend
 
 
 def test_backend_shared_across_joins_from_empty_root():
@@ -319,7 +319,7 @@ def test_a_string_prefix_joined_onto_a_mempath_keeps_its_backend():
 
 
 def test_glob_with_a_mempath_pattern_searches_the_root_dir():
-    from pathlib_next import glob
+    from pathapi import glob
 
     src = MemPath("/src")
     src.mkdir()

@@ -1,6 +1,6 @@
 # Archive Paths API
 
-::: pathlib_next.archive
+::: pathapi.archive
     options:
       show_if_no_docstring: true
       filters: ["!^_"]

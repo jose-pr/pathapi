@@ -1,3 +1,3 @@
 # Sync API
 
-::: pathlib_next.sync
+::: pathapi.sync

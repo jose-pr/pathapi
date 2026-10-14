@@ -1,6 +1,6 @@
 # FTP Path API
 
-::: pathlib_next.ftp
+::: pathapi.ftp
     options:
       show_if_no_docstring: true
       filters: ["!^_"]

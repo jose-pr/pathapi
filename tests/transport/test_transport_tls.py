@@ -10,7 +10,7 @@ import traceback
 import pytest
 
 from transport_wire import Wire, make_authority, response
-from pathlib_next.http import HTTPTransport
+from pathapi.http import HTTPTransport
 
 TIMEOUT = (5, 5)
 
@@ -128,17 +128,17 @@ def _warnings(caplog):
 
 
 def test_building_with_verification_off_logs_a_warning_each_time(caplog):
-    with caplog.at_level(logging.WARNING, logger="pathlib_next"):
+    with caplog.at_level(logging.WARNING, logger="pathapi"):
         HTTPTransport(verify=False).close()
         HTTPTransport(verify=False).close()
     records = _warnings(caplog)
     assert len(records) == 2
-    assert all(r.name.startswith("pathlib_next.") for r in records)
+    assert all(r.name.startswith("pathapi.") for r in records)
     assert all("not verified" in r.getMessage() for r in records)
 
 
 def test_building_with_verification_on_logs_nothing(caplog):
-    with caplog.at_level(logging.DEBUG, logger="pathlib_next"):
+    with caplog.at_level(logging.DEBUG, logger="pathapi"):
         HTTPTransport().close()
         HTTPTransport(verify=True).close()
     assert _warnings(caplog) == []
@@ -146,6 +146,6 @@ def test_building_with_verification_on_logs_nothing(caplog):
 
 def test_a_context_the_caller_gave_wins_over_verify_and_logs_nothing(caplog):
     context = ssl.create_default_context()
-    with caplog.at_level(logging.DEBUG, logger="pathlib_next"):
+    with caplog.at_level(logging.DEBUG, logger="pathapi"):
         HTTPTransport(ssl_context=context, verify=False).close()
     assert _warnings(caplog) == []

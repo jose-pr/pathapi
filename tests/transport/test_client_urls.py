@@ -3,7 +3,7 @@ redirects."""
 
 import pytest
 
-from pathlib_next.http import is_redirect, split_userinfo
+from pathapi.http import is_redirect, split_userinfo
 from transport_fakes import reply
 
 

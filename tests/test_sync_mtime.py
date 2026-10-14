@@ -10,11 +10,11 @@ import time
 
 import pytest
 
-from pathlib_next import LocalPath
-from pathlib_next.mempath import MemPath
-from pathlib_next import FileStat
-from pathlib_next.sync import PathAndStat, PathSyncer, SyncEvent
-from pathlib_next.sync._compare import _quick_check_in_sync, _same_mtime
+from pathapi import LocalPath
+from pathapi.mempath import MemPath
+from pathapi import FileStat
+from pathapi.sync import PathAndStat, PathSyncer, SyncEvent
+from pathapi.sync._compare import _quick_check_in_sync, _same_mtime
 
 #: 2001-09-09 01:46:40 UTC, a time no copy or touch made today can produce.
 OLD = 1_000_000_000

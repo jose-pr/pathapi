@@ -1,3 +1,3 @@
 # Glob API
 
-::: pathlib_next.glob
+::: pathapi.glob

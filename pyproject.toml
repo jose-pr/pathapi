@@ -4,16 +4,9 @@ requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
-# The DISTRIBUTION name, hyphenated to match what PyPI displays and what
-# `pip install pathlib-next` takes. PEP 503 normalises `_` to `-`, so this
-# was already published as `pathlib-next`; spelling it that way here just
-# stops the repo, the docs and the index from disagreeing.
-#
-# The IMPORT name stays `pathlib_next` (`packages` below, and every
-# `import pathlib_next`) -- a hyphen is not legal in a Python identifier.
-# Distribution name and import name differing is ordinary and intended.
-name = "pathlib-next"
-version = "0.10.0"
+# The distribution and the import package are both `pathapi`.
+name = "pathapi"
+version = "0.1.0"
 authors = [{ name = "Jose A" }]
 description = "Generic Path Protocol based pathlib"
 readme = "README.md"
@@ -32,7 +25,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
-    # src/pathlib_next/py.typed ships in the wheel.
+    # src/pathapi/py.typed ships in the wheel.
     "Typing :: Typed",
 ]
 dependencies = []
@@ -44,50 +37,50 @@ dependencies = []
 dev = ['build', 'twine', 'hatchling', 'pytest', 'pytest-cov', 'pyftpdlib', 'cryptography', 'hypothesis', 'black']
 docs = ['mkdocs', 'mkdocs-material', 'mkdocstrings[python]']
 
-# The HTTP transports `pathlib_next.http` can send through. The value is a class
-# that is built with no arguments; `pathlib_next.http.transport_names()` lists
+# The HTTP transports `pathapi.http` can send through. The value is a class
+# that is built with no arguments; `pathapi.http.transport_names()` lists
 # it without importing it.
-[project.entry-points."pathlib_next.http_transports"]
-builtin = "pathlib_next.http:HTTPTransport"
+[project.entry-points."pathapi.http_transports"]
+builtin = "pathapi.http:HTTPTransport"
 
 [project.urls]
-Homepage = "https://github.com/jose-pr/pathlib-next/"
-Documentation = "https://jose-pr.github.io/pathlib-next/"
-Issues = "https://github.com/jose-pr/pathlib-next/issues"
+Homepage = "https://github.com/jose-pr/pathapi/"
+Documentation = "https://jose-pr.github.io/pathapi/"
+Issues = "https://github.com/jose-pr/pathapi/issues"
 
 
 # Ship the consumer-facing docs inside the installed package, so they are
 # readable from site-packages via importlib.resources without the repo.
-# src/pathlib_next/AGENTS.md (the API header) is included automatically by
+# src/pathapi/AGENTS.md (the API header) is included automatically by
 # living in the package dir. The repo-root AGENTS.md is contributor
 # orientation for a checkout and is not part of the wheel.
 [tool.hatch.build.targets.wheel.force-include]
-"README.md" = "pathlib_next/README.md"
-# The transport suite (`python -m pathlib_next.http.testing`) runs from the installed package.
-"tests/transport/test_client_default.py" = "pathlib_next/http/testing/suite/test_client_default.py"
-"tests/transport/test_client_errors.py" = "pathlib_next/http/testing/suite/test_client_errors.py"
-"tests/transport/test_client_peer_text.py" = "pathlib_next/http/testing/suite/test_client_peer_text.py"
-"tests/transport/test_client_redirect_origin.py" = "pathlib_next/http/testing/suite/test_client_redirect_origin.py"
-"tests/transport/test_client_redirects.py" = "pathlib_next/http/testing/suite/test_client_redirects.py"
-"tests/transport/test_client_reply_limits.py" = "pathlib_next/http/testing/suite/test_client_reply_limits.py"
-"tests/transport/test_client_write_redirects.py" = "pathlib_next/http/testing/suite/test_client_write_redirects.py"
-"tests/transport/test_transport_body.py" = "pathlib_next/http/testing/suite/test_transport_body.py"
-"tests/transport/test_transport_send.py" = "pathlib_next/http/testing/suite/test_transport_send.py"
-"tests/transport/conftest.py" = "pathlib_next/http/testing/suite/conftest.py"
-"tests/transport/transport_fakes.py" = "pathlib_next/http/testing/suite/transport_fakes.py"
-"tests/transport/transport_guard.py" = "pathlib_next/http/testing/suite/transport_guard.py"
-"tests/transport/transport_wire.py" = "pathlib_next/http/testing/suite/transport_wire.py"
+"README.md" = "pathapi/README.md"
+# The transport suite (`python -m pathapi.http.testing`) runs from the installed package.
+"tests/transport/test_client_default.py" = "pathapi/http/testing/suite/test_client_default.py"
+"tests/transport/test_client_errors.py" = "pathapi/http/testing/suite/test_client_errors.py"
+"tests/transport/test_client_peer_text.py" = "pathapi/http/testing/suite/test_client_peer_text.py"
+"tests/transport/test_client_redirect_origin.py" = "pathapi/http/testing/suite/test_client_redirect_origin.py"
+"tests/transport/test_client_redirects.py" = "pathapi/http/testing/suite/test_client_redirects.py"
+"tests/transport/test_client_reply_limits.py" = "pathapi/http/testing/suite/test_client_reply_limits.py"
+"tests/transport/test_client_write_redirects.py" = "pathapi/http/testing/suite/test_client_write_redirects.py"
+"tests/transport/test_transport_body.py" = "pathapi/http/testing/suite/test_transport_body.py"
+"tests/transport/test_transport_send.py" = "pathapi/http/testing/suite/test_transport_send.py"
+"tests/transport/conftest.py" = "pathapi/http/testing/suite/conftest.py"
+"tests/transport/transport_fakes.py" = "pathapi/http/testing/suite/transport_fakes.py"
+"tests/transport/transport_guard.py" = "pathapi/http/testing/suite/transport_guard.py"
+"tests/transport/transport_wire.py" = "pathapi/http/testing/suite/transport_wire.py"
 
 # `*.local.*` files are per-machine overrides and `CLAUDE*` is agent config:
 # neither is ever packaged (both are also gitignored). `/.*` does not match
 # them, since their names do not start with a dot. The repo-root AGENTS.md
 # orients a contributor in a checkout; the API header that ships is
-# src/pathlib_next/AGENTS.md.
+# src/pathapi/AGENTS.md.
 [tool.hatch.build.targets.sdist]
 exclude = ["/.*", "/AGENTS.md", "/benchmarks", "*.local.*", "CLAUDE*"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/pathlib_next"]
+packages = ["src/pathapi"]
 exclude = ["*.local.*", "CLAUDE*"]
 
 

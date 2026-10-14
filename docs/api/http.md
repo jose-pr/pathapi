@@ -1,6 +1,6 @@
 # HTTP API
 
-::: pathlib_next.http
+::: pathapi.http
     options:
       show_if_no_docstring: true
       filters: ["!^_"]

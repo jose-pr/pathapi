@@ -1,4 +1,4 @@
-# pathlib_next — contributor orientation
+# pathapi — contributor orientation
 
 Orientation for working in a checkout of this repository: layout, environment,
 checks, conventions and release. It is not the API reference and it does not
@@ -6,7 +6,7 @@ ship.
 
 | Shipped header | Covers |
 | --- | --- |
-| [`src/pathlib_next/AGENTS.md`](src/pathlib_next/AGENTS.md) | The public API contract: every export, signature and gotcha. It ships in the wheel, so it must stay self-contained (no repo-relative links) and must be updated in the same commit as any public API change. |
+| [`src/pathapi/AGENTS.md`](src/pathapi/AGENTS.md) | The public API contract: every export, signature and gotcha. It ships in the wheel, so it must stay self-contained (no repo-relative links) and must be updated in the same commit as any public API change. |
 
 Deliberate differences from `pathlib.Path` are in
 [`docs/divergences.md`](docs/divergences.md). `pathlib.Path` parity is the
@@ -15,21 +15,21 @@ contract; a behavioral divergence that is not recorded there is a bug.
 This repository is the core alone: no runtime dependency, no extra, no console
 script. The URI layer (`uripath`), SFTP (`sftppath`), the object stores
 (`objpath`), the repository hosts (`repopath`) and the `requests` HTTP
-transport (`pathlib-next-requests`) are distributions of their own that depend
+transport (`pathapi-requests`) are distributions of their own that depend
 on this one. What they read from here (the underscore methods of `Path`, the
-`providers` helpers, `pathlib_next.http`) is their contract with it, written in
+`providers` helpers, `pathapi.http`) is their contract with it, written in
 the shipped header.
 
 ## Layout
 
 | Path | Contents |
 | --- | --- |
-| `src/pathlib_next/` | The package (`src/` layout). `py.typed` and the API header ship with it. A module whose name has no leading underscore is public and declares `__all__`; every other module is private. |
-| `src/pathlib_next/{path,sync,glob,testing}/` | Packages of private modules; each `__init__` re-exports the public names. |
-| `src/pathlib_next/{ftp,archive}/` | The standard-library providers: `FTPPath` and `FTPBackend`; `ZipPath`, `TarPath` and `ArchivePath`. |
-| `src/pathlib_next/http/` | HTTP requests on the standard library: `HTTPClient`, the transport contract and `HTTPTransport`; transports are registered through the `pathlib_next.http_transports` entry points in `pyproject.toml`. |
-| `src/pathlib_next/providers.py` | What a class built on `Path` calls, defined in private modules beside it; `exceptions.py` holds `PathError` and `NonRelativePatternError`. |
-| `tests/` | The pytest suite. `tests/transport/` is the HTTP transport suite, which also ships in the wheel as `pathlib_next.http.testing`. |
+| `src/pathapi/` | The package (`src/` layout). `py.typed` and the API header ship with it. A module whose name has no leading underscore is public and declares `__all__`; every other module is private. |
+| `src/pathapi/{path,sync,glob,testing}/` | Packages of private modules; each `__init__` re-exports the public names. |
+| `src/pathapi/{ftp,archive}/` | The standard-library providers: `FTPPath` and `FTPBackend`; `ZipPath`, `TarPath` and `ArchivePath`. |
+| `src/pathapi/http/` | HTTP requests on the standard library: `HTTPClient`, the transport contract and `HTTPTransport`; transports are registered through the `pathapi.http_transports` entry points in `pyproject.toml`. |
+| `src/pathapi/providers.py` | What a class built on `Path` calls, defined in private modules beside it; `exceptions.py` holds `PathError` and `NonRelativePatternError`. |
+| `tests/` | The pytest suite. `tests/transport/` is the HTTP transport suite, which also ships in the wheel as `pathapi.http.testing`. |
 | `tests/mutation/` | The mutation list; see Checks. Ships in the sdist with `tests/`. |
 | `benchmarks/` | `bench.py` and committed JSON results; see [`benchmarks/README.md`](benchmarks/README.md). Not shipped. |
 | `examples/` | Runnable scripts. Networked ones skip (exit 0) unless their environment variables are set. |
@@ -61,7 +61,7 @@ a green run.
 
 ```bash
 python -m pytest -q                                  # full suite (pythonpath=src is configured)
-python -m pytest -q --cov=pathlib_next --cov-report=term-missing
+python -m pytest -q --cov=pathapi --cov-report=term-missing
 python -m black src/ tests/ benchmarks/ examples/    # formatting; --check to verify
 mkdocs build --strict                                # docs must build with no warnings
 python -m build                                      # sdist + wheel into dist/
@@ -69,7 +69,7 @@ python tests/mutation/run.py --jobs 4                # every guard's tests must 
 ```
 
 - **The mutation list** (`tests/mutation/`) applies one single-line change to a guard
-  of a temporary copy of `src/pathlib_next` and checks that the tests named for
+  of a temporary copy of `src/pathapi` and checks that the tests named for
   it fail. Run it on demand, never in CI, after writing or changing a safety
   test; a mutant whose line has moved is `STALE` and fails the run. Its
   `README.md` says how to add one. It ships in the sdist with `tests/`.

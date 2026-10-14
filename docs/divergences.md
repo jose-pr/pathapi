@@ -1,6 +1,6 @@
 # Divergences from `pathlib`
 
-`pathlib_next` targets `pathlib.Path` parity: same method names, signatures,
+`pathapi` targets `pathlib.Path` parity: same method names, signatures,
 semantics and exception types wherever a `pathlib.Path` equivalent exists.
 Extensions (extra optional kwargs, new methods like `rm()`/`sync`) are
 allowed. Any *behavioral* divergence from `pathlib` on a method that exists
@@ -11,7 +11,7 @@ in via MRO, so unless noted otherwise it behaves exactly like `pathlib.Path`
 (it inherits the real implementation for anything not explicitly overridden).
 The divergences below apply to `MemPath`, `FTPPath` and the archive paths
 (`ZipPath`, `TarPath`, `ArchivePath`). The classes of other distributions built
-on `pathlib-next` (URIs, SFTP, object stores, repository hosts) record their own
+on `pathapi` (URIs, SFTP, object stores, repository hosts) record their own
 divergences in those distributions' documentation; for the URI classes that is
 <https://jose-pr.github.io/uripath/divergences/>.
 
@@ -19,25 +19,25 @@ divergences in those distributions' documentation; for the URI classes that is
 
 Stdlib inheritance is deliberately limited to local filesystem paths:
 
-- `LocalPath` subclasses both `pathlib.Path` and `pathlib_next.Path`.
+- `LocalPath` subclasses both `pathlib.Path` and `pathapi.Path`.
 - `PosixPathname` and `WindowsPathname` subclass the matching stdlib
-  `PurePath` classes and `pathlib_next.Pathname`.
+  `PurePath` classes and `pathapi.Pathname`.
 - `MemPath`, `FTPPath`, the archive paths, and custom virtual or remote
-  implementations subclass the generic pathlib_next bases, not `pathlib.Path`/`PurePath`.
-- A plain stdlib `pathlib.Path` is not a `pathlib_next.Path`.
+  implementations subclass the generic pathapi bases, not `pathlib.Path`/`PurePath`.
+- A plain stdlib `pathlib.Path` is not a `pathapi.Path`.
 
 The generic classes cannot safely inherit the stdlib classes: pathlib parses
 OS-specific path syntax and supplies operations whose semantics assume a local
 filesystem, neither of which applies to a URI, archive member, object-store key,
-or in-memory path. Registering stdlib paths as virtual `pathlib_next.Path`
-subclasses would likewise promise pathlib_next's extended operation contract on
+or in-memory path. Registering stdlib paths as virtual `pathapi.Path`
+subclasses would likewise promise pathapi's extended operation contract on
 Python versions where stdlib paths do not implement it. Code accepting every
-implementation should type against `pathlib_next.Path` or its documented
+implementation should type against `pathapi.Path` or its documented
 protocols; code requiring an OS path should type against `pathlib.Path`.
 
 ### Operation precedence in `Path` subclasses
 
-Because concrete classes mix a `pathlib` class with `pathlib_next.Path`, the
+Because concrete classes mix a `pathlib` class with `pathapi.Path`, the
 MRO alone would decide which library implements a given method -- and *which
 one wins changes with the interpreter version*, since stdlib `pathlib` keeps
 gaining and changing methods. That produced version-dependent behavior in
@@ -46,7 +46,7 @@ on non-local backends, silently and with different timestamp semantics on
 local ones), while pre-3.12/3.13 stdlib lacked keywords our protocols
 promise (`exists(follow_symlinks=)`, `read_text`/`write_text`'s `newline=`).
 
-`pathlib_next.Path.__init_subclass__` therefore re-asserts the pathlib_next
+`pathapi.Path.__init_subclass__` therefore re-asserts the pathapi
 implementation of `copy`, `move`, `copy_into`, `move_into`, `exists`, `rglob`,
 `read_text`, `write_text` and `symlink_to` for any subclass that would otherwise inherit stdlib's. This
 applies automatically to downstream classes built with the documented
@@ -87,7 +87,7 @@ these operations itself always keeps its own implementation.
 | The POSIX `//` root | `PurePosixPath("//")` keeps `//` as a root distinct from `/` (POSIX leaves exactly two leading slashes implementation-defined; three or more collapse) | The generic classes do not model it: `MemPath("//")` collapses to `/`, and a class for URIs reads `//` as the start of an authority (RFC 3986). `match()` therefore disagrees with `pathlib` on that one path. `LocalPath`/`WindowsPathname` are unaffected (they inherit pathlib's parsing, where `//server/share` is a UNC drive). | A distinct double-slash root has no meaning for an in-memory tree or a URI, and for a URI it cannot: `//a/b` must read `a` as a host. Modelling it would change segment normalization everywhere (`parents`, `relative_to`, `is_absolute`, every class) to serve a spelling no backend can use. |
 | `PathSyncer.sync()` safety checks | N/A (closest: `rsync`, which refuses a missing source) | A root `source` that does not exist raises `FileNotFoundError`; overlapping `source`/`target` (one inside the other, or two names of one file) raise `ValueError`, decided as `copy()` and `move()` decide "same file": two files of this machine by where each really is whatever their classes, a type that answers the overridable `_node_key()` (`MemPath`, archive members) by its normalized node across spellings, and anything else only between two paths of one type that the overridable `Path._same_filesystem()` hook places on the same host or store; a child name that would leave `target` (`..`, or `\`/`:` on a Windows target) raises `ValueError`; a symlink found inside `target` is replaced by the real entry instead of being followed, and so is a Windows junction below the root, which is another directory's second name: it is removed with `rmdir()` (event `TypeMismatch`) and never listed, written or deleted through, while a mount point below the root (a mounted volume, a bind mount) is part of the tree and is synced into, as `rsync` does and unlike `rm(recursive=True)`, which stops at one, unless `follow_mounts=False` (`uripath sync --no-follow-mounts`), which makes it an `OSError(EXDEV)` for that entry through `ignore_error` (event `TypeMismatch`) with nothing listed, written or removed behind it (the root `target` is used as given, as for a symlink); a name the source lists is never "missing", so a listed link that cannot be resolved (dangling, a loop, an unmounted volume) is an error for that entry (event `SyncStart`) and the same-named target entry is kept, with or without `remove_missing`. All go through `ignore_error`. **Behaviour change**: a missing root source used to be a silent no-op, or with `remove_missing=True` deleted the whole target. | A typo, unmounted share or HTTP 404 read as "empty source" and wiped the destination; names from a remote listing or archive could write outside it; a link or junction inside the destination redirected writes and deletes outside it; a link to an unmounted volume read as "the entry is gone" and `remove_missing` deleted the target's copy. |
 | `ZipPath.rename(target)` onto an existing member | `pathlib.Path.rename`: replaces a file on POSIX, raises `FileExistsError` on Windows | POSIX semantics on every platform: a file replaces a file, a directory replaces an empty directory; file onto directory raises `IsADirectoryError`, directory onto file `NotADirectoryError`, onto a non-empty directory `OSError(ENOTEMPTY)`. | A zip has no platform; replacing in the same rewrite is the only way to avoid a duplicate member name (which previously hid the renamed data). |
-| `PathSyncer` temporary file for a changed file or link | N/A (closest: `rsync`, which writes `.NAME.XXXXXX`, removes it when a transfer fails and leaves it after a kill) | A changed file is written beside its target as `.NAME.<12 hex>.pathlib-next-tmp` (NAME cut so the whole name stays within 255 UTF-8 bytes) and renamed over it. A name of exactly that form is the library's own: it is never a sync source and never removed as "missing". One is removed from a target directory only when stale -- no sync of the process is writing it and its modification time is known and over a day old -- when a changed file or link of that directory is next written and by `remove_missing=True`; a younger one, or one whose age is unknown, stays. Where a backend's `rename()` refuses an existing target the old file is removed first; if the second rename fails the new version stays under its temporary name and the error names it. | A killed transfer left its temporary file beside an intact target for good, and the next sync copied it onward; a name within 30 characters of the limit could never be updated; the fallback deleted the only copy of a file; and a leftover removed by age alone could have been a transfer running in another process. |
+| `PathSyncer` temporary file for a changed file or link | N/A (closest: `rsync`, which writes `.NAME.XXXXXX`, removes it when a transfer fails and leaves it after a kill) | A changed file is written beside its target as `.NAME.<12 hex>.pathapi-tmp` (NAME cut so the whole name stays within 255 UTF-8 bytes) and renamed over it. A name of exactly that form is the library's own: it is never a sync source and never removed as "missing". One is removed from a target directory only when stale -- no sync of the process is writing it and its modification time is known and over a day old -- when a changed file or link of that directory is next written and by `remove_missing=True`; a younger one, or one whose age is unknown, stays. Where a backend's `rename()` refuses an existing target the old file is removed first; if the second rename fails the new version stays under its temporary name and the error names it. | A killed transfer left its temporary file beside an intact target for good, and the next sync copied it onward; a name within 30 characters of the limit could never be updated; the fallback deleted the only copy of a file; and a leftover removed by age alone could have been a transfer running in another process. |
 | `PathSyncer(follow_symlinks=False).sync()` on a symlink source | N/A (no pathlib equivalent) | Previously always raised `NotImplementedError`. Now controlled by the new `symlink_mode` constructor kwarg (`"preserve"` default, `"reject"` opt-out): `"preserve"` creates a matching symlink on `target` with the same raw, unresolved target string `readlink()` returned (dangling links and relative targets included, never validated/resolved); `"reject"` restores the exact old unconditional-raise behavior. If `target` can't create symlinks at all (every backend except `LocalPath` and those of other distributions that hold links), `"preserve"` also raises `NotImplementedError`, through the same `ignore_error`/`hook()` machinery as every other sync branch, not a silent skip, and a dry run raises it too (it used to report `would symlink`). **This is a default-behavior change, not a pure extension** -- flagged here because existing callers relying on the old unconditional raise (e.g. to detect and skip symlinks) must now pass `symlink_mode="reject"` explicitly. | Faithful one-way tree mirroring needs symlinks preserved as symlinks by default, not silently dropped/erroring -- discovered via a real cross-host sync use case in a downstream tool. `follow_symlinks=True` (unchanged default) still resolves through symlinks during traversal, so this only affects callers who already opted into `follow_symlinks=False`. **User decision, 2026-07-28.** |
 | `PathSyncer(preserve_mtime=True)` modification times | N/A (closest: `rsync`, which sets the time of a copy only with `-t`/`-a`) | A file the sync copies is given the modification time its source reported, through the overridable `_utime()` hook, where the target's class can set one (`LocalPath`, `MemPath`, `FTPPath` on a server that lists `MFMT`, and the classes of other distributions that implement `_utime()`): directories and links are left alone. A source that reports no time, and a target that cannot set one or refuses, keep the time the copy gave them, without an error. `quick_check` compares the two times at the resolution of the coarser side: whole seconds when either has no fractional part, else to a microsecond. **Behaviour change**: a copy used to carry the time it was written at; `preserve_mtime=False` restores that. | `quick_check` is on by default but could never succeed after this library's own copy (the copy carried its write time), so every later sync of a remote tree checksummed (downloaded) every file again. |
 | `<`, `<=`, `>`, `>=` between generic paths | `PurePath` orders paths of one flavour by their case-folded parts; `PureWindowsPath("a") < PurePosixPath("a")` raises `TypeError` | `Pathname` orders two paths of the **same exact type** by the key its `==` uses: the segments (`MemPath`, custom classes), or whatever a class compares instead (the text of a URI, so the host counts). Any other operand, a subclass against its base included, gives `NotImplemented` and so `TypeError`, as `pathlib` does across flavours. Segments compare as strings, case-sensitively, whatever the class's case rule. `LocalPath`, `PosixPathname` and `WindowsPathname` keep `pathlib`'s own ordering. | `sorted(p.iterdir())` is an everyday idiom, and a type that has `==` and `hash` and no order cannot be sorted. The key is the one `==` and `hash` already use, so two paths are never equal and ordered apart. |

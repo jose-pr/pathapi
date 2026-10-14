@@ -10,7 +10,7 @@ import os
 
 import pytest
 
-import pathlib_next
+import pathapi
 
 
 def test_path_dispatcher_construction_from_str(tmp_path):
@@ -20,8 +20,8 @@ def test_path_dispatcher_construction_from_str(tmp_path):
     # _drv/_root/_parts parsing -- leaving a blank instance that crashed
     # the moment anything (e.g. `/`) touched that missing state. Masked on
     # 3.12+, where PurePath.__init__ does the parsing instead.
-    p = pathlib_next.Path(str(tmp_path))
-    assert isinstance(p, pathlib_next.LocalPath)
+    p = pathapi.Path(str(tmp_path))
+    assert isinstance(p, pathapi.LocalPath)
     child = p / "sub" / "f.txt"
     child.parent.mkdir(parents=True, exist_ok=True)
     child.write_text("data")
@@ -29,7 +29,7 @@ def test_path_dispatcher_construction_from_str(tmp_path):
 
 
 def test_touch_exist_ok_false_raises(tmp_path):
-    p = pathlib_next.LocalPath(tmp_path) / "f.txt"
+    p = pathapi.LocalPath(tmp_path) / "f.txt"
     p.touch()
     with pytest.raises(FileExistsError):
         p.touch(exist_ok=False)
@@ -41,7 +41,7 @@ def test_touch_exist_ok_false_raises(tmp_path):
 
 
 def test_touch_creates_new_file(tmp_path):
-    p = pathlib_next.LocalPath(tmp_path) / "new.txt"
+    p = pathapi.LocalPath(tmp_path) / "new.txt"
     assert not p.exists()
     p.touch(exist_ok=False)
     assert p.exists()
@@ -49,7 +49,7 @@ def test_touch_creates_new_file(tmp_path):
 
 
 def test_mkdir_parents_exist_ok(tmp_path):
-    root = pathlib_next.LocalPath(tmp_path)
+    root = pathapi.LocalPath(tmp_path)
     (root / "a").mkdir()
     # B16 regression: parents=True must not choke on an already-existing
     # parent, and must still honor exist_ok=False for the leaf.
@@ -60,7 +60,7 @@ def test_mkdir_parents_exist_ok(tmp_path):
 
 
 def test_glob_matches_pathlib(fixture_tree):
-    root = pathlib_next.LocalPath(fixture_tree)
+    root = pathapi.LocalPath(fixture_tree)
     stdlib_root = fixture_tree
     ours = {p.name for p in root.glob("*.py")}
     theirs = {p.name for p in stdlib_root.glob("*.py")}
@@ -68,7 +68,7 @@ def test_glob_matches_pathlib(fixture_tree):
 
 
 def test_glob_recursive_auto_enable(fixture_tree):
-    root = pathlib_next.LocalPath(fixture_tree)
+    root = pathapi.LocalPath(fixture_tree)
     # Parity gap: "**" in the pattern auto-enables
     # recursion without passing recursive=True explicitly.
     ours = {p.name for p in root.glob("**/*.py")}
@@ -77,7 +77,7 @@ def test_glob_recursive_auto_enable(fixture_tree):
 
 
 def test_glob_hidden_included_by_default_like_pathlib(fixture_tree):
-    root = pathlib_next.LocalPath(fixture_tree)
+    root = pathapi.LocalPath(fixture_tree)
     names = {p.name for p in root.glob("*.txt")}
     assert names == {
         p.name for p in __import__("pathlib").Path(fixture_tree).glob("*.txt")
@@ -87,7 +87,7 @@ def test_glob_hidden_included_by_default_like_pathlib(fixture_tree):
 
 
 def test_walk_matches_os_walk(fixture_tree):
-    root = pathlib_next.LocalPath(fixture_tree)
+    root = pathapi.LocalPath(fixture_tree)
     ours = sorted(
         (
             str(p.relative_to(root).as_posix() if p != root else "."),
@@ -108,7 +108,7 @@ def test_walk_matches_os_walk(fixture_tree):
 
 
 def test_walk_top_down_false(fixture_tree):
-    root = pathlib_next.LocalPath(fixture_tree)
+    root = pathapi.LocalPath(fixture_tree)
     ours_order = [p.name if p != root else "." for p, _, _ in root.walk(top_down=False)]
     theirs_order = [
         os.path.basename(dirpath) or "."
@@ -120,14 +120,14 @@ def test_walk_top_down_false(fixture_tree):
 
 
 def test_rm_recursive(fixture_tree):
-    root = pathlib_next.LocalPath(fixture_tree)
+    root = pathapi.LocalPath(fixture_tree)
     (root / "sub").rm(recursive=True)
     assert not (fixture_tree / "sub").exists()
     assert (fixture_tree / "a.txt").exists()
 
 
 def test_rm_recursive_unlinks_symlink_to_directory(tmp_path):
-    root = pathlib_next.LocalPath(tmp_path)
+    root = pathapi.LocalPath(tmp_path)
     target = root / "target"
     target.mkdir()
     (target / "keep.txt").write_text("keep")
@@ -145,7 +145,7 @@ def test_rm_recursive_unlinks_symlink_to_directory(tmp_path):
 
 
 def test_rm_missing_ok(tmp_path):
-    p = pathlib_next.LocalPath(tmp_path) / "missing"
+    p = pathapi.LocalPath(tmp_path) / "missing"
     with pytest.raises(FileNotFoundError):
         p.rm()
     p.rm(missing_ok=True)
@@ -154,14 +154,14 @@ def test_rm_missing_ok(tmp_path):
 def test_rm_ignore_error_callable_invoked(tmp_path):
     # B14 regression: ignore_error callable must actually be called.
     calls = []
-    p = pathlib_next.LocalPath(tmp_path) / "missing"
+    p = pathapi.LocalPath(tmp_path) / "missing"
     p.rm(ignore_error=lambda err, path: calls.append((type(err), path)) or True)
     assert len(calls) == 1
     assert calls[0][0] is FileNotFoundError
 
 
 def test_copy_into_existing_dir_raises(tmp_path):
-    root = pathlib_next.LocalPath(tmp_path)
+    root = pathapi.LocalPath(tmp_path)
     (root / "d").mkdir()
     (root / "f.txt").write_text("x")
     with pytest.raises(IsADirectoryError):
@@ -169,7 +169,7 @@ def test_copy_into_existing_dir_raises(tmp_path):
 
 
 def test_copy_overwrite(tmp_path):
-    root = pathlib_next.LocalPath(tmp_path)
+    root = pathapi.LocalPath(tmp_path)
     (root / "src.txt").write_text("src")
     (root / "dst.txt").write_text("dst")
     with pytest.raises(FileExistsError):
@@ -179,7 +179,7 @@ def test_copy_overwrite(tmp_path):
 
 
 def test_move_rename_fallback(tmp_path):
-    root = pathlib_next.LocalPath(tmp_path)
+    root = pathapi.LocalPath(tmp_path)
     (root / "src.txt").write_text("data")
     (root / "src.txt").move(root / "dst.txt")
     assert not (root / "src.txt").exists()
@@ -187,7 +187,7 @@ def test_move_rename_fallback(tmp_path):
 
 
 def test_copy_recursive(tmp_path):
-    root = pathlib_next.LocalPath(tmp_path)
+    root = pathapi.LocalPath(tmp_path)
     src = root / "src"
     src.mkdir()
     (src / "f1.txt").write_text("1")
@@ -210,23 +210,23 @@ def test_copy_recursive(tmp_path):
     assert (dst / "f1.txt").read_text() == "1-updated"
 
 
-def test_local_copy_and_move_resolve_to_pathlib_next():
-    assert pathlib_next.LocalPath.copy.__module__.startswith("pathlib_next.")
-    assert pathlib_next.LocalPath.move.__module__.startswith("pathlib_next.")
+def test_local_copy_and_move_resolve_to_pathapi():
+    assert pathapi.LocalPath.copy.__module__.startswith("pathapi.")
+    assert pathapi.LocalPath.move.__module__.startswith("pathapi.")
 
 
 def test_copy_progress_hook_monotonic_and_reaches_total(tmp_path):
     # Copy progress hook (BinaryOpen.copy level): bytes_copied must
     # increase monotonically and the final call must report the file's
     # full size.
-    root = pathlib_next.LocalPath(tmp_path)
+    root = pathapi.LocalPath(tmp_path)
     data = b"x" * (256 * 1024 + 17)  # not a multiple of chunk_size
     (root / "src.bin").write_bytes(data)
 
     # Path.copy() doesn't take chunk_size directly; exercise the lower
     # level BinaryOpen.copy() for chunk_size control, and Path.copy()
     # separately below for the public surface.
-    from pathlib_next.protocols.io import BinaryOpen
+    from pathapi.protocols.io import BinaryOpen
 
     calls = []
 
@@ -254,7 +254,7 @@ def test_copy_progress_hook_not_called_without_callback_and_no_behavior_change(
 ):
     # No callback => identical behavior/content to plain shutil.copyfileobj:
     # the hook must not cost anything when it is not used.
-    root = pathlib_next.LocalPath(tmp_path)
+    root = pathapi.LocalPath(tmp_path)
     data = b"hello world" * 1000
     (root / "src.bin").write_bytes(data)
     (root / "src.bin").copy(root / "dst.bin")
@@ -264,7 +264,7 @@ def test_copy_progress_hook_not_called_without_callback_and_no_behavior_change(
 def test_copy_progress_hook_fires_on_path_copy(tmp_path):
     # Public Path.copy() surface: progress(path, bytes_copied, total_size),
     # path identifies the file being streamed.
-    root = pathlib_next.LocalPath(tmp_path)
+    root = pathapi.LocalPath(tmp_path)
     data = b"y" * 1000
     src = root / "src.bin"
     src.write_bytes(data)
@@ -284,7 +284,7 @@ def test_copy_progress_hook_fires_on_path_copy(tmp_path):
 def test_copy_recursive_progress_hook_reports_per_file_identity(tmp_path):
     # A recursive copy must report per-file identity alongside byte
     # progress -- not just an anonymous byte stream.
-    root = pathlib_next.LocalPath(tmp_path)
+    root = pathapi.LocalPath(tmp_path)
     src = root / "src"
     src.mkdir()
     (src / "f1.txt").write_bytes(b"a" * 500)
@@ -323,14 +323,14 @@ def test_copy_recursive_progress_hook_reports_per_file_identity(tmp_path):
 
 
 def test_move_recursive_fallback(tmp_path):
-    root = pathlib_next.LocalPath(tmp_path)
+    root = pathapi.LocalPath(tmp_path)
     src = root / "src"
     src.mkdir()
     (src / "f1.txt").write_text("1")
     (src / "sub").mkdir()
     (src / "sub" / "f2.txt").write_text("2")
 
-    class NoRenamePath(pathlib_next.LocalPath):
+    class NoRenamePath(pathapi.LocalPath):
         def rename(self, target):
             raise NotImplementedError("rename not supported")
 
@@ -345,7 +345,7 @@ def test_move_recursive_fallback(tmp_path):
 
 # --- symlink_to(force=) ---------------------------------------------------
 #
-# `force=` is a pathlib_next extension (docs/divergences.md): stdlib's
+# `force=` is a pathapi extension (docs/divergences.md): stdlib's
 # symlink_to() raises FileExistsError when something is already at the link
 # path, and every consumer that wanted "replace it" re-implemented the same
 # unlink-then-symlink dance. Because no stdlib version accepts the keyword,
@@ -363,7 +363,7 @@ def _symlink_or_skip(link, target):
 
 
 def test_symlink_to_without_force_matches_stdlib(tmp_path):
-    root = pathlib_next.LocalPath(tmp_path)
+    root = pathapi.LocalPath(tmp_path)
     (root / "target.txt").write_text("target")
     link = root / "link"
     _symlink_or_skip(link, root / "target.txt")
@@ -377,7 +377,7 @@ def test_symlink_to_without_force_matches_stdlib(tmp_path):
 
 
 def test_symlink_to_force_replaces_existing_symlink(tmp_path):
-    root = pathlib_next.LocalPath(tmp_path)
+    root = pathapi.LocalPath(tmp_path)
     (root / "a.txt").write_text("a")
     (root / "b.txt").write_text("b")
     link = root / "link"
@@ -390,7 +390,7 @@ def test_symlink_to_force_replaces_existing_symlink(tmp_path):
 
 
 def test_symlink_to_force_replaces_existing_regular_file(tmp_path):
-    root = pathlib_next.LocalPath(tmp_path)
+    root = pathapi.LocalPath(tmp_path)
     (root / "target.txt").write_text("target")
     link = root / "link"
     link.write_text("i am a real file")
@@ -402,7 +402,7 @@ def test_symlink_to_force_replaces_existing_regular_file(tmp_path):
 
 
 def test_symlink_to_force_on_missing_path_is_plain_create(tmp_path):
-    root = pathlib_next.LocalPath(tmp_path)
+    root = pathapi.LocalPath(tmp_path)
     (root / "target.txt").write_text("target")
     link = root / "link"
 
@@ -416,7 +416,7 @@ def test_symlink_to_force_on_missing_path_is_plain_create(tmp_path):
 
 
 def test_symlink_to_force_refuses_to_remove_a_directory(tmp_path):
-    root = pathlib_next.LocalPath(tmp_path)
+    root = pathapi.LocalPath(tmp_path)
     (root / "target.txt").write_text("target")
     link = root / "link"
     link.mkdir()
@@ -431,7 +431,7 @@ def test_symlink_to_force_refuses_to_remove_a_directory(tmp_path):
 
 
 def test_symlink_to_accepts_str_target(tmp_path):
-    root = pathlib_next.LocalPath(tmp_path)
+    root = pathapi.LocalPath(tmp_path)
     (root / "target.txt").write_text("target")
     link = root / "link"
 
@@ -442,7 +442,7 @@ def test_symlink_to_accepts_str_target(tmp_path):
 
 
 def test_symlink_to_relative_target_stays_relative(tmp_path):
-    root = pathlib_next.LocalPath(tmp_path)
+    root = pathapi.LocalPath(tmp_path)
     (root / "target.txt").write_text("target")
     link = root / "link"
 
@@ -458,7 +458,7 @@ def test_symlink_to_relative_target_stays_relative(tmp_path):
 def test_local_chmod_accepts_string_octal_mode(tmp_path):
     import stat as _stat
 
-    root = pathlib_next.LocalPath(tmp_path)
+    root = pathapi.LocalPath(tmp_path)
     f = root / "f.txt"
     f.write_text("x")
 
@@ -473,7 +473,7 @@ def test_local_chmod_accepts_string_octal_mode(tmp_path):
 
 @pytest.mark.skipif(not hasattr(os, "chown"), reason="POSIX-only (os.chown)")
 def test_local_chown_leaves_unspecified_field_alone(tmp_path):
-    root = pathlib_next.LocalPath(tmp_path)
+    root = pathapi.LocalPath(tmp_path)
     f = root / "f.txt"
     f.write_text("x")
     before = f.stat()
@@ -493,7 +493,7 @@ def test_local_chown_leaves_unspecified_field_alone(tmp_path):
 def test_local_chown_no_op_needs_no_privileges(tmp_path):
     # Both fields "unchanged" short-circuits before touching the backend, so
     # this must work everywhere -- including Windows, which has no os.chown.
-    root = pathlib_next.LocalPath(tmp_path)
+    root = pathapi.LocalPath(tmp_path)
     f = root / "f.txt"
     f.write_text("x")
     f.chown()
@@ -510,7 +510,7 @@ def test_local_chown_unsupported_platform_raises_notimplementederror(tmp_path, u
     # module, so every name misses). docs/divergences.md promises
     # NotImplementedError, which is what every other unsupported capability
     # in this library raises.
-    root = pathlib_next.LocalPath(tmp_path)
+    root = pathapi.LocalPath(tmp_path)
     f = root / "f.txt"
     f.write_text("x")
     with pytest.raises(NotImplementedError):

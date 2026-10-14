@@ -1,4 +1,4 @@
-"""The shipped API header (`pathlib_next/AGENTS.md`) against the installed code.
+"""The shipped API header (`pathapi/AGENTS.md`) against the installed code.
 
 Every fenced Python block of the header is a stub: `class`/`def` lines whose
 parameter lists, `class` bases, and constant values are compared with the real
@@ -17,10 +17,10 @@ import re
 
 import pytest
 
-import pathlib_next
+import pathapi
 
-HEADER = pathlib.Path(pathlib_next.__file__).resolve().parent / "AGENTS.md"
-MODULE = re.compile(r"`(pathlib_next[\w.]*)`")
+HEADER = pathlib.Path(pathapi.__file__).resolve().parent / "AGENTS.md"
+MODULE = re.compile(r"`(pathapi[\w.]*)`")
 KINDS = {
     "POSITIONAL_ONLY": inspect.Parameter.POSITIONAL_ONLY,
     "POSITIONAL_OR_KEYWORD": inspect.Parameter.POSITIONAL_OR_KEYWORD,
@@ -277,11 +277,11 @@ def test_the_header_has_blocks_for_the_modules_it_documents():
     found = blocks(HEADER.read_text(encoding="utf-8"))
     assert len(found) > 30
     assert {m for _t, mods, _l, _s in found for m in mods} >= {
-        "pathlib_next.path",
-        "pathlib_next.sync",
-        "pathlib_next.ftp",
-        "pathlib_next.archive",
-        "pathlib_next.http",
+        "pathapi.path",
+        "pathapi.sync",
+        "pathapi.ftp",
+        "pathapi.archive",
+        "pathapi.http",
     }
 
 
@@ -341,17 +341,17 @@ def test_the_header_closes_with_the_standard_sections():
 
 def test_the_header_opens_as_the_standard_says():
     text = HEADER.read_text(encoding="utf-8")
-    assert text.startswith("# `pathlib_next` — public API header\n")
+    assert text.startswith("# `pathapi` — public API header\n")
     opening = text.split("\n\n")[1]
     assert "ships inside the package" in opening and "self-contained" in opening
-    assert "<https://github.com/jose-pr/pathlib-next>" in opening
-    assert "`pathlib_next.__version__`" in text.split("\n## ", 1)[0]
+    assert "<https://github.com/jose-pr/pathapi>" in opening
+    assert "`pathapi.__version__`" in text.split("\n## ", 1)[0]
 
 
 def test_the_header_links_only_to_absolute_urls():
     text = HEADER.read_text(encoding="utf-8")
     assert re.findall(r"\]\((?!https?://)[^)]*\)", text) == []
-    for private in ("CHANGELOG.md", "docs/", "src/pathlib_next"):
+    for private in ("CHANGELOG.md", "docs/", "src/pathapi"):
         assert private not in text
 
 
@@ -362,7 +362,7 @@ def test_the_module_sections_run_from_the_root_to_the_testing_helpers():
 
 
 def test_every_protocol_the_package_exports_is_in_the_header():
-    from pathlib_next import protocols
+    from pathapi import protocols
 
     text = HEADER.read_text(encoding="utf-8")
     missing = [name for name in protocols.__all__ if f"`{name}`" not in text]

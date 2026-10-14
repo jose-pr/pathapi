@@ -6,7 +6,7 @@ import errno
 
 import pytest
 
-from pathlib_next.http import HTTPClient
+from pathapi.http import HTTPClient
 from transport_fakes import FakeTransport, reply
 from transport_wire import Reply, Wire, response
 

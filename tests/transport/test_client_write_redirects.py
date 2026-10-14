@@ -8,7 +8,7 @@ import io
 
 import pytest
 
-from pathlib_next.http import HTTPClient
+from pathapi.http import HTTPClient
 from transport_wire import Wire, response
 
 pytestmark = pytest.mark.usefixtures("http_transport_kind")

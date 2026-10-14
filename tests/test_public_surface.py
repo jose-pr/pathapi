@@ -17,14 +17,14 @@ import sys
 
 import pytest
 
-import pathlib_next
+import pathapi
 
-PACKAGE = pathlib.Path(pathlib_next.__file__).resolve().parent
+PACKAGE = pathlib.Path(pathapi.__file__).resolve().parent
 HEADER = PACKAGE / "AGENTS.md"
 
 # Each module's exports, as the shipped header documents them.
 EXPORTS = {
-    "pathlib_next": {
+    "pathapi": {
         "ArchivePath",
         "BinaryOpen",
         "Chmod",
@@ -48,15 +48,15 @@ EXPORTS = {
         "glob",
         "sync",
     },
-    "pathlib_next.path": {
+    "pathapi.path": {
         "FsPathLike",
         "Path",
         "PathLike",
         "Pathname",
         "PurePathLike",
     },
-    "pathlib_next.fspath": {"LocalPath", "PosixPathname", "WindowsPathname"},
-    "pathlib_next.archive": {
+    "pathapi.fspath": {"LocalPath", "PosixPathname", "WindowsPathname"},
+    "pathapi.archive": {
         "ArchivePath",
         "LinkTarget",
         "MAX_LINKS",
@@ -67,7 +67,7 @@ EXPORTS = {
         "make_archive",
         "unpack_archive",
     },
-    "pathlib_next.ftp": {
+    "pathapi.ftp": {
         "BaseFTPBackend",
         "DEFAULT_PORT",
         "DEFAULT_TIMEOUT",
@@ -76,7 +76,7 @@ EXPORTS = {
         "FTPPath",
         "IDLE_PROBE_SECONDS",
     },
-    "pathlib_next.protocols": {
+    "pathapi.protocols": {
         "BinaryOpen",
         "Chmod",
         "Chown",
@@ -99,7 +99,7 @@ EXPORTS = {
         "capabilities",
         "supports",
     },
-    "pathlib_next.protocols.fs": {
+    "pathapi.protocols.fs": {
         "Chmod",
         "Chown",
         "Create",
@@ -108,14 +108,14 @@ EXPORTS = {
         "Stat",
         "Utime",
     },
-    "pathlib_next.protocols.io": {"BinaryOpen"},
-    "pathlib_next.protocols.checksum": {"NativeChecksum"},
-    "pathlib_next.protocols.pure": {"Named"},
-    "pathlib_next.protocols.tree": {"Listing", "Remove"},
-    "pathlib_next.protocols.links": {"Hardlink", "Readlink", "Symlink"},
-    "pathlib_next.protocols.resolve": {"Resolve"},
-    "pathlib_next.protocols.transfer": {"Copy", "Identity", "Move"},
-    "pathlib_next.providers": {
+    "pathapi.protocols.io": {"BinaryOpen"},
+    "pathapi.protocols.checksum": {"NativeChecksum"},
+    "pathapi.protocols.pure": {"Named"},
+    "pathapi.protocols.tree": {"Listing", "Remove"},
+    "pathapi.protocols.links": {"Hardlink", "Readlink", "Symlink"},
+    "pathapi.protocols.resolve": {"Resolve"},
+    "pathapi.protocols.transfer": {"Copy", "Identity", "Move"},
+    "pathapi.providers": {
         "CommitOnClose",
         "DiscardOnError",
         "LRU",
@@ -138,11 +138,11 @@ EXPORTS = {
         "name_suffixes",
         "notimplemented",
     },
-    "pathlib_next.checksum": {"md5", "native", "sha256", "stream"},
-    "pathlib_next.exceptions": {"NonRelativePatternError", "PathError"},
-    "pathlib_next.mempath": {"MemBytesIO", "MemFile", "MemPath", "MemPathBackend"},
-    "pathlib_next.sync": {"PathAndStat", "PathSyncer", "SyncEvent"},
-    "pathlib_next.testing": {
+    "pathapi.checksum": {"md5", "native", "sha256", "stream"},
+    "pathapi.exceptions": {"NonRelativePatternError", "PathError"},
+    "pathapi.mempath": {"MemBytesIO", "MemFile", "MemPath", "MemPathBackend"},
+    "pathapi.sync": {"PathAndStat", "PathSyncer", "SyncEvent"},
+    "pathapi.testing": {
         "DIRECTORY_ERRORS",
         "FIXTURE_TREE",
         "NOT_EMPTY_ERRNOS",
@@ -151,7 +151,7 @@ EXPORTS = {
         "ReadPathContract",
         "populate_fixture_tree",
     },
-    "pathlib_next.http": {
+    "pathapi.http": {
         "DEFAULT_TIMEOUT",
         "HTTPClient",
         "HTTPResponse",
@@ -177,7 +177,7 @@ EXPORTS = {
         "translate_errors",
         "transport_names",
     },
-    "pathlib_next.glob": {
+    "pathapi.glob": {
         "RECURSIVE",
         "full_match",
         "glob",
@@ -189,34 +189,34 @@ EXPORTS = {
 # Every module of the core that is public: it declares `__all__`. Every other
 # module of the core starts with an underscore.
 CORE_PUBLIC = {
-    "pathlib_next",
-    "pathlib_next.archive",
-    "pathlib_next.checksum",
-    "pathlib_next.exceptions",
-    "pathlib_next.fspath",
-    "pathlib_next.ftp",
-    "pathlib_next.glob",
-    "pathlib_next.http",
-    "pathlib_next.mempath",
-    "pathlib_next.path",
-    "pathlib_next.protocols",
-    "pathlib_next.protocols.checksum",
-    "pathlib_next.protocols.fs",
-    "pathlib_next.protocols.io",
-    "pathlib_next.protocols.links",
-    "pathlib_next.protocols.pure",
-    "pathlib_next.protocols.resolve",
-    "pathlib_next.protocols.transfer",
-    "pathlib_next.protocols.tree",
-    "pathlib_next.providers",
-    "pathlib_next.sync",
-    "pathlib_next.testing",
+    "pathapi",
+    "pathapi.archive",
+    "pathapi.checksum",
+    "pathapi.exceptions",
+    "pathapi.fspath",
+    "pathapi.ftp",
+    "pathapi.glob",
+    "pathapi.http",
+    "pathapi.mempath",
+    "pathapi.path",
+    "pathapi.protocols",
+    "pathapi.protocols.checksum",
+    "pathapi.protocols.fs",
+    "pathapi.protocols.io",
+    "pathapi.protocols.links",
+    "pathapi.protocols.pure",
+    "pathapi.protocols.resolve",
+    "pathapi.protocols.transfer",
+    "pathapi.protocols.tree",
+    "pathapi.providers",
+    "pathapi.sync",
+    "pathapi.testing",
 }
 
 
 # Importable and documented, but testing support: outside the compatibility
 # promise, never imported by the package it tests, and not exported by it.
-TESTING_SUPPORT = {"pathlib_next.http.testing"}
+TESTING_SUPPORT = {"pathapi.http.testing"}
 
 
 def _core_modules():
@@ -228,7 +228,7 @@ def _core_modules():
             continue
         if parts[-1] == "__init__":
             parts = parts[:-1]
-        found.add(".".join(("pathlib_next", *parts)))
+        found.add(".".join(("pathapi", *parts)))
     return found
 
 
@@ -272,15 +272,15 @@ def test_documented_names_stay_importable_from_where_they_are_documented(module)
 
 def test_star_import_of_the_root_publishes_only_the_declared_names():
     namespace: dict = {}
-    exec("from pathlib_next import *", namespace)
+    exec("from pathapi import *", namespace)
     published = {name for name in namespace if name != "__builtins__"}
-    assert published == set(pathlib_next.__all__)
+    assert published == set(pathapi.__all__)
     for leaked in ("P", "PN", "annotations", "fspath", "path", "protocols"):
         assert leaked not in published
 
 
 def test_names_that_were_never_documented_stay_importable_by_name():
-    from pathlib_next.path import P, PN  # noqa: F401
+    from pathapi.path import P, PN  # noqa: F401
 
 
 def _header_import_lines():
@@ -294,18 +294,18 @@ def _header_import_lines():
 
 def test_the_import_lines_of_the_header_run():
     lines = list(_header_import_lines())
-    assert any("pathlib_next.testing" in line for line in lines)
+    assert any("pathapi.testing" in line for line in lines)
     for line in lines:
         exec(line, {})
 
 
 def test_version_is_the_installed_distribution_version():
-    assert isinstance(pathlib_next.__version__, str)
+    assert isinstance(pathapi.__version__, str)
     try:
-        installed = importlib.metadata.version("pathlib_next")
+        installed = importlib.metadata.version("pathapi")
     except importlib.metadata.PackageNotFoundError:
         pytest.skip("the package is not installed")
-    assert pathlib_next.__version__ == installed
+    assert pathapi.__version__ == installed
 
 
 def test_version_of_a_source_tree_that_is_not_installed():
@@ -314,8 +314,8 @@ def test_version_of_a_source_tree_that_is_not_installed():
         "def missing(name):\n"
         "    raise m.PackageNotFoundError(name)\n"
         "m.version = missing\n"
-        "import pathlib_next\n"
-        "print(pathlib_next.__version__)\n"
+        "import pathapi\n"
+        "print(pathapi.__version__)\n"
     )
     env = dict(os.environ, PYTHONPATH=str(PACKAGE.parent))
     result = subprocess.run(
@@ -394,9 +394,9 @@ def test_no_protocol_stub_has_a_body_a_type_checker_reads_as_abstract():
 
 
 CONSUMER = """\
-from pathlib_next import FileStat, LocalPath, Path, Pathname, checksum, glob, sync
-from pathlib_next.mempath import MemPath
-from pathlib_next.protocols import BinaryOpen, Listing, Stat
+from pathapi import FileStat, LocalPath, Path, Pathname, checksum, glob, sync
+from pathapi.mempath import MemPath
+from pathapi.protocols import BinaryOpen, Listing, Stat
 
 bare = Path("x")
 local = LocalPath("x")

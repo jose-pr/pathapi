@@ -1,7 +1,7 @@
 """Downstream-subclass MRO precedence regressions.
 
 Concrete path classes are built by mixing a `pathlib` class with
-`pathlib_next.Path` -- our own `LocalPath` does it, and the documented
+`pathapi.Path` -- our own `LocalPath` does it, and the documented
 downstream recipe (`class X(PosixPathname, Path)`) does it transitively.
 Python then resolves each method to whichever base declares it first, and
 *which library wins changes with the interpreter version*, because stdlib
@@ -39,12 +39,12 @@ import types
 import pytest
 from capabilities import requires_junctions
 
-import pathlib_next
-from pathlib_next import Path, PosixPathname, WindowsPathname
-from pathlib_next.fspath import _BaseFSPathname
-from pathlib_next.mempath import MemPath
+import pathapi
+from pathapi import Path, PosixPathname, WindowsPathname
+from pathapi.fspath import _BaseFSPathname
+from pathapi.mempath import MemPath
 
-# Every operation whose implementation must come from pathlib_next no matter
+# Every operation whose implementation must come from pathapi no matter
 # where stdlib sits in a subclass's MRO.
 GUARDED = (
     "copy",
@@ -98,18 +98,18 @@ DOWNSTREAM_CLASSES = [
     DownstreamPosixPath,
     DownstreamWindowsPath,
     DownstreamConcreteLocal,
-    pathlib_next.LocalPath,
+    pathapi.LocalPath,
 ]
 
 
 @pytest.mark.parametrize("cls", DOWNSTREAM_CLASSES, ids=lambda c: c.__name__)
 @pytest.mark.parametrize("name", GUARDED)
-def test_downstream_subclass_resolves_pathlib_next_implementation(cls, name):
+def test_downstream_subclass_resolves_pathapi_implementation(cls, name):
     """Assert WHICH implementation ran, not merely that it did not raise."""
     module = _impl_module(cls, name)
-    assert module.startswith("pathlib_next"), (
+    assert module.startswith("pathapi"), (
         f"{cls.__name__}.{name} resolved to {module!r} instead of "
-        f"pathlib_next (Python {sys.version.split()[0]}); stdlib pathlib "
+        f"pathapi (Python {sys.version.split()[0]}); stdlib pathlib "
         f"won the MRO"
     )
 
@@ -123,21 +123,21 @@ def test_non_local_downstream_copy_does_not_need_copy_from():
     assert dst.read_text() == "payload"
 
 
-def test_local_downstream_copy_keeps_pathlib_next_metadata_semantics(tmp_path):
+def test_local_downstream_copy_keeps_pathapi_metadata_semantics(tmp_path):
     """The SILENT mode: a local-backed downstream class copies without
     raising on every version, so only the observable metadata consequence
     distinguishes stdlib's implementation from ours.
 
-    pathlib_next's copy preserves st_mode only -- never timestamps. Stdlib
+    pathapi's copy preserves st_mode only -- never timestamps. Stdlib
     3.14's `preserve_metadata=True` path does preserve mtime, which is what
     made mtime-based syncs converge on 3.14 and never converge on <=3.13.
     """
-    src = pathlib_next.LocalPath(tmp_path / "src.txt")
+    src = pathapi.LocalPath(tmp_path / "src.txt")
     src.write_text("payload")
     backdated = 100000.0
     os.utime(os.fspath(src), (backdated, backdated))
 
-    dst = pathlib_next.LocalPath(tmp_path / "dst.txt")
+    dst = pathapi.LocalPath(tmp_path / "dst.txt")
     src.copy(dst)
 
     assert dst.read_text() == "payload"
@@ -153,11 +153,11 @@ def test_local_exists_accepts_follow_symlinks(tmp_path):
     gained the keyword in 3.12, so on the floor this used to raise
     `TypeError`. A call with NO arguments passes on every interpreter while
     the defect is fully present -- the keyword is the whole point."""
-    p = pathlib_next.LocalPath(tmp_path / "f.txt")
+    p = pathapi.LocalPath(tmp_path / "f.txt")
     p.write_text("x")
     assert p.exists(follow_symlinks=True) is True
     assert p.exists(follow_symlinks=False) is True
-    missing = pathlib_next.LocalPath(tmp_path / "nope.txt")
+    missing = pathapi.LocalPath(tmp_path / "nope.txt")
     assert missing.exists(follow_symlinks=False) is False
 
 
@@ -169,7 +169,7 @@ def test_local_exists_on_dangling_symlink(tmp_path):
         os.symlink(tmp_path / "missing-target", link)
     except (OSError, NotImplementedError) as error:
         pytest.skip(f"symlink unavailable: {error}")
-    p = pathlib_next.LocalPath(link)
+    p = pathapi.LocalPath(link)
     assert p.exists(follow_symlinks=False) is True
     assert p.exists(follow_symlinks=True) is False
 
@@ -177,7 +177,7 @@ def test_local_exists_on_dangling_symlink(tmp_path):
 def test_local_exists_maps_oserror_to_false(tmp_path):
     """`exists()` must swallow OSError and report False (pathlib parity)."""
 
-    class Boom(pathlib_next.LocalPath):
+    class Boom(pathapi.LocalPath):
         __slots__ = ()
 
         def stat(self, *, follow_symlinks=True):
@@ -186,11 +186,11 @@ def test_local_exists_maps_oserror_to_false(tmp_path):
     assert Boom(tmp_path / "x").exists(follow_symlinks=False) is False
 
 
-def test_local_rglob_accepts_pathlib_next_extensions(tmp_path):
+def test_local_rglob_accepts_pathapi_extensions(tmp_path):
     """`include_hidden=`/`recursive=`/`dironly=` never existed in stdlib's
     rglob, and `glob` was already routed on LocalPath while `rglob` was
     not -- a real gap on BOTH interpreters."""
-    root = pathlib_next.LocalPath(tmp_path)
+    root = pathapi.LocalPath(tmp_path)
     (tmp_path / "sub").mkdir()
     (tmp_path / "sub" / "a.txt").write_text("a")
     (tmp_path / ".hidden.txt").write_text("h")
@@ -204,7 +204,7 @@ def test_local_rglob_accepts_pathlib_next_extensions(tmp_path):
 def test_local_read_write_text_accept_newline(tmp_path):
     """`newline=` is 3.13+ in stdlib's read_text/write_text but is part of
     this library's BinaryOpen protocol on every supported version."""
-    p = pathlib_next.LocalPath(tmp_path / "nl.txt")
+    p = pathapi.LocalPath(tmp_path / "nl.txt")
     p.write_text("a\nb", newline="\r\n")
     assert p.read_bytes() == b"a\r\nb"
     assert p.read_text(newline="") == "a\r\nb"
@@ -212,9 +212,9 @@ def test_local_read_write_text_accept_newline(tmp_path):
 
 def test_subclass_may_still_override_guarded_operations(tmp_path):
     """The precedence guard must not clobber a downstream's OWN override --
-    it only displaces implementations coming from outside pathlib_next."""
+    it only displaces implementations coming from outside pathapi."""
 
-    class CustomCopy(pathlib_next.LocalPath):
+    class CustomCopy(pathapi.LocalPath):
         __slots__ = ()
         called = False
 
@@ -227,7 +227,7 @@ def test_subclass_may_still_override_guarded_operations(tmp_path):
     dst = CustomCopy(tmp_path / "d.txt")
     src.copy(dst)
     # The subclass's own copy() ran (it is NOT replaced by the guard), and
-    # its super() call still reaches pathlib_next rather than stdlib.
+    # its super() call still reaches pathapi rather than stdlib.
     assert CustomCopy.called is True
     assert CustomCopy.copy is vars(CustomCopy)["copy"]
     assert dst.read_text() == "v"
@@ -236,7 +236,7 @@ def test_subclass_may_still_override_guarded_operations(tmp_path):
 def test_downstream_mixin_composition_keeps_precedence():
     """The real downstream shape: a behavior mixin combined with a pathname
     mixin and `Path` (e.g. a downstream `class X(_Mixin, PosixPathname, Path)`).
-    The mixin does not define these operations, so pathlib_next must still
+    The mixin does not define these operations, so pathapi must still
     win -- on every interpreter."""
 
     class _Mixin:
@@ -246,7 +246,7 @@ def test_downstream_mixin_composition_keeps_precedence():
         __slots__ = ()
 
     for name in GUARDED:
-        assert _impl_module(Composed, name).startswith("pathlib_next"), name
+        assert _impl_module(Composed, name).startswith("pathapi"), name
 
 
 def test_mixin_defined_operation_is_not_displaced():
@@ -265,7 +265,7 @@ def test_mixin_defined_operation_is_not_displaced():
     assert Composed.copy is CopyMixin.copy
 
 
-# --- what the guarded operations call must be pathlib_next's too -----------
+# --- what the guarded operations call must be pathapi's too -----------
 
 
 def test_concrete_local_downstream_guarded_operations_run(tmp_path):
@@ -302,9 +302,9 @@ def test_concrete_local_downstream_guarded_operations_run(tmp_path):
 
 
 @pytest.mark.parametrize("name", ["glob", "walk"])
-def test_concrete_local_downstream_companions_resolve_to_pathlib_next(name):
+def test_concrete_local_downstream_companions_resolve_to_pathapi(name):
     module = _impl_module(DownstreamConcreteLocal, name)
-    assert module.startswith("pathlib_next"), (name, module)
+    assert module.startswith("pathapi"), (name, module)
 
 
 # --- a class mixing a concrete stdlib path gets LocalPath's primitives ------
@@ -314,7 +314,7 @@ def test_concrete_local_downstream_companions_resolve_to_pathlib_next(name):
 #: from.
 LOCAL_PRIMITIVES = sorted(
     name
-    for name, value in vars(pathlib_next.LocalPath).items()
+    for name, value in vars(pathapi.LocalPath).items()
     if isinstance(value, types.FunctionType)
     and not (name.startswith("__") and name.endswith("__"))
 )
@@ -322,14 +322,14 @@ LOCAL_PRIMITIVES = sorted(
 
 @pytest.mark.parametrize("name", LOCAL_PRIMITIVES)
 def test_concrete_local_downstream_has_the_local_primitive_of_localpath(name):
-    assert getattr(DownstreamConcreteLocal, name) is vars(pathlib_next.LocalPath)[name]
+    assert getattr(DownstreamConcreteLocal, name) is vars(pathapi.LocalPath)[name]
 
 
 def test_local_primitives_are_not_tied_to_the_localpath_class():
     """A zero-argument `super()` binds a function to `LocalPath`, so it could
     not run on another class."""
     for name in LOCAL_PRIMITIVES:
-        code = vars(pathlib_next.LocalPath)[name].__code__
+        code = vars(pathapi.LocalPath)[name].__code__
         assert "__class__" not in code.co_freevars, name
 
 
@@ -349,7 +349,7 @@ def test_concrete_local_downstream_keeps_a_mixin_defined_primitive():
         __slots__ = ()
 
     assert Composed.is_junction is Mixin.is_junction
-    assert Composed.is_mount is vars(pathlib_next.LocalPath)["is_mount"]
+    assert Composed.is_mount is vars(pathapi.LocalPath)["is_mount"]
 
 
 def test_concrete_local_downstream_creates_a_symlink(tmp_path):
@@ -435,9 +435,9 @@ def test_concrete_local_downstream_rm_leaves_a_junction_when_told_to(tmp_path):
 
 @pytest.mark.parametrize("name", ["owner", "group"])
 def test_local_path_keeps_stdlibs_owner_and_group(name):
-    local = _impl_module(pathlib_next.LocalPath, name)
+    local = _impl_module(pathapi.LocalPath, name)
     assert local == "pathlib" or local.startswith("pathlib.")
-    assert _impl_module(DownstreamMemPath, name) == "pathlib_next.protocols.fs"
+    assert _impl_module(DownstreamMemPath, name) == "pathapi.protocols.fs"
 
 
 @pytest.mark.parametrize(
@@ -446,6 +446,6 @@ def test_local_path_keeps_stdlibs_owner_and_group(name):
     + (["hardlink_to"] if hasattr(pathlib.Path, "hardlink_to") else []),
 )
 def test_local_path_keeps_stdlibs_links_and_resolution(name):
-    local = _impl_module(pathlib_next.LocalPath, name)
+    local = _impl_module(pathapi.LocalPath, name)
     assert local == "pathlib" or local.startswith("pathlib.")
-    assert _impl_module(DownstreamMemPath, name).startswith("pathlib_next.protocols")
+    assert _impl_module(DownstreamMemPath, name).startswith("pathapi.protocols")

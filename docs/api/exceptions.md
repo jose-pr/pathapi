@@ -1,3 +1,3 @@
 # Exceptions API
 
-::: pathlib_next.exceptions
+::: pathapi.exceptions

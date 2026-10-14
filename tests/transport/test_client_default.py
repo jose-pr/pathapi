@@ -11,14 +11,14 @@ import textwrap
 
 import pytest
 
-import pathlib_next
-import pathlib_next.http as http
-from pathlib_next.http import HTTPClient, HTTPTransport
+import pathapi
+import pathapi.http as http
+from pathapi.http import HTTPClient, HTTPTransport
 from transport_fakes import FakeTransport, reply
 from transport_wire import Hang, Wire
 
-_SRC = pathlib.Path(pathlib_next.__file__).resolve().parent.parent
-VARIABLE = "PATHLIB_NEXT_HTTP_TRANSPORT"
+_SRC = pathlib.Path(pathapi.__file__).resolve().parent.parent
+VARIABLE = "PATHAPI_HTTP_TRANSPORT"
 
 
 def test_the_variable_in_the_module_is_the_one_the_code_reads():
@@ -106,7 +106,7 @@ def test_a_request_names_the_library_and_its_version_as_its_user_agent():
     transport = FakeTransport(default=reply(200))
     HTTPClient(transport).request("GET", "http://h/x")
     sent = transport.sent[0].headers
-    assert sent["User-Agent"] == f"pathlib-next/{pathlib_next.__version__}"
+    assert sent["User-Agent"] == f"pathapi/{pathapi.__version__}"
     assert sent["Accept"] == "*/*"
 
 
@@ -124,7 +124,7 @@ def test_headers_are_merged_by_name_the_call_over_the_client_over_the_base():
     client.request("GET", "http://h/x", headers={"x-a": "call", "X-B": "call"})
     sent = transport.sent[0].headers
     assert {k.lower(): v for k, v in sent.items()} == {
-        "user-agent": f"pathlib-next/{pathlib_next.__version__}",
+        "user-agent": f"pathapi/{pathapi.__version__}",
         "accept": "text/html",
         "x-a": "call",
         "x-b": "call",
@@ -231,7 +231,7 @@ def test_a_stalled_server_times_out_when_the_client_has_a_timeout(http_transport
 _CHILD = """
 import sys
 
-import pathlib_next
+import pathapi
 
 assert not {"ssl", "http.client"} & set(sys.modules)
 sys.modules["requests"] = None
@@ -257,7 +257,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
 threading.Thread(target=server.serve_forever, daemon=True).start()
 
-from pathlib_next.http import HTTPClient
+from pathapi.http import HTTPClient
 
 with HTTPClient() as client:
     reply = client.request("GET", "http://127.0.0.1:%d/f" % server.server_port)

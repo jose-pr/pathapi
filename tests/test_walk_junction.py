@@ -10,8 +10,8 @@ import sys
 
 import pytest
 
-import pathlib_next
-from pathlib_next.mempath import MemPath, MemPathBackend
+import pathapi
+from pathapi.mempath import MemPath, MemPathBackend
 
 
 class WithJunction(MemPath):
@@ -121,7 +121,7 @@ def _relative(walked, base):
 @pytest.mark.parametrize("keywords", [{}, {"top_down": False}])
 def test_a_real_junction_is_listed_as_a_file_and_not_entered(tmp_path, keywords):
     tree = _local_tree(tmp_path)
-    walked = _relative(pathlib_next.LocalPath(tree).walk(**keywords), tmp_path)
+    walked = _relative(pathapi.LocalPath(tree).walk(**keywords), tmp_path)
     assert walked == [
         ("tree", ["sub"], ["junc"]),
         ("tree/sub", [], ["f.txt"]),
@@ -131,9 +131,7 @@ def test_a_real_junction_is_listed_as_a_file_and_not_entered(tmp_path, keywords)
 @needs_windows
 def test_a_real_junction_is_entered_when_following_symlinks(tmp_path):
     tree = _local_tree(tmp_path)
-    walked = _relative(
-        pathlib_next.LocalPath(tree).walk(follow_symlinks=True), tmp_path
-    )
+    walked = _relative(pathapi.LocalPath(tree).walk(follow_symlinks=True), tmp_path)
     assert ("tree/junc", [], ["o.txt"]) in walked
 
 
@@ -145,7 +143,7 @@ def test_a_junction_to_its_own_parent_is_not_walked_into(tmp_path):
     errors = []
     walked = list(
         itertools.islice(
-            pathlib_next.LocalPath(tmp_path / "loop").walk(on_error=errors.append), 50
+            pathapi.LocalPath(tmp_path / "loop").walk(on_error=errors.append), 50
         )
     )
     assert len(walked) == 1
@@ -163,6 +161,6 @@ def test_a_junction_to_its_own_parent_is_not_walked_into(tmp_path):
 )
 def test_a_walk_over_a_junction_equals_pathlibs(tmp_path, keywords):
     tree = _local_tree(tmp_path)
-    ours = _relative(pathlib_next.LocalPath(tree).walk(**keywords), tmp_path)
+    ours = _relative(pathapi.LocalPath(tree).walk(**keywords), tmp_path)
     theirs = _relative(pathlib.Path(tree).walk(**keywords), tmp_path)
     assert ours == theirs

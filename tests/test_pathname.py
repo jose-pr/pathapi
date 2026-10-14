@@ -10,8 +10,8 @@ import sys
 
 import pytest
 
-from pathlib_next.fspath import PosixPathname
-from pathlib_next.mempath import MemPath
+from pathapi.fspath import PosixPathname
+from pathapi.mempath import MemPath
 
 IMPLS = [PosixPathname, MemPath]
 
@@ -252,7 +252,7 @@ def test_mempath_is_relative_to_str_keeps_the_backend():
     # with_segments(), not type(self)(other): the bare constructor hands
     # MemPath a fresh empty backend, which is the kind of per-instance
     # state a generic normalization must not drop.
-    from pathlib_next.mempath import MemPathBackend
+    from pathapi.mempath import MemPathBackend
 
     backend = MemPathBackend()
     p = MemPath("a/b", backend=backend)
@@ -264,7 +264,7 @@ def test_generic_pathname_subclass_gets_working_equality():
     """A minimal Track A subclass -- the shape `docs/guides/extending.md`
     documents -- must get equality (and therefore is_relative_to) without
     hand-writing __eq__."""
-    from pathlib_next.path import Pathname
+    from pathapi.path import Pathname
 
     class Toy(Pathname):
         __slots__ = ("_segments",)
@@ -311,8 +311,8 @@ def test_localpath_keeps_stdlib_equality_semantics():
     """`pathlib.PurePath` precedes `Pathname` in the fspath MRO, so the new
     default must NOT displace stdlib's (case-folding, cross-subclass)
     equality there."""
-    from pathlib_next.fspath import LocalPath, _BaseFSPathname
-    from pathlib_next.path import Pathname
+    from pathapi.fspath import LocalPath, _BaseFSPathname
+    from pathapi.path import Pathname
 
     for cls in (LocalPath, PosixPathname):
         names = [k.__name__ for k in cls.__mro__]
@@ -365,7 +365,7 @@ def test_a_subclass_does_not_order_against_its_base():
 
 
 def test_localpath_keeps_stdlib_ordering():
-    from pathlib_next.fspath import LocalPath
+    from pathapi.fspath import LocalPath
 
     for cls in (LocalPath, PosixPathname):
         for name in ("__lt__", "__le__", "__gt__", "__ge__"):
@@ -388,7 +388,7 @@ def test_a_path_without_fspath_is_not_an_os_pathlike():
 def test_a_local_path_is_an_os_pathlike():
     import os
 
-    from pathlib_next.fspath import LocalPath
+    from pathapi.fspath import LocalPath
 
     for cls in (LocalPath, PosixPathname):
         path = cls("/a/b")

@@ -30,7 +30,7 @@ def _declared_requirements(project):
             specs += deps
     for spec in specs:
         requirement = packaging_requirements.Requirement(spec)
-        if requirement.name.replace("_", "-") != "pathlib-next":
+        if requirement.name.replace("_", "-") != "pathapi":
             yield requirement
 
 
@@ -66,4 +66,4 @@ def test_the_package_declares_no_dependency_extra_or_command(project):
     assert declared.get("dependencies", []) == []
     assert set(declared.get("optional-dependencies", {})) == {"dev", "docs"}
     assert "scripts" not in declared and "gui-scripts" not in declared
-    assert set(declared.get("entry-points", {})) == {"pathlib_next.http_transports"}
+    assert set(declared.get("entry-points", {})) == {"pathapi.http_transports"}

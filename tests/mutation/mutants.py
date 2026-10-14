@@ -1,9 +1,9 @@
 """The mutation list: one single-line change to a guard of the library per
 entry, and the tests that must fail because of it.
 
-`run.py` applies each entry to a temporary copy of `src/pathlib_next`. `old`
+`run.py` applies each entry to a temporary copy of `src/pathapi`. `old`
 is the exact text of the line (or lines) to replace and must occur once in
-`file`, which is relative to `src/pathlib_next`; when the code moves on and
+`file`, which is relative to `src/pathapi`; when the code moves on and
 the text goes, the entry is reported stale until it is re-expressed. `tests`
 are pytest arguments (node ids, or a file when any of its tests may be the
 one to catch the mutant) that all pass on the unmutated code. README.md says
@@ -620,7 +620,7 @@ mutant(
     ),
     "the __exit__ of BytesIO closes, and so commits, a CommitOnClose whose block raised",
 )
-# --- pathlib_next.http: the guards of the transport, the client and the helpers ---
+# --- pathapi.http: the guards of the transport, the client and the helpers ---
 
 mutant(
     "client-404-is-a-generic-oserror",
@@ -687,7 +687,7 @@ mutant(
     "    if isinstance(name, str) and name in _PROVIDED:\n",
     "    if False:\n",
     "tests/transport/test_transport_registry.py::test_a_transport_provided_elsewhere_that_is_not_installed_names_the_distribution",
-    "get('requests') answers with a ValueError instead of naming pathlib-next-requests",
+    "get('requests') answers with a ValueError instead of naming pathapi-requests",
 )
 mutant(
     "transport-entry-point-replaces-the-built-in-transport",

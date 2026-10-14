@@ -11,8 +11,8 @@ import zipfile
 
 import pytest
 
-from pathlib_next.archive import TarPath, ZipPath
-from pathlib_next.archive import _backend as _base
+from pathapi.archive import TarPath, ZipPath
+from pathapi.archive import _backend as _base
 
 
 def _zip(path, inner=""):

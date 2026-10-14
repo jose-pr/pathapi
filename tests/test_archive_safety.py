@@ -18,13 +18,13 @@ import zipfile
 import pytest
 from capabilities import requires_posix_modes
 
-from pathlib_next import LocalPath
-from pathlib_next.mempath import MemPath
-from pathlib_next.archive import TarPath, ZipPath
-from pathlib_next.archive._zipentries import _strip_zip64_extra
-from pathlib_next import _names as names_module
-from pathlib_next.archive import _pack as archive_module
-from pathlib_next.archive import unpack_archive
+from pathapi import LocalPath
+from pathapi.mempath import MemPath
+from pathapi.archive import TarPath, ZipPath
+from pathapi.archive._zipentries import _strip_zip64_extra
+from pathapi import _names as names_module
+from pathapi.archive import _pack as archive_module
+from pathapi.archive import unpack_archive
 
 
 def _zip(path, inner=""):
@@ -649,7 +649,7 @@ def test_unpack_archive_never_writes_outside_dest(tmp_path, monkeypatch, fmt, na
 
 
 def _stray_files(directory):
-    return [p.name for p in directory.iterdir() if p.name.startswith(".pathlib_next")]
+    return [p.name for p in directory.iterdir() if p.name.startswith(".pathapi")]
 
 
 def test_zip_interrupted_append_leaves_the_archive_intact(zip_archive, monkeypatch):

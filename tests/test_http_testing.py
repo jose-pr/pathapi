@@ -1,4 +1,4 @@
-"""`pathlib_next.http.testing`: the transport suite that a distribution
+"""`pathapi.http.testing`: the transport suite that a distribution
 providing a transport runs, and the files that the wheel carries for it."""
 
 from __future__ import annotations
@@ -14,8 +14,8 @@ import zipfile
 
 import pytest
 
-import pathlib_next
-from pathlib_next.http import testing as http_testing
+import pathapi
+from pathapi.http import testing as http_testing
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 SUITE = REPO / "tests" / "transport"
@@ -84,13 +84,11 @@ def test_the_helpers_are_the_files_the_modules_import():
 
 def test_the_wheel_is_told_to_carry_exactly_the_suite():
     wanted = {
-        f"tests/transport/{name}": f"pathlib_next/http/testing/suite/{name}"
+        f"tests/transport/{name}": f"pathapi/http/testing/suite/{name}"
         for name in (*http_testing.MODULES, *http_testing.HELPERS)
     }
     force = _project()["tool"]["hatch"]["build"]["targets"]["wheel"]["force-include"]
-    shipped = {
-        k: v for k, v in force.items() if v.startswith("pathlib_next/http/testing/")
-    }
+    shipped = {k: v for k, v in force.items() if v.startswith("pathapi/http/testing/")}
     assert shipped == wanted
     assert all((REPO / source).is_file() for source in wanted)
 
@@ -116,19 +114,19 @@ def test_the_built_wheel_carries_the_suite_and_the_package_around_it(tmp_path):
         timeout=300,
     )
     assert result.returncode == 0, result.stderr
-    (wheel,) = tmp_path.glob("pathlib_next-*.whl")
+    (wheel,) = tmp_path.glob("pathapi-*.whl")
     names = set(zipfile.ZipFile(wheel).namelist())
     for name in (*http_testing.MODULES, *http_testing.HELPERS):
-        assert f"pathlib_next/http/testing/suite/{name}" in names
+        assert f"pathapi/http/testing/suite/{name}" in names
     assert {
-        "pathlib_next/http/testing/__init__.py",
-        "pathlib_next/http/testing/__main__.py",
-        "pathlib_next/http/__init__.py",
-        "pathlib_next/AGENTS.md",
-        "pathlib_next/py.typed",
+        "pathapi/http/testing/__init__.py",
+        "pathapi/http/testing/__main__.py",
+        "pathapi/http/__init__.py",
+        "pathapi/AGENTS.md",
+        "pathapi/py.typed",
     } <= names
     assert not any(
-        n.startswith("pathlib_next/http/testing/suite/test_transport_p") for n in names
+        n.startswith("pathapi/http/testing/suite/test_transport_p") for n in names
     )
 
 
@@ -144,7 +142,7 @@ def _child(code):
         filter(
             None,
             [
-                str(pathlib.Path(pathlib_next.__file__).resolve().parent.parent),
+                str(pathlib.Path(pathapi.__file__).resolve().parent.parent),
                 env.get("PYTHONPATH"),
             ],
         )
@@ -163,7 +161,7 @@ def _child(code):
 def test_importing_the_suite_module_does_not_import_pytest():
     assert (
         _child(
-            "import sys; import pathlib_next.http.testing; "
+            "import sys; import pathapi.http.testing; "
             "print(sorted({'pytest'} & set(sys.modules)))"
         )
         == "[]"
@@ -173,9 +171,9 @@ def test_importing_the_suite_module_does_not_import_pytest():
 def test_importing_the_client_package_imports_neither_the_suite_nor_pytest():
     assert (
         _child(
-            "import sys; import pathlib_next.http; "
+            "import sys; import pathapi.http; "
             "print(sorted(m for m in sys.modules "
-            "if m == 'pytest' or m.startswith('pathlib_next.http.testing')))"
+            "if m == 'pytest' or m.startswith('pathapi.http.testing')))"
         )
         == "[]"
     )
@@ -184,7 +182,7 @@ def test_importing_the_client_package_imports_neither_the_suite_nor_pytest():
 def test_the_path_contract_suite_still_loads_neither_ssl_nor_http_client():
     assert (
         _child(
-            "import sys; import pathlib_next.testing; "
+            "import sys; import pathapi.testing; "
             "print(sorted({'ssl', 'http.client'} & set(sys.modules)))"
         )
         == "[]"
@@ -192,15 +190,15 @@ def test_the_path_contract_suite_still_loads_neither_ssl_nor_http_client():
 
 
 def test_the_suite_module_is_not_exported_by_the_package_or_the_root():
-    import pathlib_next.http
+    import pathapi.http
 
-    assert "testing" not in pathlib_next.http.__all__
-    assert "testing" not in pathlib_next.__all__
-    assert "http" not in pathlib_next.__all__
+    assert "testing" not in pathapi.http.__all__
+    assert "testing" not in pathapi.__all__
+    assert "http" not in pathapi.__all__
 
 
 def test_nothing_outside_the_suite_module_imports_it():
-    package = pathlib.Path(pathlib_next.__file__).resolve().parent
+    package = pathlib.Path(pathapi.__file__).resolve().parent
     own = package / "http" / "testing"
     importers = []
     for path in package.rglob("*.py"):
@@ -215,11 +213,10 @@ def test_nothing_outside_the_suite_module_imports_it():
                 base = node.module or ""
                 names = [base] + [f"{base}.{alias.name}" for alias in node.names]
                 if node.level and path.parent == package / "http":
-                    names += [f"pathlib_next.http.{base}"]
-                    names += [f"pathlib_next.http.{alias.name}" for alias in node.names]
+                    names += [f"pathapi.http.{base}"]
+                    names += [f"pathapi.http.{alias.name}" for alias in node.names]
             if any(
-                n == "pathlib_next.http.testing"
-                or n.startswith("pathlib_next.http.testing.")
+                n == "pathapi.http.testing" or n.startswith("pathapi.http.testing.")
                 for n in names
             ):
                 importers.append(path.name)
@@ -228,9 +225,9 @@ def test_nothing_outside_the_suite_module_imports_it():
 
 def test_the_module_says_it_is_not_stable_api():
     assert "not part of the stable API" in http_testing.__doc__
-    header = (
-        pathlib.Path(pathlib_next.__file__).resolve().parent / "AGENTS.md"
-    ).read_text(encoding="utf-8")
+    header = (pathlib.Path(pathapi.__file__).resolve().parent / "AGENTS.md").read_text(
+        encoding="utf-8"
+    )
     assert "### Testing support: the HTTP transport suite" in header
     assert "may change in any release" in header
 
@@ -241,7 +238,7 @@ def _collect(directory):
         filter(
             None,
             [
-                str(pathlib.Path(pathlib_next.__file__).resolve().parent.parent),
+                str(pathlib.Path(pathapi.__file__).resolve().parent.parent),
                 env.get("PYTHONPATH"),
             ],
         )
@@ -250,7 +247,7 @@ def _collect(directory):
         [
             sys.executable,
             "-m",
-            "pathlib_next.http.testing",
+            "pathapi.http.testing",
             "--http-transports",
             "builtin",
             "--collect-only",

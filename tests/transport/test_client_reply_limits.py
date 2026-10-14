@@ -8,8 +8,8 @@ import gzip
 
 import pytest
 
-import pathlib_next.http as http
-from pathlib_next.http import (
+import pathapi.http as http
+from pathapi.http import (
     HTTPClient,
     drop_body,
     json_body,
@@ -40,7 +40,7 @@ def bomb(status=200, extra=None):
 
 
 def test_the_setting_is_read_where_it_takes_effect():
-    from pathlib_next.http import _settings
+    from pathapi.http import _settings
 
     assert _settings.MAX_REPLY_BYTES == CAP == http.MAX_REPLY_BYTES
 

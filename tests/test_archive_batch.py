@@ -12,12 +12,12 @@ import zipfile
 
 import pytest
 
-from pathlib_next import LocalPath
-from pathlib_next.mempath import MemPath
-from pathlib_next.archive import TarPath, ZipPath
-from pathlib_next.archive import _zipentries as zip_module
-from pathlib_next.archive._zip import _ZipBackend
-from pathlib_next.sync import PathSyncer
+from pathapi import LocalPath
+from pathapi.mempath import MemPath
+from pathapi.archive import TarPath, ZipPath
+from pathapi.archive import _zipentries as zip_module
+from pathapi.archive._zip import _ZipBackend
+from pathapi.sync import PathSyncer
 
 
 def _zip(path, inner=""):
@@ -539,7 +539,7 @@ def test_syncing_a_tree_onto_a_zip_is_one_replacement(tmp_path, rewrites):
         for name, data in members.items()
         if name.startswith("tree/") and not name.endswith("/")
     } == _tree_members(source)
-    assert not [name for name in members if ".pathlib-next-tmp" in name]
+    assert not [name for name in members if ".pathapi-tmp" in name]
 
 
 def test_a_sync_that_finds_nothing_to_do_does_not_rewrite_the_zip(tmp_path, rewrites):
@@ -810,8 +810,8 @@ def _fields(snapshot):
 
 
 def test_a_member_list_given_one_more_entry_equals_one_built_with_it():
-    from pathlib_next.archive._snapshot import _Snapshot
-    from pathlib_next.archive._zipentries import _new_info
+    from pathapi.archive._snapshot import _Snapshot
+    from pathapi.archive._zipentries import _new_info
 
     names = [
         "a/b/c.txt",
@@ -845,7 +845,7 @@ def test_a_member_list_given_one_more_entry_equals_one_built_with_it():
 def test_copying_a_tree_into_a_zip_derives_the_member_list_a_bounded_number_of_times(
     tmp_path, monkeypatch
 ):
-    from pathlib_next.archive import _snapshot as _base
+    from pathapi.archive import _snapshot as _base
 
     source = _tree(tmp_path / "src", files=200, directories=10)
     archive = _write_zip(tmp_path / "a.zip", [("seed.txt", b"seed")])

@@ -15,7 +15,7 @@ Run directly:
 import os
 import sys
 
-from pathlib_next import FTPPath
+from pathapi import FTPPath
 
 
 def list_ftp(remote: FTPPath):

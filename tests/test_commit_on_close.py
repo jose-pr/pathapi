@@ -5,7 +5,7 @@ import gc
 
 import pytest
 
-from pathlib_next.providers import CommitOnClose
+from pathapi.providers import CommitOnClose
 
 
 def _recording():

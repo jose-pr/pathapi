@@ -13,10 +13,10 @@ import zipfile
 
 import pytest
 
-from pathlib_next import LocalPath
-from pathlib_next.mempath import MemPath
-from pathlib_next.archive import detect_format, make_archive, unpack_archive
-from pathlib_next import FileStat
+from pathapi import LocalPath
+from pathapi.mempath import MemPath
+from pathapi.archive import detect_format, make_archive, unpack_archive
+from pathapi import FileStat
 
 PAYLOAD = bytes(range(256)) * 40  # 10240 bytes
 
@@ -396,7 +396,7 @@ def test_a_single_file_is_an_archive_of_one_member(fmt):
 
 
 def test_the_stat_of_a_link_member_is_what_the_link_resolves_to():
-    from pathlib_next.archive._pack import _content_stat
+    from pathapi.archive._pack import _content_stat
 
     target = MemPath("/f")
     target.write_bytes(b"abc")

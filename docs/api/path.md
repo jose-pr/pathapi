@@ -1,6 +1,6 @@
 # Core Path API
 
-::: pathlib_next.path
-::: pathlib_next.fspath
+::: pathapi.path
+::: pathapi.fspath
 
-::: pathlib_next.FileStat
+::: pathapi.FileStat
