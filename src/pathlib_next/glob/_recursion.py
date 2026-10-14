@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typing as _ty
 
-from ._entries import _Globable, _entry_is_dir, _identity, _scan
+from ._entries import _Globable, _entry_is_dir, _identity, _is_hidden, _scan
 
 #: Symlinks one descent may pass through when `recurse_symlinks=True` and the
 #: backend's stat carries no identity to tell a loop by: what the operating
@@ -49,7 +49,7 @@ def _recurse(
     while stack:
         directory, ancestors, chain, links = stack.pop()
         for child, stat in _scan(directory, on_error):
-            if not include_hidden and child.is_hidden():
+            if not include_hidden and _is_hidden(child):
                 continue
             is_dir = _entry_is_dir(child, stat, follow_symlinks=recurse_symlinks)
             child_ancestors, child_chain, child_links = ancestors, chain, links
@@ -128,7 +128,7 @@ def _subdirectories(
     return [
         (child, stat)
         for child, stat in entries
-        if (include_hidden or not child.is_hidden())
+        if (include_hidden or not _is_hidden(child))
         and _entry_is_dir(child, stat, follow_symlinks=recurse_symlinks)
     ]
 

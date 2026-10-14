@@ -49,7 +49,7 @@ class Identity(Stat, _ty.Protocol):
 
     __slots__ = ()
 
-    __primitives__ = ()
+    __primitives__: _ty.ClassVar[tuple[object, ...]] = ()
 
     def _same_filesystem(self, other: "Path") -> bool:
         """Whether `other`'s segments are resolved in the same namespace as
@@ -116,7 +116,7 @@ class Copy(Identity, Create, Symlink, BinaryOpen, _ty.Protocol):
 
     __slots__ = ()
 
-    __primitives__ = ()
+    __primitives__: _ty.ClassVar[tuple[object, ...]] = ()
 
     def _copy_from(self, source, follow_symlinks=True, preserve_metadata=False):
         """Copy `source` -- any path with `info`, `iterdir()`, `readlink()` and
@@ -446,7 +446,7 @@ class Move(Copy, Remove, _ty.Protocol):
 
     __slots__ = ()
 
-    __primitives__ = ("rename",)
+    __primitives__: _ty.ClassVar[tuple[object, ...]] = ("rename",)
 
     def _rename_compatible(self, target: "Path") -> bool:
         """Whether `rename()` may be attempted onto `target` at all. `move()`

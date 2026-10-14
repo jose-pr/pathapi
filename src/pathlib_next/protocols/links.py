@@ -19,7 +19,7 @@ class Symlink(Remove, _ty.Protocol):
 
     __slots__ = ()
 
-    __primitives__ = ("readlink",)
+    __primitives__: _ty.ClassVar[tuple[object, ...]] = ("readlink",)
 
     @_stubs.primitive
     def readlink(self) -> _ty.Self:
@@ -110,7 +110,9 @@ class Hardlink(Stat, _ty.Protocol):
 
     __slots__ = ()
 
-    __primitives__ = (("_hardlink_to", "hardlink_to"),)
+    __primitives__: _ty.ClassVar[tuple[object, ...]] = (
+        ("_hardlink_to", "hardlink_to"),
+    )
 
     @_stubs.primitive
     def _hardlink_to(self, target: _ty.Self) -> None:

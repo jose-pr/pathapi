@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from ..protocols import Create, Move, Remove, Utime
+
 from ._fixtures import (
     DIRECTORY_ERRORS,
     NOT_EMPTY_ERRNOS,
@@ -44,6 +46,7 @@ class PathContract(ReadPathContract):
 
     def test_mkdir_and_is_dir(self, root):
         self._require("supports_mkdir")
+        self._support(root, Create)
         d = root / "new_dir"
         assert not d.exists()
         d.mkdir()
@@ -52,6 +55,7 @@ class PathContract(ReadPathContract):
 
     def test_mkdir_existing_raises_file_exists(self, root):
         self._require("supports_mkdir")
+        self._support(root, Create)
         with pytest.raises(FileExistsError):
             (root / "sub").mkdir()
         (root / "sub").mkdir(exist_ok=True)
@@ -62,6 +66,7 @@ class PathContract(ReadPathContract):
 
     def test_mkdir_missing_parent_raises_file_not_found(self, root):
         self._require("supports_mkdir")
+        self._support(root, Create)
         self._require("enforces_directory_hierarchy")
         with pytest.raises(FileNotFoundError):
             (root / "missing_parent" / "child").mkdir()
@@ -187,6 +192,7 @@ class PathContract(ReadPathContract):
 
     def test_unlink(self, root):
         self._require("supports_delete")
+        self._support(root, Remove)
         f = root / "write_unlink.txt"
         f.write_text("x")
         assert f.exists()
@@ -195,6 +201,7 @@ class PathContract(ReadPathContract):
 
     def test_unlink_missing_raises_then_missing_ok(self, root):
         self._require("supports_delete")
+        self._support(root, Remove)
         f = root / "missing_unlink.txt"
         with pytest.raises(FileNotFoundError):
             f.unlink()
@@ -202,13 +209,16 @@ class PathContract(ReadPathContract):
 
     def test_unlink_directory_raises(self, root):
         self._require("supports_delete")
+        self._support(root, Remove)
         with pytest.raises(DIRECTORY_ERRORS):
             (root / "empty_dir").unlink()
         assert (root / "empty_dir").is_dir()
 
     def test_rmdir_requires_empty(self, root):
         self._require("supports_mkdir")
+        self._support(root, Create)
         self._require("supports_delete")
+        self._support(root, Remove)
         d = root / "new_rmdir"
         d.mkdir()
         (d / "f.txt").write_text("x")
@@ -222,18 +232,22 @@ class PathContract(ReadPathContract):
 
     def test_rmdir_missing_raises_file_not_found(self, root):
         self._require("supports_delete")
+        self._support(root, Remove)
         with pytest.raises(FileNotFoundError):
             (root / "missing_rmdir").rmdir()
 
     def test_rmdir_file_raises_not_a_directory(self, root):
         self._require("supports_delete")
+        self._support(root, Remove)
         with pytest.raises(NotADirectoryError):
             (root / "a.txt").rmdir()
         assert (root / "a.txt").read_text() == "a"
 
     def test_rm_recursive(self, root):
         self._require("supports_mkdir")
+        self._support(root, Create)
         self._require("supports_delete")
+        self._support(root, Remove)
         d = root / "new_rm_rec"
         d.mkdir()
         (d / "f.txt").write_text("x")
@@ -247,7 +261,9 @@ class PathContract(ReadPathContract):
         # implementation; a tree holding no link or binding comes out the
         # same under each of them.
         self._require("supports_mkdir")
+        self._support(root, Create)
         self._require("supports_delete")
+        self._support(root, Remove)
         policies = (
             {"follow_symlinks": False, "follow_binds": False},
             {"follow_symlinks": True, "follow_binds": True},
@@ -265,7 +281,9 @@ class PathContract(ReadPathContract):
 
     def test_rm_rejects_a_policy_that_is_not_one(self, root):
         self._require("supports_mkdir")
+        self._support(root, Create)
         self._require("supports_delete")
+        self._support(root, Remove)
         d = root / "new_rm_bad_policy"
         d.mkdir()
         (d / "f.txt").write_text("x")
@@ -275,6 +293,7 @@ class PathContract(ReadPathContract):
 
     def test_rm_non_recursive_directory_requires_empty(self, root):
         self._require("supports_delete")
+        self._support(root, Remove)
         with pytest.raises(OSError) as info:
             (root / "sub").rm()
         assert info.value.errno in NOT_EMPTY_ERRNOS
@@ -284,6 +303,7 @@ class PathContract(ReadPathContract):
 
     def test_rm_missing_ok(self, root):
         self._require("supports_delete")
+        self._support(root, Remove)
         with pytest.raises(FileNotFoundError):
             (root / "missing_rm").rm()
         (root / "missing_rm").rm(missing_ok=True)
@@ -293,6 +313,7 @@ class PathContract(ReadPathContract):
         # raises ends the call with its own exception. `rm()` is offered a missing path,
         # `copy()` a child whose target is a directory.
         self._require("supports_mkdir")
+        self._support(root, Create)
 
         class Stop(Exception):
             pass
@@ -388,6 +409,7 @@ class PathContract(ReadPathContract):
 
     def test_copy_recursive(self, root):
         self._require("supports_mkdir")
+        self._support(root, Create)
         dst = root / "sub_copy"
         (root / "sub").copy(dst, recursive=True)
         assert (dst / "c.py").read_text() == "c"
@@ -429,6 +451,7 @@ class PathContract(ReadPathContract):
     def test_move_directory(self, root):
         self._require("supports_move")
         self._require("supports_mkdir")
+        self._support(root, Create)
         src = root / "sub"
         dst = root / "moved_sub"
         src.move(dst)
@@ -438,6 +461,7 @@ class PathContract(ReadPathContract):
 
     def test_rename(self, root):
         self._require("supports_rename")
+        self._support(root, Move)
         src = root / "src_rename.txt"
         src.write_text("data")
         dst = root / "dst_rename.txt"
@@ -450,6 +474,7 @@ class PathContract(ReadPathContract):
 
     def test_rename_onto_a_non_empty_directory_raises_and_keeps_both(self, root):
         self._require("supports_rename")
+        self._support(root, Move)
         self._require("enforces_directory_hierarchy")
         src = root / "src_rename_onto_dir.txt"
         src.write_text("data")
@@ -472,6 +497,7 @@ class PathContract(ReadPathContract):
 
     def test_utime_sets_the_time_of_an_existing_file_and_touch_moves_it(self, root):
         self._require("supports_utime")
+        self._support(root, Utime)
         f = root / "utime_f.txt"
         f.write_text("kept")
         old = 1_000_000_000
@@ -496,6 +522,7 @@ class PathContract(ReadPathContract):
 
     def test_mkdir_parents(self, root):
         self._require("supports_mkdir")
+        self._support(root, Create)
         d = root / "parent_a" / "parent_b" / "parent_c"
         d.mkdir(parents=True)
         assert d.is_dir()

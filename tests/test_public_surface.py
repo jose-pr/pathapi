@@ -389,14 +389,25 @@ def test_no_protocol_stub_has_a_body_a_type_checker_reads_as_abstract():
 
 
 CONSUMER = """\
-from pathlib_next import FileStat, LocalPath, Path
+from pathlib_next import FileStat, LocalPath, Path, Pathname, checksum, glob, sync
 from pathlib_next.mempath import MemPath
+from pathlib_next.protocols import BinaryOpen, Listing, Stat
 
 bare = Path("x")
 local = LocalPath("x")
 memory = MemPath("/a")
 stat = FileStat(st_size=1, is_dir=False)
 joined = bare / "y"
+
+
+class Composed(Pathname, Listing, Stat, BinaryOpen):
+    __slots__ = ()
+
+
+composed = Composed()
+found = list(glob.glob(composed))
+digest: str = checksum.md5(composed)
+sync.PathSyncer().sync(composed, memory)
 """
 
 

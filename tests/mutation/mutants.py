@@ -174,7 +174,7 @@ mutant(
 mutant(
     "glob-recursive-wildcard-enters-hidden",
     "glob/_recursion.py",
-    "            if not include_hidden and child.is_hidden():\n",
+    "            if not include_hidden and _is_hidden(child):\n",
     "            if False:\n",
     "tests/test_glob_parity.py::test_include_hidden_false_leaves_hidden_entries_out_of_a_final_recursive_wildcard",
     "glob: ** no longer hides dotfiles",

@@ -24,7 +24,7 @@ class Listing(Stat, _ty.Protocol):
 
     __slots__ = ()
 
-    __primitives__ = ("iterdir",)
+    __primitives__: _ty.ClassVar[tuple[object, ...]] = ("iterdir",)
 
     def __iter__(self):
         return self.iterdir()
@@ -306,7 +306,7 @@ class Remove(Listing, _ty.Protocol):
 
     __slots__ = ()
 
-    __primitives__ = ("unlink", "rmdir")
+    __primitives__: _ty.ClassVar[tuple[object, ...]] = ("unlink", "rmdir")
 
     @_stubs.primitive
     def unlink(self, missing_ok=False):

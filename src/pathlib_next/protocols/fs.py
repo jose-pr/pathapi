@@ -34,7 +34,7 @@ class Stat(_ty.Protocol):
 
     __slots__ = ()
 
-    __primitives__ = ("stat",)
+    __primitives__: _ty.ClassVar[tuple[object, ...]] = ("stat",)
 
     @_stubs.primitive
     def stat(self, *, follow_symlinks=True) -> FileStatLike:
@@ -180,7 +180,7 @@ class Owner(Stat, _ty.Protocol):
 
     __slots__ = ()
 
-    __primitives__ = (("_chown", "chown"),)
+    __primitives__: _ty.ClassVar[tuple[object, ...]] = (("_chown", "chown"),)
 
     def owner(self, *, follow_symlinks: bool = True) -> str:
         """The name of the user that owns the path. `NotImplementedError`
@@ -267,7 +267,7 @@ class Utime(_ty.Protocol):
 
     __slots__ = ()
 
-    __primitives__ = ("_utime",)
+    __primitives__: _ty.ClassVar[tuple[object, ...]] = ("_utime",)
 
     @_stubs.primitive
     def _utime(self, *, atime: float | None = None, mtime: float | None = None) -> None:
@@ -288,7 +288,7 @@ class Chmod(Owner, Utime, _ty.Protocol):
 
     __slots__ = ()
 
-    __primitives__ = ("chmod",)
+    __primitives__: _ty.ClassVar[tuple[object, ...]] = ("chmod",)
 
     @_stubs.primitive
     def chmod(self, mode: int | str, *, follow_symlinks: bool = True):
@@ -323,7 +323,7 @@ class Create(Chmod, Utime, _ty.Protocol):
 
     __slots__ = ()
 
-    __primitives__ = (("_mkdir", "mkdir"),)
+    __primitives__: _ty.ClassVar[tuple[object, ...]] = (("_mkdir", "mkdir"),)
 
     def touch(self, mode=None, exist_ok=True):
         """

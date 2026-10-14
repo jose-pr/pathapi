@@ -59,6 +59,9 @@ def _has(cls: type, entry: "str | tuple[str, ...]") -> bool:
 
 
 def _static(cls: type, protocol: type) -> bool:
+    if not protocol.__primitives__ and protocol not in cls.__mro__:
+        # Nothing to implement: the operations come with the protocol.
+        return False
     return all(_has(cls, entry) for entry in protocol.__primitives__)
 
 

@@ -7,6 +7,7 @@ import stat as _stat
 import typing as _ty
 
 from ..path import Path
+from ..protocols._bundles import Readable
 from .._filestat import FileStat
 
 
@@ -51,12 +52,12 @@ class PathAndStat(object):
 
     __slots__ = ("_path", "_stat")
 
-    def __init__(self, path: Path, *, follow_symlink: bool = True) -> None:
+    def __init__(self, path: "Readable", *, follow_symlink: bool = True) -> None:
         self._path = path
         self.refresh(follow_symlink)
 
     @classmethod
-    def from_stat(cls, path: Path, stat: FileStat | None) -> "PathAndStat":
+    def from_stat(cls, path: "Readable", stat: FileStat | None) -> "PathAndStat":
         entry = cls.__new__(cls)
         entry._path = path
         entry._stat = stat

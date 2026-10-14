@@ -53,7 +53,7 @@ class BinaryOpen(_ty.Protocol):
 
     __slots__ = ()
 
-    __primitives__ = (("_open", "open"),)
+    __primitives__: _ty.ClassVar[tuple[object, ...]] = (("_open", "open"),)
 
     @_stubs.primitive
     def _open(

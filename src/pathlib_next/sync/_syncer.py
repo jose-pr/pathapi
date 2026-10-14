@@ -10,6 +10,9 @@ import typing as _ty
 
 from .. import _errorpolicy, _names
 from ..path import Path
+from ..protocols import Utime
+from ..protocols._bundles import Readable
+from ..protocols import supports as _supports
 from ..protocols._removal import _listing, _write_batch_of
 from .._filestat import FileStat
 from ..glob import _entries
@@ -267,6 +270,7 @@ class PathSyncer(object):
             and utime is not None
             and mtime
             and getattr(stat, "size_known", True)
+            and _supports(target, Utime)
         ):
             return
         try:
@@ -456,7 +460,7 @@ class PathSyncer(object):
 
     def sync(
         self,
-        source: Path | PathAndStat,
+        source: "Readable | PathAndStat",
         target: Path | PathAndStat,
         /,
         dry_run: bool = False,
@@ -500,7 +504,7 @@ class PathSyncer(object):
 
     def _sync(
         self,
-        source: Path | PathAndStat,
+        source: "Readable | PathAndStat",
         target: Path | PathAndStat,
         dry_run: bool,
         _ignore_error: _OnPathSyncerError,

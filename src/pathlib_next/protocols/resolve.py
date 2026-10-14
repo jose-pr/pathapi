@@ -24,7 +24,7 @@ class Resolve(Symlink, _ty.Protocol):
 
     __slots__ = ()
 
-    __primitives__ = (("_cwd", "absolute"),)
+    __primitives__: _ty.ClassVar[tuple[object, ...]] = (("_cwd", "absolute"),)
 
     @_stubs.primitive
     def _cwd(self) -> _ty.Self:

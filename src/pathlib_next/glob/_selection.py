@@ -9,6 +9,7 @@ from ._entries import (
     _Globable,
     _child,
     _entry_is_dir,
+    _is_hidden,
     _names_a_directory,
     _report_unlistable,
     _scan,
@@ -290,7 +291,7 @@ def _select(
     need_dir = opts.dironly or not last
     skip_hidden = not opts.include_hidden and not part.startswith(".")
     for child, stat in _scan(path, opts.on_error) if entries is None else entries:
-        if skip_hidden and child.is_hidden():
+        if skip_hidden and _is_hidden(child):
             continue
         if not kind.match(child.name):
             continue

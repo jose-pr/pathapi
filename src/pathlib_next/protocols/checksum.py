@@ -33,7 +33,7 @@ class NativeChecksum(_ty.Protocol):
 
     __slots__ = ()
 
-    __primitives__ = ("checksum",)
+    __primitives__: _ty.ClassVar[tuple[object, ...]] = ("checksum",)
 
     def supported_checksums(self) -> "_ty.FrozenSet[str]":
         """Advisory set of `algorithm` names this path can currently

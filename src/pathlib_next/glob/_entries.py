@@ -7,7 +7,9 @@ import pathlib as _pathlib
 import typing as _ty
 
 if _ty.TYPE_CHECKING:
-    from ..path import P as _Globable
+    from ..protocols._bundles import Walkable as _Walkable
+
+    _Globable = _ty.TypeVar("_Globable", bound=_Walkable)
 else:
 
     class _Globable(_ty.Protocol): ...
@@ -65,6 +67,11 @@ def _identity(path: _Globable) -> "tuple | None":
     if dev is None or not ino:
         return None
     return (dev, ino)
+
+
+def _is_hidden(path: _Globable) -> bool:
+    """Whether the final component of `path` starts with a dot."""
+    return path.name.startswith(".")
 
 
 def _child(directory: _Globable, name: str, stat=None) -> _Globable:

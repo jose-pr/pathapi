@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import hashlib as _hashlib
-import typing as _ty
 
 __all__ = ["md5", "native", "sha256", "stream"]
 
-if _ty.TYPE_CHECKING:
-    from .path import Path
+from .protocols import BinaryOpen as _BinaryOpen
+from .protocols import NativeChecksum as _NativeChecksum
+from .protocols import supports as _supports
 
 
-def native(path: "Path", algorithm: str = "md5") -> "str | None":
+def native(
+    path: "_NativeChecksum | _BinaryOpen", algorithm: str = "md5"
+) -> "str | None":
     """Try `path`'s backend-native `NativeChecksum.checksum()` (see
     `protocols/checksum.py`); return `None` if `path` doesn't implement the
     protocol at all, or if it does but can't produce `algorithm` (raises
@@ -17,6 +19,8 @@ def native(path: "Path", algorithm: str = "md5") -> "str | None":
     "unsupported", never a wrong-algorithm value). Never raises for either
     of those two cases; any other exception the backend raises propagates.
     """
+    if not _supports(path, _NativeChecksum):
+        return None
     checksum = getattr(path, "checksum", None)
     if checksum is None:
         return None
@@ -26,17 +30,17 @@ def native(path: "Path", algorithm: str = "md5") -> "str | None":
         return None
 
 
-def md5(path: Path, chunk_size: int = 65536) -> str:
+def md5(path: "_BinaryOpen", chunk_size: int = 65536) -> str:
     """Calculate MD5 checksum of the file at `path`."""
     return stream(path, "md5", chunk_size)
 
 
-def sha256(path: Path, chunk_size: int = 65536) -> str:
+def sha256(path: "_BinaryOpen", chunk_size: int = 65536) -> str:
     """Calculate SHA-256 checksum of the file at `path`."""
     return stream(path, "sha256", chunk_size)
 
 
-def stream(path: "Path", algorithm: str = "md5", chunk_size: int = 65536) -> str:
+def stream(path: "_BinaryOpen", algorithm: str = "md5", chunk_size: int = 65536) -> str:
     """Streaming checksum for an arbitrary `hashlib` `algorithm` name (the
     generic form of `md5`/`sha256` above, used where the algorithm is a
     runtime parameter rather than fixed at the call site -- e.g.

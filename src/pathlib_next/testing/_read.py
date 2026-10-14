@@ -6,6 +6,8 @@ import pickle
 import stat as _stat
 import pytest
 
+from ..protocols import supports
+
 from ._fixtures import DIRECTORY_ERRORS, _rel
 
 
@@ -62,6 +64,15 @@ class ReadPathContract(PurePathContract):
     def _require(self, capability):
         if not getattr(self, capability):
             pytest.skip(f"{type(self).__name__}.{capability} is False")
+
+    def _support(self, root, *protocols):
+        """Skip when the class under test does not implement a protocol the
+        test needs; the skip names it."""
+        for protocol in protocols:
+            if not supports(root, protocol):
+                pytest.skip(
+                    f"{type(root).__name__} does not support {protocol.__name__}"
+                )
 
     def test_exists_and_types(self, root):
         assert root.exists()
