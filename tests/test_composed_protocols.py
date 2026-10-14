@@ -164,3 +164,15 @@ def test_a_contract_test_skips_for_a_protocol_the_class_lacks_and_names_it(root)
     contract._support(root, Listing)
     with pytest.raises(pytest.skip.Exception, match="DictPath does not support Create"):
         contract._support(root, Create)
+
+
+def test_a_changed_file_replaces_the_target_copy_of_a_source_without_copy():
+    tree = {"a.txt": b"one", "sub": {"b.txt": b"two"}}
+    source = DictPath("/", tree=tree)
+    target = MemPath("/dst")
+    syncer = sync.PathSyncer()
+    syncer.sync(source, target)
+    tree["a.txt"] = b"changed, and longer"
+    syncer.sync(source, target)
+    assert (target / "a.txt").read_bytes() == b"changed, and longer"
+    assert (target / "sub" / "b.txt").read_bytes() == b"two"

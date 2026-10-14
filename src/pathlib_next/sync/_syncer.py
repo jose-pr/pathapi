@@ -10,7 +10,7 @@ import typing as _ty
 
 from .. import _errorpolicy, _names
 from ..path import Path
-from ..protocols import Utime
+from ..protocols import Copy, Utime
 from ..protocols._bundles import Readable
 from ..protocols import supports as _supports
 from ..protocols._removal import _listing, _write_batch_of
@@ -738,7 +738,11 @@ class PathSyncer(object):
                         # No rename: Path.copy() opens the source before it
                         # truncates the target, so a missing or unreadable
                         # source still leaves the target intact.
-                        source.path.copy(target.path, overwrite=True)
+                        if _supports(source.path, Copy):
+                            source.path.copy(target.path, overwrite=True)
+                        else:
+                            # A source that is only readable copies by streaming over the target.
+                            source.path.copy(target.path)
                     else:
                         if target.is_symlink():
                             target.path.unlink()
