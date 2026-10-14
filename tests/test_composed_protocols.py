@@ -154,3 +154,13 @@ def test_a_second_sync_changes_nothing(root):
     before = (target / "a.txt").stat().st_mtime
     syncer.sync(root, target)
     assert (target / "a.txt").stat().st_mtime == before
+
+
+def test_a_contract_test_skips_for_a_protocol_the_class_lacks_and_names_it(root):
+    from pathlib_next.protocols import Create, Listing
+    from pathlib_next.testing import ReadPathContract
+
+    contract = ReadPathContract()
+    contract._support(root, Listing)
+    with pytest.raises(pytest.skip.Exception, match="DictPath does not support Create"):
+        contract._support(root, Create)
