@@ -33,11 +33,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `readlink()`, `_hardlink_to()` and `_cwd()`; `resolve()` follows links through
   `readlink()`, at most 40, and is lexical where a class has none. `LocalPath` keeps
   pathlib's own.
-- `PathContract` skips a test whose protocol the class under test does not implement
-  and names the protocol in the reason.
+- The contract suites' switches `supports_listing`, `supports_mkdir`,
+  `supports_delete`, `supports_utime` and `supports_rename` default to `None`, which
+  asks `supports()` about `Listing`, `Create`, `Remove`, `Utime` and `Move`, so a class
+  without a protocol skips those tests with no switch set and the skip names the
+  protocol. Set one to `True` or `False` on the test class to override the answer.
+- `providers.notimplemented` takes a reason: `@notimplemented("why")` marks a stub
+  that `supports()` reads as absent and whose `NotImplementedError` carries the
+  reason; the bare form is unchanged.
 
 ### Changed
 
+- `copy()` over an existing file does not call `unlink()` on a target whose class has no
+  `Remove` (it replaces the content through `open()`), and `move()` raises
+  `NotImplementedError` before copying when the source cannot be removed and has no
+  `rename()` to use. Before, the first raised from the `unlink()` and the second left
+  the file in two places. What to do: nothing, unless you relied on either.
 - Every `Path` now has a `readlink()`, which raises `NotImplementedError` where the class
   cannot read links, so `hasattr(path, "readlink")` no longer tells the two apart. What
   to do: ask `supports(path, Readlink)`.

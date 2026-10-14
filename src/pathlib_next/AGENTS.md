@@ -1552,7 +1552,11 @@ class Stat(Protocol):
     def is_dir_binding(self) -> bool: ...
 ```
 
-`stat()` (stub). Derives `lstat()`,
+`stat()` (stub). A stat may report `size_known=False` (`FileStat`): the
+backend knows the entry's type and not its size or time, as TFTP without the
+`tsize` option or an HTTP reply without `Content-Length` do; `st_size` and
+`st_mtime` are then placeholders, and a consumer that needs them asks again or
+does without. Derives `lstat()`,
 `exists()`, `is_dir()`,
 `is_file()`, `is_symlink()`, `is_block_device()`,
 `is_char_device()`, `is_fifo()`, `is_socket()`; any `OSError`/`ValueError`
@@ -2065,7 +2069,9 @@ UNCHANGED = None
   It holds the names only: joined and normalized like `PurePosixPath` (empty
   and `.` segments collapse, an absolute argument restarts the join), and a
   relative and a rooted spelling name the same node because the tree has no
-  working directory. A subclass supplies the constructor, the backend it
+  working directory (`_cwd()` answers the root). A backend where the two
+  spellings are different nodes, because it has a working directory, does not
+  use `TreePath`, or overrides `_cwd()`. A subclass supplies the constructor, the backend it
   carries and `_rebuild(text)` (a path of its class and backend for a joined
   text); `_join(segments)` returns the joined text and the first segment that
   is a path of the same family, whose backend a join keeps.
@@ -2100,8 +2106,10 @@ UNCHANGED = None
   calling the predicate, for an error it already answered `False` for and
   for an exception the predicate itself raised, so a recursive operation that
   passes it down never offers one failure twice.
-- **`notimplemented()`** — decorator; calling raises
-  `NotImplementedError("Method not implemented: <name>")`.
+- **`notimplemented()`** — decorator that marks a method as the stub of a
+  primitive, bare or with a reason: `@notimplemented` or `@notimplemented("why")`.
+  Calling it raises `NotImplementedError` with the reason, or
+  `"Method not implemented: <name>"`. `protocols.supports()` reads it as absent.
 - **`CommitOnClose`** and **`DiscardOnError`** — the write buffer that commits
   when it is closed, and the mixin that makes a failed `with` block commit
   nothing; see "For path implementers".
@@ -2148,7 +2156,7 @@ Name/suffix/stem, parents, join, `match()`; needs a
 
 ```python
 class ReadPathContract(PurePathContract):
-    supports_listing = True
+    supports_listing = None
     supports_empty_directories = True
     distinguishes_file_types = True
     supports_pickle = True
@@ -2166,15 +2174,15 @@ directory told from a file, a numeric `st_mtime`), `_scandir()` agreeing with
 
 ```python
 class PathContract(ReadPathContract):
-    supports_rename = True
+    supports_rename = None
     supports_append = True
     supports_exclusive_create = True
     enforces_directory_hierarchy = True
-    supports_mkdir = True
-    supports_delete = True
+    supports_mkdir = None
+    supports_delete = None
     supports_move = True
     supports_unusual_names = True
-    supports_utime = True
+    supports_utime = None
     supports_question_mark_names = False
 ```
 
@@ -2200,11 +2208,13 @@ and `supports_question_mark_names` (names holding `?`; **False by default**,
 because a Windows file system cannot store one: set it `True` for a URI
 scheme or a remote store).
 
-- A test that needs a protocol the class under test lacks (`Create`, `Remove`,
-  `Utime`, `Move` for `rename()`) skips, and the skip reason names it
-  (`MyPath does not support Remove`), by `protocols.supports()` on `root`;
-  the capability attributes above still switch a test off for a class that
-  implements the protocol but cannot honour the test.
+- Five switches default to `None`, which means "ask `protocols.supports()` on
+  `root`": `supports_listing` (`Listing`), `supports_mkdir` (`Create`),
+  `supports_delete` (`Remove`), `supports_utime` (`Utime`) and `supports_rename`
+  (`Move`). A class without the protocol skips those tests with no switch set,
+  and the skip reason names it (`MyPath does not support Remove`). Set the
+  attribute `True` or `False` on the test class to override the answer, for a
+  class that implements the protocol but cannot honour the test.
 
 - Both I/O contracts need `root` to be a **fresh, function-scoped** directory
   populated with `populate_fixture_tree()` (which uses `mkdir()` and

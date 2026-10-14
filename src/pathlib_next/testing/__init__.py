@@ -28,7 +28,9 @@ pathlib itself differs by OS (reading or unlinking a directory raises
 contract accepts that documented set. A backend that genuinely cannot meet a
 rule sets the matching capability attribute to False on its test class; the
 affected tests then report as skipped, never as passed. Every attribute
-defaults to True except `supports_question_mark_names`:
+defaults to True except `supports_question_mark_names` and the five that
+default to `None`, meaning "ask `supports()`" (`supports_listing`, `supports_mkdir`,
+`supports_delete`, `supports_utime`, `supports_rename`):
 
 - `ReadPathContract.supports_listing` -- `iterdir()`, `glob()`, `walk()`
   (a listing's stat whose `size_known` is False is held to its type only).
