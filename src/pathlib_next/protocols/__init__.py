@@ -3,5 +3,14 @@ from __future__ import annotations
 from .fs import Chmod, FileStatLike, Stat
 from .io import BinaryOpen
 from .checksum import NativeChecksum
+from ._support import capabilities, supports
 
-__all__ = ["BinaryOpen", "Chmod", "FileStatLike", "NativeChecksum", "Stat"]
+__all__ = [
+    "BinaryOpen",
+    "Chmod",
+    "FileStatLike",
+    "NativeChecksum",
+    "Stat",
+    "capabilities",
+    "supports",
+]

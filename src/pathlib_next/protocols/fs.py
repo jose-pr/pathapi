@@ -30,6 +30,9 @@ class Stat(_ty.Protocol):
 
     __slots__ = ()
 
+    __primitives__ = ("stat",)
+
+    @_stubs.primitive
     def stat(self, *, follow_symlinks=True) -> FileStatLike:
         """Return the stat of the path (a stub: `NotImplementedError`)."""
         return _stubs._unimplemented("stat")
@@ -115,6 +118,9 @@ class Chmod(_ty.Protocol):
 
     __slots__ = ()
 
+    __primitives__ = ("chmod",)
+
+    @_stubs.primitive
     def chmod(self, mode: int | str, *, follow_symlinks: bool = True):
         """
         Change the permissions of the path, like os.chmod().
@@ -139,6 +145,7 @@ class Chmod(_ty.Protocol):
         """
         self.chmod(mode, follow_symlinks=False)
 
+    @_stubs.primitive
     def _chown(
         self,
         uid: int | str | None,
@@ -156,6 +163,7 @@ class Chmod(_ty.Protocol):
         """
         return _stubs._unimplemented("_chown")
 
+    @_stubs.primitive
     def _utime(self, *, atime: float | None = None, mtime: float | None = None) -> None:
         """Backend primitive: set the access and/or modification time of the
         entry, in seconds since the epoch. `None` leaves that time alone. A

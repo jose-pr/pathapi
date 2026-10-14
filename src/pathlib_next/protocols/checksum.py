@@ -33,6 +33,8 @@ class NativeChecksum(_ty.Protocol):
 
     __slots__ = ()
 
+    __primitives__ = ("checksum",)
+
     def supported_checksums(self) -> "_ty.FrozenSet[str]":
         """Advisory set of `algorithm` names this path can currently
         produce a native digest for (e.g. `frozenset({"md5"})`), so a
@@ -53,6 +55,7 @@ class NativeChecksum(_ty.Protocol):
         """
         return frozenset()
 
+    @_stubs.primitive
     def checksum(self, algorithm: str = "md5") -> str:
         """Return a hex-digest checksum of this file's content, computed by
         the backend itself (e.g. an SFTP server implementing the filexfer draft's

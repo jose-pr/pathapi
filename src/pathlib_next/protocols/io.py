@@ -53,6 +53,9 @@ class BinaryOpen(_ty.Protocol):
 
     __slots__ = ()
 
+    __primitives__ = (("_open", "open"),)
+
+    @_stubs.primitive
     def _open(
         self,
         mode="r",

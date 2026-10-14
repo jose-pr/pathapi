@@ -82,6 +82,8 @@ EXPORTS = {
         "FileStatLike",
         "NativeChecksum",
         "Stat",
+        "capabilities",
+        "supports",
     },
     "pathlib_next.protocols.fs": {"Chmod", "FileStatLike", "Stat"},
     "pathlib_next.protocols.io": {"BinaryOpen"},
