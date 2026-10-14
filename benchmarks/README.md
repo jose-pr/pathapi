@@ -52,7 +52,7 @@ One JSON object per run:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `schema` | string | `"pathapi.bench/1"`. |
+| `schema` | string | `"pathapi.bench/1"`; files written when the project was `pathlib-next` (up to 0.10.0) hold `"pathlib_next.bench/1"`. |
 | `name` | string | The file name without `.json`. |
 | `suite` | string | `"default"` or the suite name. |
 | `source` | string | `"ci"` when run under GitHub Actions, else `"local"`. |
@@ -92,7 +92,7 @@ Excerpt (values illustrative):
 ```json
 {
   "schema": "pathapi.bench/1",
-  "name": "0.10.0-py3.14-posix-x86_64",
+  "name": "0.1.0-py3.14-posix-x86_64",
   "suite": "default",
   "source": "local",
   "python": "CPython 3.14.6",

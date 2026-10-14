@@ -10,6 +10,10 @@ it. It has no dependencies.
 Deliberate behavioral differences from `pathlib` are listed, with their
 reasons, in [Divergences from pathlib](divergences.md).
 
+`pathapi` was published as `pathlib-next` up to 0.10.0; `pip install pathlib-next`
+now installs a shim that depends on this package. The [changelog](changelog.md)
+has the migration from `pathlib_next`.
+
 ## Installation
 
 ```bash

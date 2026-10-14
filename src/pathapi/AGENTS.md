@@ -18,7 +18,8 @@ documents the core alone: path classes for URIs, and for SFTP, object stores
 and repository hosts, are built on it by other distributions that ship their
 own header.
 
-`pip install pathapi`. No dependencies: everything in this file runs on
+`pip install pathapi` (published as `pathlib-next`, import name `pathlib_next`,
+up to 0.10.0). No dependencies: everything in this file runs on
 the standard library, and `pytest` is needed only to import
 `pathapi.testing` and `pathapi.http.testing`.
 

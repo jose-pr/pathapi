@@ -14,6 +14,10 @@ server or the members of a zip or tar file, and against any path class built on
 it. It has no dependencies. Deliberate differences from `pathlib` are listed in
 [Divergences from pathlib](https://jose-pr.github.io/pathapi/divergences/).
 
+`pathapi` was published as `pathlib-next` up to 0.10.0; `pip install pathlib-next`
+now installs a shim that depends on this package. See the changelog for the
+migration from `pathlib_next`.
+
 ## Features
 
 | Class | Read | Write | List | Stat | mkdir | Delete | rename |

@@ -7,10 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+Published as `pathlib-next` up to 0.10.0; from 0.1.0 as `pathapi`. The released
+sections below keep the name they were published under.
+
 ### Added
 
 - **`supports()` and `capabilities()`: which protocols a path class implements.**
-  `pathlib_next.protocols.supports(obj_or_class, *protocols)` is true when every
+  `pathapi.protocols.supports(obj_or_class, *protocols)` is true when every
   primitive of every protocol named is something other than its default stub, and
   `capabilities(obj_or_class)` lists the protocols that hold. Ask once instead of
   calling and catching `NotImplementedError`. The answer is advisory: a primitive may
@@ -19,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **The operations of `Path` are protocols you can mix in.** `Create` (`mkdir`,
   `touch`), `Listing` (`iterdir`, `glob`, `rglob`, `walk`), `Remove` (`unlink`, `rmdir`,
   `rm`), `Readlink` (`readlink`), `Symlink` (`symlink_to`), `Identity` (`samefile`), `Copy`, `Move`
-  and the pure-path description `Named` are in `pathlib_next.protocols`, and
+  and the pure-path description `Named` are in `pathapi.protocols`, and
   `Path` is built from them. A read-only backend can be a class built from `Pathname`,
   `Listing`, `Stat` and `BinaryOpen` with no `Path`: `glob`, `checksum.md5`
   and `PathSyncer` take it as a source.
@@ -48,6 +51,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   reason; the bare form is unchanged.
 
 ### Changed
+
+- **The distribution, the import package and the repository are `pathapi`.** Version
+  numbering restarts at 0.1.0. `pathlib-next` 0.10.1 is a final release that depends on
+  `pathapi` and re-exports it under the old import name with a `DeprecationWarning`.
+  What to do: install `pathapi` and change the names in this table.
+
+  | Before | After |
+  | --- | --- |
+  | `pip install pathlib-next` | `pip install pathapi` |
+  | `import pathlib_next`, `pathlib_next.<module>` | `import pathapi`, `pathapi.<module>` |
+  | entry-point group `pathlib_next.http_transports` | `pathapi.http_transports` |
+  | `pathlib-next-requests` (`pathlib_next_requests`) | `pathapi-requests` (`pathapi_requests`) |
+  | `PATHLIB_NEXT_HTTP_TRANSPORT` | `PATHAPI_HTTP_TRANSPORT` |
+  | the `pathlib-next/<version>` user agent, the `.pathlib-next-tmp` suffix of a `PathSyncer` temporary sibling | `pathapi/<version>`, `.pathapi-tmp` |
+  | the `pathlib_next.sync` and `pathlib_next.http` loggers | `pathapi.sync`, `pathapi.http` |
+  | benchmark result schema `pathlib_next.bench/1` | `pathapi.bench/1` |
 
 - `copy()` over an existing file does not call `unlink()` on a target whose class has no
   `Remove` (it replaces the content through `open()`), and `move()` raises
@@ -3518,7 +3537,7 @@ behaviour with what to do about it.
 - Sync error handling.
 - Generic Path Protocol based pathlib implementation for URI paths with file access support for sftp, http, file schemes.
 
-[Unreleased]: https://github.com/jose-pr/pathlib-next/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/jose-pr/pathapi/compare/v0.10.0...HEAD
 [0.10.0]: https://github.com/jose-pr/pathlib-next/compare/v0.9.14...v0.10.0
 [0.9.14]: https://github.com/jose-pr/pathlib-next/compare/v0.9.13...v0.9.14
 [0.9.13]: https://github.com/jose-pr/pathlib-next/compare/v0.9.12...v0.9.13
