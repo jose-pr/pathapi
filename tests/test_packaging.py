@@ -59,3 +59,11 @@ def test_distributions_leave_out_the_contributor_notes_and_agent_config(project)
     assert "/AGENTS.md" in sdist
     assert "CLAUDE*" in sdist
     assert "CLAUDE*" in wheel
+
+
+def test_the_package_declares_no_dependency_extra_or_command(project):
+    declared = project["project"]
+    assert declared.get("dependencies", []) == []
+    assert set(declared.get("optional-dependencies", {})) == {"dev", "docs"}
+    assert "scripts" not in declared and "gui-scripts" not in declared
+    assert set(declared.get("entry-points", {})) == {"pathlib_next.http_transports"}

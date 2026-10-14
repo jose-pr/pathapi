@@ -37,75 +37,12 @@ classifiers = [
 ]
 dependencies = []
 
-[project.scripts]
-uripath = "pathlib_next.tools.uripath:main"
-
 [project.optional-dependencies]
-# Each floor is the oldest release the test suite passes against on Python 3.9;
-# the `floors` job of the test workflow installs exactly these lower bounds.
-uri = [
-    # uritools 6 needs Python 3.10; 5.0 is the newest release for 3.9.
-    "uritools>=5.0,<7",
-    # 0.3.3 and 0.3.4 break asyncssh's SFTP server on Windows; 0.4.0 does not.
-    "netimps>=0.4.0,<0.5",
-]
-http = [
-    # `http:`, `dav:`, `github:`, `gitlab:` and `git:` run on the standard library;
-    # this extra adds `requests` for `RequestsTransport`.
-    # Before 2.18 the bundled urllib3 imports the ABCs from `collections`
-    # (a DeprecationWarning on 3.9); 2.21 caps urllib3 below 1.25, which
-    # botocore 1.36 cannot share.
-    "requests>=2.22.0,<3",
-    "pathlib_next[uri]",
-]
-sftp = ["paramiko>=5.0,<6", "pathlib_next[uri]"]
-sftp-async = [
-    # The connection cache calls SSHClientConnection.is_closed(), absent in
-    # 2.14; the loopback server the tests use answers readlink of an absolute
-    # target only from 2.20. asyncssh 2.22 needs Python 3.10.
-    "asyncssh>=2.20.0,<2.22; python_version<'3.10'",
-    "asyncssh>=2.20.0,<3; python_version>='3.10'",
-    "pathlib_next[uri]",
-]
-s3 = [
-    # PutObject(IfNoneMatch=) is rejected by 1.34; the tests build a client with
-    # Config(response_checksum_validation=), which botocore has from 1.36.
-    "boto3>=1.36.0,<2",
-    "pathlib_next[uri]",
-]
-gs = ["google-cloud-storage>=3.0,<4", "pathlib_next[uri]"]
-az = [
-    # BlobPrefix is not exported from azure.storage.blob in 12.3.
-    "azure-storage-blob>=12.4.0,<13",
-    "azure-identity>=1.0,<2",
-    "pathlib_next[uri]",
-]
-dev = ['build', 'twine', 'hatchling', 'pytest', 'pytest-cov', 'pyftpdlib', 'wsgidav', 'cheroot', 'moto[s3]', 'hypothesis', 'black']
+# `cryptography` builds the certificates of the TLS tests, which skip without it;
+# `hypothesis` drives the property tests; `pyftpdlib` is the FTP server the
+# `FTPPath` tests talk to.
+dev = ['build', 'twine', 'hatchling', 'pytest', 'pytest-cov', 'pyftpdlib', 'cryptography', 'hypothesis', 'black']
 docs = ['mkdocs', 'mkdocs-material', 'mkdocstrings[python]']
-
-[project.entry-points."pathlib_next.schemes"]
-file = "pathlib_next.uri.schemes.file:FileUri"
-data = "pathlib_next.uri.schemes.data:DataUri"
-zip = "pathlib_next.uri.schemes.archive:ZipUri"
-tar = "pathlib_next.uri.schemes.archive:TarUri"
-archive = "pathlib_next.uri.schemes.archive:ArchiveUri"
-"archive+zip" = "pathlib_next.uri.schemes.archive:ArchiveZipUri"
-"archive+tar" = "pathlib_next.uri.schemes.archive:ArchiveTarUri"
-ftp = "pathlib_next.uri.schemes.ftp:FtpPath"
-ftps = "pathlib_next.uri.schemes.ftp:FtpPath"
-http = "pathlib_next.uri.schemes.http:HttpPath"
-https = "pathlib_next.uri.schemes.http:HttpPath"
-dav = "pathlib_next.uri.schemes.dav:DavPath"
-davs = "pathlib_next.uri.schemes.dav:DavPath"
-sftp = "pathlib_next.uri.schemes.sftp:SftpPath"
-s3 = "pathlib_next.uri.schemes.s3:S3Path"
-gs = "pathlib_next.uri.schemes.gs:GsPath"
-az = "pathlib_next.uri.schemes.az:AzPath"
-github = "pathlib_next.uri.schemes.github:GitHubPath"
-gitlab = "pathlib_next.uri.schemes.gitlab:GitLabPath"
-git = "pathlib_next.uri.schemes.git:GitPath"
-"git+github" = "pathlib_next.uri.schemes.git:GitHubGitPath"
-"git+gitlab" = "pathlib_next.uri.schemes.git:GitLabGitPath"
 
 # The HTTP transports `pathlib_next.http` can send through. The value is a class
 # that is built with no arguments; `pathlib_next.http.transport_names()` lists
@@ -162,9 +99,4 @@ target-version = ["py39"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
-filterwarnings = [
-    "error",
-    # boto3 emits a Python 3.9 EOL notice warning; filter by module/message
-    # so pytest doesn't need boto3 importable just to parse the warning rule.
-    "ignore:.*Python 3\\.9.*:Warning:boto3(\\..*)?$",
-]
+filterwarnings = ["error"]
