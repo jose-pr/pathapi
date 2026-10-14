@@ -6,11 +6,19 @@ ship.
 
 | Shipped header | Covers |
 | --- | --- |
-| [`src/pathlib_next/AGENTS.md`](src/pathlib_next/AGENTS.md) | The public API contract: every export, signature and gotcha, for the core and the URI layer. It ships in the wheel, so it must stay self-contained (no repo-relative links) and must be updated in the same commit as any public API change. |
+| [`src/pathlib_next/AGENTS.md`](src/pathlib_next/AGENTS.md) | The public API contract: every export, signature and gotcha. It ships in the wheel, so it must stay self-contained (no repo-relative links) and must be updated in the same commit as any public API change. |
 
 Deliberate differences from `pathlib.Path` are in
 [`docs/divergences.md`](docs/divergences.md). `pathlib.Path` parity is the
 contract; a behavioral divergence that is not recorded there is a bug.
+
+This repository is the core alone: no runtime dependency, no extra, no console
+script. The URI layer (`uripath`), SFTP (`sftppath`), the object stores
+(`objpath`), the repository hosts (`repopath`) and the `requests` HTTP
+transport (`pathlib-next-requests`) are distributions of their own that depend
+on this one. What they read from here (the underscore methods of `Path`, the
+`providers` helpers, `pathlib_next.http`) is their contract with it, written in
+the shipped header.
 
 ## Layout
 
@@ -19,11 +27,9 @@ contract; a behavioral divergence that is not recorded there is a bug.
 | `src/pathlib_next/` | The package (`src/` layout). `py.typed` and the API header ship with it. A module whose name has no leading underscore is public and declares `__all__`; every other module is private. |
 | `src/pathlib_next/{path,sync,glob,testing}/` | Packages of private modules; each `__init__` re-exports the public names. |
 | `src/pathlib_next/{ftp,archive}/` | The standard-library providers: `FTPPath` and `FTPBackend`; `ZipPath`, `TarPath` and `ArchivePath`. |
+| `src/pathlib_next/http/` | HTTP requests on the standard library: `HTTPClient`, the transport contract and `HTTPTransport`; transports are registered through the `pathlib_next.http_transports` entry points in `pyproject.toml`. |
 | `src/pathlib_next/providers.py` | What a class built on `Path` calls, defined in private modules beside it; `exceptions.py` holds `PathError` and `NonRelativePatternError`. |
-| `src/pathlib_next/uri/` | The URI layer: `Uri`, `UriPath`, `Source`, `Query`. |
-| `src/pathlib_next/uri/schemes/` | One module per URI scheme; registered through the `pathlib_next.schemes` entry points in `pyproject.toml`. |
-| `src/pathlib_next/tools/` | The `uripath` command. |
-| `tests/` | The pytest suite. |
+| `tests/` | The pytest suite. `tests/transport/` is the HTTP transport suite, which also ships in the wheel as `pathlib_next.http.testing`. |
 | `tests/mutation/` | The mutation list; see Checks. Ships in the sdist with `tests/`. |
 | `benchmarks/` | `bench.py` and committed JSON results; see [`benchmarks/README.md`](benchmarks/README.md). Not shipped. |
 | `examples/` | Runnable scripts. Networked ones skip (exit 0) unless their environment variables are set. |
@@ -41,15 +47,15 @@ is the architecture the interpreter was built for:
 
 ```bash
 python -m venv .venv/3.14-posix-x86_64
-.venv/3.14-posix-x86_64/bin/python -m pip install -e ".[dev,docs,uri,http,sftp,sftp-async,s3,gs,az]"
+.venv/3.14-posix-x86_64/bin/python -m pip install -e ".[dev,docs]"
 ```
 
 On Windows the interpreter is `.venv\<name>\Scripts\python.exe`.
 
-Install every extra that has tests. A missing extra does not fail the suite:
-its tests are skipped instead, so check `pytest -rs` before trusting a green run.
-The `gs`/`az` SDKs are the ones most likely to be unavailable for an older
-interpreter or a less common platform; without them their contract suites skip.
+`dev` holds every package a test imports. A missing one does not fail the suite:
+its tests are skipped instead (the TLS tests without `cryptography`, the typing
+checks without `mypy` and `basedpyright`), so check `pytest -rs` before trusting
+a green run.
 
 ## Checks
 
@@ -84,14 +90,17 @@ Workflows live in `.github/workflows/`:
 - `test.yml` runs on `workflow_dispatch` (optional `ref` input) or on a pushed
   `ci-*` tag, never on ordinary pushes. To test a commit without the dashboard,
   push a uniquely named throwaway tag (`ci-<topic>-<timestamp>`), follow the run
-  to completion, then delete the tag locally and on the remote. Its `floors` job
-  installs every dependency at the lower bound `pyproject.toml` declares, on
-  Python 3.9. Change a range in `pyproject.toml` only, and name the API that
-  needs a raised floor in a comment beside it.
-- `release.yml` runs on a `v*` tag: test and `floors` gates, build (the tag must
-  name the version built, `twine check`), an installed-wheel smoke test, a strict
-  docs build, then the GitHub release whose notes come from that version's
-  `CHANGELOG.md` section. For a final tag only (no `-` in it) it then publishes
+  to completion, then delete the tag locally and on the remote. Its jobs are the
+  test matrix, the bare install (the package, `pytest` and `pyftpdlib` and
+  nothing else) and the typing checks. There is no `floors` job: the package has
+  no runtime dependency to install at its lower bound. A dependency added later
+  needs a range in `pyproject.toml` only (with the API that needs a raised
+  floor named in a comment beside it) and a job that installs it at that floor.
+- `release.yml` runs on a `v*` tag: the test gates, build (the tag must name the
+  version built, `twine check`), an installed-wheel smoke test (the wheel
+  imports, ships no URI layer, declares no dependency and defines no console
+  script), a strict docs build, then the GitHub release whose notes come from
+  that version's `CHANGELOG.md` section. For a final tag only (no `-` in it) it then publishes
   to PyPI through Trusted Publishing and dispatches `docs.yml` at the tag.
 - `docs.yml` owns every GitHub Pages deploy: on a push to `main` that touches the
   docs sources and on `workflow_dispatch`, which `release.yml` fires for a final

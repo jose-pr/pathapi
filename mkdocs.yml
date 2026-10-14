@@ -25,8 +25,6 @@ theme:
 nav:
   - Home: index.md
   - Guides:
-      - Schemes: guides/schemes.md
-      - CLI: guides/cli.md
       - Extending: guides/extending.md
   - Benchmarks: benchmarks.md
   - Divergences from pathlib: divergences.md
@@ -37,22 +35,12 @@ nav:
       - HTTP: api/http.md
       - Archive Paths: api/archive.md
       - Protocols: api/protocols.md
-      - URI: api/uri.md
-      - Schemes:
-          - "file: and data:": api/schemes/local.md
-          - "http: and dav:": api/schemes/http.md
-          - "ftp:": api/schemes/ftp.md
-          - "sftp:": api/schemes/sftp.md
-          - "s3:, gs: and az:": api/schemes/objstore.md
-          - Archives: api/schemes/archive.md
-          - "github:, gitlab: and git:": api/schemes/git.md
       - Sync: api/sync.md
       - Glob: api/glob.md
       - Checksum: api/checksum.md
       - Providers: api/providers.md
       - Exceptions: api/exceptions.md
       - Testing Contracts: api/testing.md
-      - CLI: api/cli.md
   - Changelog: changelog.md
 
 plugins:
