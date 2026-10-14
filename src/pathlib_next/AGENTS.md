@@ -2040,6 +2040,7 @@ def as_error_predicate(on_error) -> OfferedOnce: ...
 class OfferedOnce:
     def __call__(self, error, path) -> bool: ...
 def notimplemented(method): ...
+def derived_from(*primitives): ...
 
 class DiscardOnError:
     def discard(self) -> None: ...
@@ -2110,6 +2111,11 @@ UNCHANGED = None
   primitive, bare or with a reason: `@notimplemented` or `@notimplemented("why")`.
   Calling it raises `NotImplementedError` with the reason, or
   `"Method not implemented: <name>"`. `protocols.supports()` reads it as absent.
+- **`derived_from(*primitives)`** — decorator for a method that only wraps
+  other primitives of its class, such as an `iterdir()` that lists through
+  `_listdir()`: `supports()` counts the method as implemented only when one
+  of the named primitives is, so a base class can define the wrapper without
+  claiming a protocol its subclasses do not have.
 - **`CommitOnClose`** and **`DiscardOnError`** — the write buffer that commits
   when it is closed, and the mixin that makes a failed `with` block commit
   nothing; see "For path implementers".

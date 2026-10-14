@@ -5,7 +5,7 @@ from __future__ import annotations
 import functools as _functools
 import typing as _ty
 
-__all__ = ["notimplemented", "primitive"]
+__all__ = ["derived_from", "notimplemented", "primitive"]
 
 #: Set on every function that is only the default of a primitive;
 #: `protocols.supports()` reads it.
@@ -40,6 +40,27 @@ def _stub(method, reason):
 
     setattr(_notimplemented, STUB_ATTR, True)
     return _notimplemented
+
+
+#: Set by `derived_from` on a default that only wraps other primitives.
+DERIVED_ATTR = "__pathlib_next_derived_from__"
+
+
+def derived_from(*primitives: str):
+    """Mark a method as built on other primitives of the class, such as an
+    `iterdir()` that lists through `_listdir()`: `protocols.supports()` counts
+    it as implemented only when one of those primitives is."""
+
+    def mark(function):
+        setattr(function, DERIVED_ATTR, primitives)
+        return function
+
+    return mark
+
+
+def derivation(function: object) -> "tuple[str, ...]":
+    """The primitives `function` is built on (see `derived_from`), or `()`."""
+    return getattr(function, DERIVED_ATTR, ())
 
 
 def is_stub(function: object) -> bool:

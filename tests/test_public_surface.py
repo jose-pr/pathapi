@@ -129,6 +129,7 @@ EXPORTS = {
         "check_follow",
         "contains",
         "copy_error_predicate",
+        "derived_from",
         "is_safe_child_name",
         "is_windows_flavoured",
         "name_stem",

@@ -16,7 +16,7 @@ from ._errorpolicy import (
 from ._lru import LRU
 from ._names import is_safe_child_name, is_windows_flavoured
 from ._permissions import UNCHANGED, parse_mode, parse_owner
-from ._stubs import notimplemented
+from ._stubs import derived_from, notimplemented
 from ._tree import TreePath
 from .path._pure import _name_stem as name_stem
 from .path._pure import _name_suffix as name_suffix
@@ -40,6 +40,7 @@ __all__ = [
     "name_stem",
     "name_suffix",
     "name_suffixes",
+    "derived_from",
     "notimplemented",
     "parse_mode",
     "parse_owner",

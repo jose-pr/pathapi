@@ -109,3 +109,32 @@ def test_move_from_a_class_without_remove_raises_before_the_target_exists():
 def test_move_from_a_class_without_remove_still_reports_a_missing_source():
     with pytest.raises(FileNotFoundError):
         NoRemove("/missing").move(NoRemove("/dst"))
+
+
+# --- a wrapper that is implemented only when what it wraps is -----------------
+
+
+def test_a_derived_method_counts_only_through_its_primitive():
+    from pathlib_next import Path
+    from pathlib_next.protocols import Listing
+    from pathlib_next.providers import derived_from
+
+    class Base(MemPath):
+        __slots__ = ()
+
+        @notimplemented
+        def _listdir(self): ...
+
+        @derived_from("_listdir")
+        def iterdir(self):
+            return iter(())
+
+    class Lists(Base):
+        __slots__ = ()
+
+        def _listdir(self):
+            return iter(())
+
+    assert not supports(Base, Listing)
+    assert supports(Lists, Listing)
+    assert Path in Base.__mro__

@@ -41,6 +41,17 @@ def _defined_outside(value: object) -> bool:
     )
 
 
+def _implemented(cls: type, name: str) -> bool:
+    """Whether `name` resolves on `cls` to more than a stub, and, for a method
+    that is only built on other primitives, whether one of them is
+    implemented."""
+    value = _resolve(cls, name)
+    if value is None or _stubs.is_stub(value):
+        return False
+    built_on = _stubs.derivation(value)
+    return not built_on or any(_implemented(cls, other) for other in built_on)
+
+
 def _has(cls: type, entry: "str | tuple[str, ...]") -> bool:
     """Whether `cls` implements one entry of `__primitives__`. An entry is a
     primitive name, or a tuple whose first name is the primitive and whose
@@ -48,8 +59,7 @@ def _has(cls: type, entry: "str | tuple[str, ...]") -> bool:
     protocol's own default defines them (`mkdir` for `_mkdir`, `open` for
     `_open`: `pathlib.Path` has the operation and not the primitive)."""
     names = (entry,) if isinstance(entry, str) else entry
-    primitive = _resolve(cls, names[0])
-    if primitive is not None and not _stubs.is_stub(primitive):
+    if _implemented(cls, names[0]):
         return True
     for name in names[1:]:
         replacement = _resolve(cls, name)
