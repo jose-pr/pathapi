@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-15
+
 Published as `pathlib-next` up to 0.10.0; from 0.1.0 as `pathapi`. The released
 sections below keep the name they were published under.
 
@@ -3537,7 +3539,8 @@ behaviour with what to do about it.
 - Sync error handling.
 - Generic Path Protocol based pathlib implementation for URI paths with file access support for sftp, http, file schemes.
 
-[Unreleased]: https://github.com/jose-pr/pathapi/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/jose-pr/pathapi/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/jose-pr/pathapi/compare/v0.10.0...v0.1.0
 [0.10.0]: https://github.com/jose-pr/pathlib-next/compare/v0.9.14...v0.10.0
 [0.9.14]: https://github.com/jose-pr/pathlib-next/compare/v0.9.13...v0.9.14
 [0.9.13]: https://github.com/jose-pr/pathlib-next/compare/v0.9.12...v0.9.13
