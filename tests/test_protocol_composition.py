@@ -11,6 +11,7 @@ from pathlib_next import LocalPath, MemPath, Path
 from pathlib_next.protocols import (
     BinaryOpen,
     Chmod,
+    Chown,
     Copy,
     Create,
     Hardlink,
@@ -18,6 +19,7 @@ from pathlib_next.protocols import (
     Listing,
     Move,
     Owner,
+    Readlink,
     Remove,
     Resolve,
     Stat,
@@ -29,8 +31,8 @@ OWNERS = {
     "info": Stat,
     "owner": Owner,
     "group": Owner,
-    "chown": Owner,
-    "_chown": Owner,
+    "chown": Chown,
+    "_chown": Chown,
     "_user_name": Owner,
     "_group_name": Owner,
     "_utime": Utime,
@@ -51,7 +53,7 @@ OWNERS = {
     "unlink": Remove,
     "rmdir": Remove,
     "rm": Remove,
-    "readlink": Symlink,
+    "readlink": Readlink,
     "_symlink_to": Symlink,
     "_hardlink_to": Hardlink,
     "hardlink_to": Hardlink,
@@ -110,15 +112,17 @@ def test_copy_resolves_before_binary_open_in_every_path_class():
 def test_the_bases_of_the_protocols_are_the_ones_their_bodies_call():
     bases = {
         Owner: {Stat},
-        Chmod: {Owner, Utime},
-        Create: {Chmod, Utime},
+        Chown: set(),
+        Chmod: {Chown, Utime},
+        Create: {Stat, Chmod, Utime},
+        Readlink: {Stat},
         Listing: {Stat},
         Remove: {Listing},
         Symlink: {Remove},
         Hardlink: {Stat},
-        Resolve: {Symlink},
+        Resolve: {Readlink},
         Identity: {Stat},
-        Copy: {Identity, Create, Symlink, BinaryOpen},
+        Copy: {Identity, Create, Symlink, Readlink, BinaryOpen},
         Move: {Copy, Remove},
     }
     for protocol, expected in bases.items():
@@ -128,21 +132,22 @@ def test_the_bases_of_the_protocols_are_the_ones_their_bodies_call():
 
 def test_path_mro_lists_the_protocols_in_the_order_of_its_class_statement():
     names = [cls.__name__ for cls in Path.__mro__]
-    assert names[:16] == [
+    assert names[:17] == [
         "Path",
         "Pathname",
         "Move",
         "Copy",
         "Identity",
         "Create",
-        "Chmod",
-        "Owner",
-        "Resolve",
         "Symlink",
-        "Hardlink",
         "Remove",
         "Listing",
+        "Resolve",
+        "Readlink",
+        "Hardlink",
+        "Owner",
         "Stat",
+        "Chmod",
+        "Chown",
         "Utime",
-        "BinaryOpen",
     ]

@@ -32,7 +32,7 @@ from ._transfer import (
 )
 from .fs import Create, Stat
 from .io import _ASK_STAT, BinaryOpen
-from .links import Symlink
+from .links import Readlink, Symlink
 from .tree import Remove
 
 if _ty.TYPE_CHECKING:
@@ -109,7 +109,7 @@ class Identity(Stat, _ty.Protocol):
         return ident1 == ident2
 
 
-class Copy(Identity, Create, Symlink, BinaryOpen, _ty.Protocol):
+class Copy(Identity, Create, Symlink, Readlink, BinaryOpen, _ty.Protocol):
     """Copying a file or a tree to another path, of this backend or of
     another. It precedes `BinaryOpen` in a class's bases because both define
     `copy()` and this one takes the options of a path copy."""
@@ -419,7 +419,7 @@ class Copy(Identity, Create, Symlink, BinaryOpen, _ty.Protocol):
         `target` with the same (unresolved) target text. Raises
         NotImplementedError when this backend cannot read links or the
         target's cannot create them -- never falls back to copying content."""
-        if not supports(self, Symlink):
+        if not supports(self, Readlink):
             raise NotImplementedError(f"copy(follow_symlinks=False) of {self!r}")
         link = self.readlink()
         if type(link) is not type(target):
@@ -648,6 +648,6 @@ def _holds_links(src: Path, target: Path) -> bool:
     """Whether a symlink of `src` can be recreated at `target`: `src` reads
     links and the class of `target` implements `_symlink_to()`."""
     return (
-        supports(src, Symlink)
+        supports(src, Readlink)
         and getattr(type(target), "_symlink_to", None) is not Symlink._symlink_to
     )

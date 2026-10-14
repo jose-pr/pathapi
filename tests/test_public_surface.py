@@ -79,6 +79,7 @@ EXPORTS = {
     "pathlib_next.protocols": {
         "BinaryOpen",
         "Chmod",
+        "Chown",
         "Copy",
         "Create",
         "FileStatLike",
@@ -89,6 +90,7 @@ EXPORTS = {
         "Named",
         "NativeChecksum",
         "Owner",
+        "Readlink",
         "Remove",
         "Resolve",
         "Stat",
@@ -99,6 +101,7 @@ EXPORTS = {
     },
     "pathlib_next.protocols.fs": {
         "Chmod",
+        "Chown",
         "Create",
         "FileStatLike",
         "Owner",
@@ -109,7 +112,7 @@ EXPORTS = {
     "pathlib_next.protocols.checksum": {"NativeChecksum"},
     "pathlib_next.protocols.pure": {"Named"},
     "pathlib_next.protocols.tree": {"Listing", "Remove"},
-    "pathlib_next.protocols.links": {"Hardlink", "Symlink"},
+    "pathlib_next.protocols.links": {"Hardlink", "Readlink", "Symlink"},
     "pathlib_next.protocols.resolve": {"Resolve"},
     "pathlib_next.protocols.transfer": {"Copy", "Identity", "Move"},
     "pathlib_next.providers": {

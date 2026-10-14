@@ -15,7 +15,7 @@ import pytest
 
 from pathlib_next import LocalPath, MemPath
 from pathlib_next.archive import TarPath, ZipPath
-from pathlib_next.protocols import Hardlink, Resolve, Symlink, supports
+from pathlib_next.protocols import Hardlink, Readlink, Resolve, Symlink, supports
 
 LOOPS_ARE_ERRORS = sys.version_info < (3, 13)
 
@@ -70,6 +70,7 @@ def test_strict_resolution_of_a_memory_path_needs_every_component():
 
 
 def test_a_memory_path_has_no_links_to_read_or_make():
+    assert not supports(MemPath, Readlink)
     assert not supports(MemPath, Symlink)
     assert not supports(MemPath, Hardlink)
     with pytest.raises(NotImplementedError, match="readlink"):
@@ -95,8 +96,8 @@ def archive(tmp_path):
 
 
 def test_an_archive_reads_links_and_cannot_make_one(archive):
-    assert supports(archive, Symlink)
-    assert supports(TarPath, Symlink)
+    assert supports(archive, Readlink) and not supports(archive, Symlink)
+    assert supports(TarPath, Readlink) and not supports(TarPath, Symlink)
     assert (archive / "ln").readlink().as_posix() == "d"
 
 

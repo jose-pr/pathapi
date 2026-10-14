@@ -10,7 +10,7 @@ from .. import _permissions, _stubs
 from ._errors import _os_error
 from ._info import _PathInfo
 
-__all__ = ["Chmod", "Create", "FileStatLike", "Owner", "Stat", "Utime"]
+__all__ = ["Chmod", "Chown", "Create", "FileStatLike", "Owner", "Stat", "Utime"]
 
 
 class FileStatLike(_ty.Protocol):
@@ -174,13 +174,17 @@ class Stat(_ty.Protocol):
 
 
 class Owner(Stat, _ty.Protocol):
-    """Reading and changing who owns a path. `owner()` and `group()` map the
-    `st_uid` and `st_gid` of `stat()` through `_user_name()` and
-    `_group_name()`; `chown()` calls the `_chown()` primitive."""
+    """Reading who owns a path. `owner()` and `group()` map the `st_uid` and
+    `st_gid` of `stat()` through the primitives `_user_name()` and
+    `_group_name()`; a class that has `owner()` and `group()` from somewhere
+    else (`pathlib`) needs neither."""
 
     __slots__ = ()
 
-    __primitives__: _ty.ClassVar[tuple[object, ...]] = (("_chown", "chown"),)
+    __primitives__: _ty.ClassVar[tuple[object, ...]] = (
+        ("_user_name", "owner"),
+        ("_group_name", "group"),
+    )
 
     def owner(self, *, follow_symlinks: bool = True) -> str:
         """The name of the user that owns the path. `NotImplementedError`
@@ -211,6 +215,15 @@ class Owner(Stat, _ty.Protocol):
         """Backend primitive behind `group()`: the name of group `gid` (a
         stub: `NotImplementedError`)."""
         return _stubs._unimplemented("_group_name")
+
+
+class Chown(_ty.Protocol):
+    """Changing who owns a path: `_chown()` is the primitive and `chown()`
+    normalizes its arguments."""
+
+    __slots__ = ()
+
+    __primitives__: _ty.ClassVar[tuple[object, ...]] = (("_chown", "chown"),)
 
     @_stubs.primitive
     def _chown(
@@ -280,8 +293,8 @@ class Utime(_ty.Protocol):
         return _stubs._unimplemented("_utime")
 
 
-class Chmod(Owner, Utime, _ty.Protocol):
-    """Changing the permissions of a path. It also inherits `Owner` and
+class Chmod(Chown, Utime, _ty.Protocol):
+    """Changing the permissions of a path. It also inherits `Chown` and
     `Utime`, which it documented before they were separate protocols, so
     `chown()`, `_chown()` and `_utime()` stay reachable from it;
     `supports(x, Chmod)` asks for `chmod()` only."""
@@ -316,7 +329,7 @@ class Chmod(Owner, Utime, _ty.Protocol):
         self.chmod(mode, follow_symlinks=False)
 
 
-class Create(Chmod, Utime, _ty.Protocol):
+class Create(Stat, Chmod, Utime, _ty.Protocol):
     """Creating a directory or a file: `mkdir()` and `touch()` on top of the
     `_mkdir()` primitive. `touch()` also uses `open()` (`BinaryOpen`) and
     `unlink()` (`Remove`)."""

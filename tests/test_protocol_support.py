@@ -15,6 +15,7 @@ from pathlib_next.archive import TarPath, ZipPath
 from pathlib_next.protocols import (
     BinaryOpen,
     Chmod,
+    Chown,
     Copy,
     Create,
     Hardlink,
@@ -23,6 +24,7 @@ from pathlib_next.protocols import (
     Move,
     NativeChecksum,
     Owner,
+    Readlink,
     Remove,
     Resolve,
     Stat,
@@ -39,7 +41,7 @@ def test_the_default_of_each_primitive_is_marked_a_stub():
     for function in (
         Stat.stat,
         Chmod.chmod,
-        Owner._chown,
+        Chown._chown,
         Owner._user_name,
         Owner._group_name,
         Utime._utime,
@@ -90,19 +92,20 @@ def test_a_bare_path_supports_only_the_protocols_that_have_no_primitive():
 
 
 def test_chmod_asks_for_chmod_only_though_it_inherits_ownership_and_times():
-    assert supports(FTPPath, Chmod) and not supports(FTPPath, Owner)
+    assert supports(FTPPath, Chmod) and not supports(FTPPath, Chown)
     assert supports(MemPath, Utime) and not supports(MemPath, Chmod)
-    assert Owner in Chmod.__mro__ and Utime in Chmod.__mro__
+    assert Chown in Chmod.__mro__ and Utime in Chmod.__mro__
 
 
 def test_local_path_supports_what_pathlib_provides():
     # `open`, `stat`, `iterdir`, `mkdir` and `rename` are pathlib's;
     # `_open` and `_mkdir` are not defined at all.
     assert supports(LocalPath, Stat, Chmod, BinaryOpen, Create, Listing, Remove)
-    assert supports(LocalPath, Symlink, Move, Identity, Copy, Utime)
+    assert supports(LocalPath, Symlink, Readlink, Move, Identity, Copy, Utime)
+    assert supports(LocalPath, Chown)
     assert supports(LocalPath, Hardlink, Resolve)
-    # `_chown` is defined on every platform, so this holds on Windows too,
-    # where pathlib's own `owner()` raises.
+    # pathlib defines `owner()` and `group()`; on Windows they exist and raise
+    # `NotImplementedError`, and this holds there too.
     assert supports(LocalPath, Owner)
     assert not supports(LocalPath, NativeChecksum)
 
@@ -124,17 +127,19 @@ def test_capabilities_of_the_providers_of_the_core():
     everywhere = {Stat, BinaryOpen, Create, Listing, Remove, Identity, Copy, Resolve}
     assert capabilities(LocalPath) == everywhere | {
         Chmod,
+        Chown,
         Owner,
         Utime,
         Symlink,
+        Readlink,
         Hardlink,
         Move,
     }
     assert capabilities(MemPath) == everywhere | {Utime}
     assert capabilities(FTPPath) == everywhere | {Chmod, Utime, Move}
     # An archive reads its links and cannot make one.
-    assert capabilities(ZipPath) == everywhere | {Move, Symlink}
-    assert capabilities(TarPath) == everywhere | {Move, Symlink}
+    assert capabilities(ZipPath) == everywhere | {Move, Readlink}
+    assert capabilities(TarPath) == everywhere | {Move, Readlink}
 
 
 def test_capabilities_of_an_instance_equal_those_of_its_class():
@@ -256,3 +261,23 @@ def test_a_memory_path_cannot_name_its_owner_or_group():
         here.owner()
     with pytest.raises(NotImplementedError):
         here.group()
+
+
+def test_owner_needs_both_names_or_pathlibs_own_readers():
+    assert supports(_Owned, Owner)
+
+    class OnlyUsers(MemPath):
+        __slots__ = ()
+
+        def _user_name(self, uid):
+            return "u"
+
+    assert not supports(OnlyUsers, Owner)
+    assert not supports(MemPath, Owner)
+    assert not supports(FTPPath, Chown) and supports(LocalPath, Chown)
+
+
+def test_reading_a_link_and_making_one_are_separate_protocols():
+    assert supports(ZipPath, Readlink) and not supports(ZipPath, Symlink)
+    assert supports(LocalPath, Readlink) and supports(LocalPath, Symlink)
+    assert not supports(MemPath, Readlink) and not supports(MemPath, Symlink)

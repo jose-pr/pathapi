@@ -9,7 +9,7 @@ import typing as _ty
 
 from .. import _stubs
 from ._support import supports
-from .links import Symlink
+from .links import Readlink
 
 __all__ = ["Resolve"]
 
@@ -17,7 +17,7 @@ __all__ = ["Resolve"]
 _MAX_LINKS = 40
 
 
-class Resolve(Symlink, _ty.Protocol):
+class Resolve(Readlink, _ty.Protocol):
     """`absolute()` and `resolve()`. `_cwd()` is the primitive: the directory
     a relative path is relative to. `resolve()` follows links through
     `readlink()` where the class has it and is lexical otherwise."""
@@ -47,7 +47,7 @@ class Resolve(Symlink, _ty.Protocol):
         `OSError(ELOOP)` from 3.13 when `strict` (otherwise the looping link
         is kept)."""
         path = self.absolute()
-        links = supports(self, Symlink)
+        links = supports(self, Readlink)
         root = path.with_segments(path.anchor or "/")
         resolved = root
         pending = [name for name in path.segments if name][::-1]

@@ -8,14 +8,12 @@ from .. import _stubs
 from .fs import Stat
 from .tree import Remove
 
-__all__ = ["Hardlink", "Symlink"]
+__all__ = ["Hardlink", "Readlink", "Symlink"]
 
 
-class Symlink(Remove, _ty.Protocol):
-    """Symbolic links: `readlink()` is the primitive that says a backend has
-    links at all, `_symlink_to()` creates one and `symlink_to()` normalizes
-    its target and honours `force=`. A read-only backend (an archive)
-    implements `readlink()` and leaves `_symlink_to()` a stub."""
+class Readlink(Stat, _ty.Protocol):
+    """Reading a symbolic link: `readlink()` is the primitive. A read-only
+    backend (an archive) has this and not `Symlink`."""
 
     __slots__ = ()
 
@@ -28,6 +26,15 @@ class Symlink(Remove, _ty.Protocol):
         `NotImplementedError`). `OSError(EINVAL)` where the path is not a
         link."""
         return _stubs._unimplemented("readlink")
+
+
+class Symlink(Remove, _ty.Protocol):
+    """Making a symbolic link: `_symlink_to()` is the primitive;
+    `symlink_to()` normalizes its target and honours `force=`."""
+
+    __slots__ = ()
+
+    __primitives__: _ty.ClassVar[tuple[object, ...]] = (("_symlink_to", "symlink_to"),)
 
     @_stubs.primitive
     def _symlink_to(
