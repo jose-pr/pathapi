@@ -91,7 +91,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install package without extras
-        # Exactly `pip install pathlib-next` plus the test runner and the FTP
+        # Exactly `pip install pathapi` plus the test runner and the FTP
         # server the `FTPPath` tests talk to: what a user who installs only the
         # package has.
         run: |

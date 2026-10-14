@@ -152,26 +152,26 @@ jobs:
           from importlib.metadata import entry_points, requires
           from importlib.resources import files
 
-          import pathlib_next
-          from pathlib_next import ArchivePath, FTPPath, TarPath, ZipPath
-          import pathlib_next.http
+          import pathapi
+          from pathapi import ArchivePath, FTPPath, TarPath, ZipPath
+          import pathapi.http
 
-          root = files("pathlib_next")
+          root = files("pathapi")
           for name in ("py.typed", "AGENTS.md", "README.md"):
               assert (root / name).is_file(), "the wheel does not ship %s" % name
           assert not (root / "uri").is_dir(), "the wheel ships the removed URI layer"
-          required = [r for r in requires("pathlib-next") or [] if "extra ==" not in r]
+          required = [r for r in requires("pathapi") or [] if "extra ==" not in r]
           assert required == [], "the wheel declares a dependency: %s" % required
           found = entry_points()
           if hasattr(found, "select"):
-              transports = list(found.select(group="pathlib_next.http_transports"))
+              transports = list(found.select(group="pathapi.http_transports"))
               scripts = list(found.select(group="console_scripts", name="uripath"))
           else:
-              transports = list(found.get("pathlib_next.http_transports", []))
+              transports = list(found.get("pathapi.http_transports", []))
               scripts = [e for e in found.get("console_scripts", []) if e.name == "uripath"]
           assert [e.name for e in transports] == ["builtin"], transports
           assert scripts == [], "the wheel defines the uripath command"
-          print("ok:", pathlib_next.__name__, pathlib_next.__version__)
+          print("ok:", pathapi.__name__, pathapi.__version__)
           PY
 
   # Docs are DEPLOYED by docs.yml. This job only GATES the release on a strict
@@ -259,7 +259,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/project/pathlib-next/
+      url: https://pypi.org/project/pathapi/
     permissions:
       id-token: write # required for PyPI Trusted Publishing (OIDC)
     steps:
