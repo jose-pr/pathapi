@@ -54,7 +54,9 @@ assert not supports(MemPath, Readlink)
 | `Identity`, `Copy` | none |
 
 A class whose answer depends on its connection defines `_supports(protocol)`, returning
-`True`, `False`, or `None` to leave the answer to the class.
+`True`, `False`, or `None` to leave the answer to the class. It may make at most one
+request per backend, cached for the backend's lifetime, and it never raises: a failed
+request answers `None`.
 
 ## Subclass `Path`
 
@@ -109,7 +111,8 @@ left as it was, and is not created if it was absent. `discard()` drops what the
 stream holds so that the `close()` that follows commits nothing, and does
 nothing more when it is called twice or after `close()`. A block that ended
 normally, and a file closed with `close()` outside a `with` block, commit as
-before. In binary mode `open()` returns the stream `_open()` gave it as it is,
+before; a stream (or its text wrapper) garbage collected unclosed is discarded
+and emits a `ResourceWarning`, so close the file to commit it. In binary mode `open()` returns the stream `_open()` gave it as it is,
 so a stream that defines `discard()` without the mixin is not discarded unless
 its own `__exit__` does it; in text mode the wrapper `open()` builds calls any
 `discard()` the stream has. A stream with no `discard()` is used as it is,

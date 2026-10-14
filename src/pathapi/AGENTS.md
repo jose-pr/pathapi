@@ -553,6 +553,7 @@ def detect_format(name, peek=None) -> str: ...
 
 class DiscardOnError:
     def discard(self) -> None: ...
+    def _holds_uncommitted(self) -> bool: ...
 
 class CommitOnClose(DiscardOnError, BytesIO):
     def __init__(self, commit, initial=None): ...
@@ -568,6 +569,8 @@ class CommitOnClose(DiscardOnError, BytesIO):
 - `_supports(protocol)` — optional: return `True` or `False` for a protocol
   whose answer depends on the connection (a server that lacks an extension),
   `None` to leave it to the class. `supports()` asks it first for an instance.
+  It may make at most one request per backend, cached for the backend's
+  lifetime, and it never raises: when the request fails it returns `None`.
 - `_anchor_segments()` — the leading `segments` that anchor the path instead
   of naming a directory (`("",)` for a rooted path, else `()`); `parents`
   stops there. Override it when the root is spelled differently (a class for
@@ -620,7 +623,9 @@ class CommitOnClose(DiscardOnError, BytesIO):
   a new file, only after a write for one opened with `initial` content. Return
   it from `_open()` for a backend that cannot write a file piecewise. It
   inherits `DiscardOnError`; its `discard()` drops the buffer so that a later
-  `close()` commits nothing.
+  `close()` commits nothing. A buffer garbage collected unclosed while it
+  holds something to commit is discarded and emits a `ResourceWarning`: close
+  the file to commit it.
 - `DiscardOnError` — mixin for a write stream that commits when it is closed
   (an upload, a rewrite of an archive), so that a write which failed commits
   nothing. Its `__exit__` calls `discard()` when the `with` block over the
@@ -631,7 +636,10 @@ class CommitOnClose(DiscardOnError, BytesIO):
   nothing, and do nothing more when called twice or after `close()`. Put the
   mixin first in the bases (`class Upload(DiscardOnError, io.BytesIO)`), so
   that its `__exit__` wins over `io.IOBase`'s. The target is then left as it
-  was, and is not created if it was absent.
+  was, and is not created if it was absent. A stream garbage collected
+  unclosed is discarded the same way, with a `ResourceWarning`, when
+  `_holds_uncommitted()` (true by default) says closing would commit something;
+  override it to return false for a stream that was never modified.
 - A stream returned by `_open()` — in binary mode `open()` returns it
   untouched, so its own `__exit__` is the mechanism: a stream that defines
   `discard()` without inheriting `DiscardOnError` (or doing the same in its own
@@ -1500,8 +1508,10 @@ they exist and raise `NotImplementedError` when called. A protocol with no primi
 (`Identity`, `Copy`) is supported by a class that has it as a base. A class
 whose answer depends on its connection defines `_supports(protocol) -> bool |
 None`, asked first for an instance; `None` falls back to the answer from the
-class. The answer is advisory, like `supported_checksums()`: a primitive may
-still raise `NotImplementedError` for an argument it cannot handle.
+class. It may make at most one request per backend, cached for the backend's
+lifetime, and never raises: a failed request answers `None`. The answer is
+advisory, like `supported_checksums()`: a primitive may still raise
+`NotImplementedError` for an argument it cannot handle.
 `TypeError` for no protocol and for something that is not a protocol of this
 package (`Named`, `FileStatLike` and the like have no primitives to ask).
 

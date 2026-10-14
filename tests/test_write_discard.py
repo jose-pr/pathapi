@@ -238,8 +238,9 @@ def test_the_mixin_closes_the_stream_when_the_subclass_has_no_discard():
 def test_a_text_wrapper_does_not_pickle_with_or_without_discard():
     with pytest.raises(TypeError):
         pickle.dumps(io.TextIOWrapper(io.BytesIO()))
-    with pytest.raises(TypeError):
-        pickle.dumps(opener(Stream([])).open("w"))
+    with opener(Stream([])).open("w") as wrapped:
+        with pytest.raises(TypeError):
+            pickle.dumps(wrapped)
 
 
 def test_write_bytes_and_write_text_whose_write_fails_commit_nothing():

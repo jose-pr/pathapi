@@ -4,7 +4,8 @@ stream raised.
 A stream that commits on close (an upload, an archive rewrite) has a
 `discard()` method. When the block ended in an exception, `discard()` is called
 before the stream is closed, so the close commits nothing; when it ended
-normally, or the file is closed with `close()`, nothing changes. In binary mode
+normally, or the file is closed with `close()`, nothing changes; a wrapper
+collected unclosed discards as well, with a `ResourceWarning`. In binary mode
 the stream's own `__exit__` does this (`DiscardOnError`).
 """
 
@@ -12,6 +13,7 @@ from __future__ import annotations
 
 import io as _io
 import typing as _ty
+import warnings as _warnings
 
 
 class DiscardingTextIO(_io.TextIOWrapper):
@@ -46,6 +48,28 @@ class DiscardingTextIO(_io.TextIOWrapper):
                 super().close()
             raise
         super().close()
+
+    def _unclosed(self):
+        try:
+            return not self.closed
+        except ValueError:  # the constructor raised before initialising it
+            return False
+
+    def __del__(self):
+        # Collected unclosed: the text still held and the stream's content were
+        # never finished, so neither is committed.
+        try:
+            if self._unclosed() and self._discard is not None:
+                self._dropping = True
+                self._discard()
+                _warnings.warn(
+                    f"unclosed {type(self).__name__} discarded without "
+                    "committing; close the file",
+                    ResourceWarning,
+                    source=self,
+                )
+        finally:
+            super().__del__()
 
     def __exit__(self, exc_type, exc_value, traceback):
         if exc_type is None:

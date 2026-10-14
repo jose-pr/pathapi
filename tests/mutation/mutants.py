@@ -609,6 +609,41 @@ mutant(
     "close() commits a buffer that was discarded",
 )
 
+_COMMIT = "tests/test_commit_on_close.py"
+mutant(
+    "unclosed-stream-is-committed-at-collection",
+    "_commit.py",
+    "            if not self.closed and self._holds_uncommitted():\n                self.discard()\n",
+    "            if not self.closed and self._holds_uncommitted():\n                pass\n",
+    (
+        f"{_COMMIT}::test_an_unclosed_written_buffer_is_discarded_at_collection_with_a_warning",
+        f"{_COMMIT}::test_an_unclosed_new_file_is_not_created_at_collection",
+        f"{_COMMIT}::test_a_subclass_of_the_mixin_is_discarded_unclosed_unless_it_says_otherwise",
+    ),
+    "a stream collected unclosed commits what was never finished",
+)
+mutant(
+    "unmodified-stream-warns-at-collection",
+    "_commit.py",
+    "        return self._dirty and not self._discarded\n",
+    "        return True\n",
+    (
+        f"{_COMMIT}::test_an_unclosed_buffer_that_was_not_modified_is_collected_silently",
+        f"{_COMMIT}::test_a_discarded_buffer_is_collected_silently",
+    ),
+    "a buffer with nothing to commit warns when collected",
+)
+mutant(
+    "unclosed-text-file-is-committed-at-collection",
+    "_discard.py",
+    "                self._dropping = True\n                self._discard()\n                _warnings.warn(",
+    "                _warnings.warn(",
+    (
+        f"{_COMMIT}::test_an_unclosed_text_file_over_a_buffer_is_discarded_at_collection",
+    ),
+    "a text file collected unclosed commits what it holds",
+)
+
 mutant(
     "commit-on-close-puts-bytesio-ahead-of-the-mixin",
     "_commit.py",

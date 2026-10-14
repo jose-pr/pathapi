@@ -80,7 +80,9 @@ def supports(obj: object, *protocols: type) -> bool:
     named: each primitive of each resolves to something other than the
     protocol's default stub. A class whose answer depends on its connection
     defines `_supports(protocol) -> bool | None`, asked first for an instance;
-    `None` falls through to the answer from the class.
+    `None` falls through to the answer from the class. That hook makes at most
+    one request per backend, cached for the backend's lifetime, and never
+    raises: a failed request answers `None`.
 
     The answer is advisory, like `supported_checksums()`: a primitive may
     still raise `NotImplementedError` for an argument it cannot handle.

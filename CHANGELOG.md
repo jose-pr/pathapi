@@ -57,6 +57,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Every `Path` now has a `readlink()`, which raises `NotImplementedError` where the class
   cannot read links, so `hasattr(path, "readlink")` no longer tells the two apart. What
   to do: ask `supports(path, Readlink)`.
+- A write stream that commits on close (`CommitOnClose`, and any stream built on
+  `DiscardOnError`), or the text file over one, that is garbage collected without being
+  closed is now discarded with a `ResourceWarning` instead of committed, as a `with`
+  block that raised already was. Before, the collector closed it and so uploaded or
+  rewrote what the program never finished. What to do: close the file (use `with`);
+  a stream of your own on `DiscardOnError` can override `_holds_uncommitted()` to stay
+  silent when it has nothing to commit.
+- `_supports(protocol)` may make at most one request per backend, cached for the
+  backend's lifetime, and never raises (it answers `None` when the request fails).
 
 ## [0.10.0] - 2026-10-14
 
