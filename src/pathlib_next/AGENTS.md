@@ -2041,6 +2041,7 @@ class OfferedOnce:
     def __call__(self, error, path) -> bool: ...
 def notimplemented(method): ...
 def derived_from(*primitives): ...
+def primitive(method): ...
 
 class DiscardOnError:
     def discard(self) -> None: ...
@@ -2111,6 +2112,10 @@ UNCHANGED = None
   primitive, bare or with a reason: `@notimplemented` or `@notimplemented("why")`.
   Calling it raises `NotImplementedError` with the reason, or
   `"Method not implemented: <name>"`. `protocols.supports()` reads it as absent.
+- **`primitive()`** — decorator that marks a function as the default of a
+  primitive that raises an error of its own (a `data:` URI's `_listdir()`
+  raises `NotADirectoryError`): `supports()` reads it as absent, as it reads
+  a `notimplemented` stub.
 - **`derived_from(*primitives)`** — decorator for a method that only wraps
   other primitives of its class, such as an `iterdir()` that lists through
   `_listdir()`: `supports()` counts the method as implemented only when one

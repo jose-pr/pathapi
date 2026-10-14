@@ -138,3 +138,19 @@ def test_a_derived_method_counts_only_through_its_primitive():
     assert not supports(Base, Listing)
     assert supports(Lists, Listing)
     assert Path in Base.__mro__
+
+
+def test_a_default_that_raises_its_own_error_reads_as_absent():
+    from pathlib_next.protocols import Listing
+    from pathlib_next.providers import primitive
+
+    class Single(MemPath):
+        __slots__ = ()
+
+        @primitive
+        def iterdir(self):
+            raise NotADirectoryError(self)
+
+    assert not supports(Single, Listing)
+    with pytest.raises(NotADirectoryError):
+        Single("/x").iterdir()

@@ -126,6 +126,7 @@ EXPORTS = {
         "as_error_predicate",
         "parse_mode",
         "parse_owner",
+        "primitive",
         "check_follow",
         "contains",
         "copy_error_predicate",

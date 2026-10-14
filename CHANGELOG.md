@@ -38,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   asks `supports()` about `Listing`, `Create`, `Remove`, `Utime` and `Move`, so a class
   without a protocol skips those tests with no switch set and the skip names the
   protocol. Set one to `True` or `False` on the test class to override the answer.
+- `providers.primitive` marks a default of a primitive whose body raises an error of its
+  own, so `supports()` reads it as absent.
 - `providers.derived_from(*primitives)` marks a method that only wraps other
   primitives, so a base class can define `iterdir()` over `_listdir()` and
   `supports()` still says a subclass without `_listdir()` cannot list.
