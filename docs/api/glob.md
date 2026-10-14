@@ -1,3 +1,0 @@
-# Glob API
-
-::: pathapi.glob

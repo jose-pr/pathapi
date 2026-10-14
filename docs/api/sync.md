@@ -1,3 +1,0 @@
-# Sync API
-
-::: pathapi.sync

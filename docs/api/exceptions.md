@@ -1,3 +1,0 @@
-# Exceptions API
-
-::: pathapi.exceptions

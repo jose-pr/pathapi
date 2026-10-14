@@ -1,3 +1,0 @@
-# Checksum API
-
-::: pathapi.checksum

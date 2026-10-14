@@ -4,19 +4,16 @@ requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
-# The distribution and the import package are both `pathapi`.
-name = "pathapi"
-version = "0.1.0"
+name = "pathlib-next"
+version = "0.10.1"
 authors = [{ name = "Jose A" }]
-description = "Generic Path Protocol based pathlib"
+description = "Renamed pathapi: this package depends on it and re-exports it as pathlib_next"
 readme = "README.md"
 requires-python = ">=3.9"
-# PEP 639: SPDX license expression plus the file it refers to. This replaces
-# the legacy `License ::` classifier; do not list one alongside it.
 license = "MIT"
 license-files = ["LICENSE"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 7 - Inactive",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
@@ -25,68 +22,25 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
-    # src/pathapi/py.typed ships in the wheel.
     "Typing :: Typed",
 ]
-dependencies = []
+dependencies = ["pathapi>=0.1.0,<0.2"]
 
 [project.optional-dependencies]
-# `cryptography` builds the certificates of the TLS tests, which skip without it;
-# `hypothesis` drives the property tests; `pyftpdlib` is the FTP server the
-# `FTPPath` tests talk to.
-dev = ['build', 'twine', 'hatchling', 'pytest', 'pytest-cov', 'pyftpdlib', 'cryptography', 'hypothesis', 'black']
-docs = ['mkdocs', 'mkdocs-material', 'mkdocstrings[python]']
-
-# The HTTP transports `pathapi.http` can send through. The value is a class
-# that is built with no arguments; `pathapi.http.transport_names()` lists
-# it without importing it.
-[project.entry-points."pathapi.http_transports"]
-builtin = "pathapi.http:HTTPTransport"
+dev = ['pytest', 'black', 'build', 'twine', 'hatchling']
 
 [project.urls]
 Homepage = "https://github.com/jose-pr/pathapi/"
 Documentation = "https://jose-pr.github.io/pathapi/"
 Issues = "https://github.com/jose-pr/pathapi/issues"
 
-
-# Ship the consumer-facing docs inside the installed package, so they are
-# readable from site-packages via importlib.resources without the repo.
-# src/pathapi/AGENTS.md (the API header) is included automatically by
-# living in the package dir. The repo-root AGENTS.md is contributor
-# orientation for a checkout and is not part of the wheel.
-[tool.hatch.build.targets.wheel.force-include]
-"README.md" = "pathapi/README.md"
-# The transport suite (`python -m pathapi.http.testing`) runs from the installed package.
-"tests/transport/test_client_default.py" = "pathapi/http/testing/suite/test_client_default.py"
-"tests/transport/test_client_errors.py" = "pathapi/http/testing/suite/test_client_errors.py"
-"tests/transport/test_client_peer_text.py" = "pathapi/http/testing/suite/test_client_peer_text.py"
-"tests/transport/test_client_redirect_origin.py" = "pathapi/http/testing/suite/test_client_redirect_origin.py"
-"tests/transport/test_client_redirects.py" = "pathapi/http/testing/suite/test_client_redirects.py"
-"tests/transport/test_client_reply_limits.py" = "pathapi/http/testing/suite/test_client_reply_limits.py"
-"tests/transport/test_client_write_redirects.py" = "pathapi/http/testing/suite/test_client_write_redirects.py"
-"tests/transport/test_transport_body.py" = "pathapi/http/testing/suite/test_transport_body.py"
-"tests/transport/test_transport_send.py" = "pathapi/http/testing/suite/test_transport_send.py"
-"tests/transport/conftest.py" = "pathapi/http/testing/suite/conftest.py"
-"tests/transport/transport_fakes.py" = "pathapi/http/testing/suite/transport_fakes.py"
-"tests/transport/transport_guard.py" = "pathapi/http/testing/suite/transport_guard.py"
-"tests/transport/transport_wire.py" = "pathapi/http/testing/suite/transport_wire.py"
-
-# `*.local.*` files are per-machine overrides and `CLAUDE*` is agent config:
-# neither is ever packaged (both are also gitignored). `/.*` does not match
-# them, since their names do not start with a dot. The repo-root AGENTS.md
-# orients a contributor in a checkout; the API header that ships is
-# src/pathapi/AGENTS.md.
 [tool.hatch.build.targets.sdist]
-exclude = ["/.*", "/AGENTS.md", "/benchmarks", "*.local.*", "CLAUDE*"]
+include = ["/src", "/tests", "/README.md", "/CHANGELOG.md", "/LICENSE", "/pyproject.toml"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/pathapi"]
-exclude = ["*.local.*", "CLAUDE*"]
-
+packages = ["src/pathlib_next"]
 
 [tool.black]
-# Pinned to the project's *minimum* supported Python so black never emits
-# syntax the 3.9 floor cannot parse.
 target-version = ["py39"]
 
 [tool.pytest.ini_options]
