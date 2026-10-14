@@ -16,8 +16,10 @@ Run the shared contract suite against your implementation -- see
 ## Compose a class from protocols
 
 `Path` is a class statement over the protocols of `pathlib_next.protocols`: `Stat`, `Chmod`,
-`Owner`, `Utime`, `Create`, `BinaryOpen`, `Listing`, `Remove`, `Symlink`, `Hardlink`, `Resolve`,
-`Identity`, `Copy` and `Move`. Each has a few primitives (stubs that raise `NotImplementedError`)
+`Chown`, `Owner`, `Utime`, `Create`, `BinaryOpen`, `Listing`, `Remove`, `Readlink`, `Symlink`,
+`Hardlink`, `Resolve`, `Identity`, `Copy` and `Move`. There is one protocol for each primitive a
+backend can have without the others (an archive reads links and makes none), so `supports()` can
+say exactly what a class does. Each has a few primitives (stubs that raise `NotImplementedError`)
 and derives the rest. A backend that only reads is `Pathname`, `Listing`, `Stat` and
 `BinaryOpen` with the primitives `stat()`, `iterdir()` and `_open()`, and no `Path`: `glob()`,
 `walk()`, `read_text()`, `checksum.md5()` and a `PathSyncer` source work on it. List a protocol
@@ -27,23 +29,25 @@ before the ones it is built on (`Listing` before `Stat`).
 
 ```python
 from pathlib_next import MemPath
-from pathlib_next.protocols import Create, Symlink, supports
+from pathlib_next.protocols import Create, Readlink, supports
 
 assert supports(MemPath, Create)
-assert not supports(MemPath, Symlink)
+assert not supports(MemPath, Readlink)
 ```
 
 | Protocol | Primitives |
 | --- | --- |
 | `Stat` | `stat()` |
 | `Chmod` | `chmod()` |
-| `Owner` | `_chown()`; `owner()`/`group()` also need `_user_name()`, `_group_name()` |
+| `Owner` | `_user_name()`, `_group_name()` (`owner()` and `group()` are derived) |
+| `Chown` | `_chown()` |
 | `Utime` | `_utime()` |
 | `Create` | `_mkdir()` |
-| `BinaryOpen` | `_open()` |
+| `BinaryOpen` | `_open()` (one primitive for reading and writing: raise `NotImplementedError` for a mode you cannot honour) |
 | `Listing` | `iterdir()` |
 | `Remove` | `unlink()`, `rmdir()` |
-| `Symlink` | `readlink()`; `symlink_to()` also needs `_symlink_to()` |
+| `Readlink` | `readlink()` |
+| `Symlink` | `_symlink_to()` |
 | `Hardlink` | `_hardlink_to()` |
 | `Resolve` | `_cwd()` |
 | `Move` | `rename()` (`move()` copies and removes without it) |

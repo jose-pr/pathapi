@@ -167,8 +167,8 @@ has a root; a class whose rooted paths are not all absolute overrides it).
 
 ```python
 class Path(
-    Pathname, Move, Copy, Identity, Create, Chmod, Owner, Resolve,
-    Symlink, Hardlink, Remove, Listing, Stat, Utime, BinaryOpen,
+    Pathname, Move, Copy, Identity, Create, Symlink, Remove, Listing, Resolve,
+    Readlink, Hardlink, Owner, Stat, Chmod, Chown, Utime, BinaryOpen,
 ):
     info
     def is_hidden(self): ...
@@ -249,7 +249,7 @@ Base class for I/O paths.
   `hardlink_to()`, `absolute()`, `resolve()`, `owner()` and `group()` are
   defined on every `Path`, and raise `NotImplementedError` until a class supplies
   `readlink()`, `_hardlink_to()`, `_cwd()`, `_user_name()` and `_group_name()`;
-  `supports(path, Symlink)` and the like say which it did. `LocalPath` keeps
+  `supports(path, Readlink)` and the like say which it did. `LocalPath` keeps
   pathlib's own.
 - `samefile()` — compares `(st_dev, st_ino)`; `NotImplementedError`
   when `stat()` lacks them (`LocalPath` uses pathlib's).
@@ -533,8 +533,8 @@ which is in `pathlib_next.archive`.
 class Pathname:
     def _anchor_segments(self) -> tuple[str, ...]: ...
 
-class Path(Pathname, Move, Copy, Identity, Create, Chmod, Owner, Resolve,
-           Symlink, Hardlink, Remove, Listing, Stat, Utime, BinaryOpen):
+class Path(Pathname, Move, Copy, Identity, Create, Symlink, Remove, Listing,
+           Resolve, Readlink, Hardlink, Owner, Stat, Chmod, Chown, Utime, BinaryOpen):
     def _scandir(self) -> Iterator[Tuple[str, Optional[FileStat]]]: ...
     def _same_filesystem(self, other) -> bool: ...
     def _coerce_target(self, target) -> Path: ...
@@ -560,8 +560,8 @@ class CommitOnClose(DiscardOnError, BytesIO):
 ```
 
 - Primitives, by protocol ("Protocols" has the table): `stat`; `chmod`;
-  `_chown` (and `_user_name`, `_group_name` for `owner()`/`group()`); `_utime`;
-  `_mkdir`; `_open`; `iterdir`; `unlink`, `rmdir`; `readlink`, `_symlink_to`;
+  `_chown`; `_user_name`, `_group_name` (for `owner()`/`group()`); `_utime`;
+  `_mkdir`; `_open`; `iterdir`; `unlink`, `rmdir`; `readlink`; `_symlink_to`;
   `_hardlink_to`; `_cwd`; `rename`; `checksum`. Implement what the backend can
   and leave the rest: `pathlib_next.protocols.supports(path, Protocol)` then
   tells a caller, without a call that raises, which protocols the class has.
@@ -1454,24 +1454,29 @@ copy and not the stream copy.
 | `Named` | `pure` | none (structural only) | `name`, `segments`, `parent`, `with_segments()`, `joinpath()`, `/`, `as_posix()` | none |
 | `FileStatLike` | `fs` | `st_mode`, `st_size`, `st_mtime` | | none |
 | `Stat` | `fs` | `stat()` | `lstat()`, `exists()`, `is_dir()`, `is_file()`, `is_symlink()`, `is_block_device()`, `is_char_device()`, `is_fifo()`, `is_socket()`, `info`, `is_junction()`, `is_mount()`, `is_dir_binding()` | none |
-| `Chmod` | `fs` | `chmod()` | `lchmod()` | `Owner`, `Utime` |
-| `Owner` | `fs` | `_chown()` | `owner()`, `group()` (need `_user_name()`, `_group_name()`), `chown()` | `Stat` |
+| `Chmod` | `fs` | `chmod()` | `lchmod()` | `Chown`, `Utime` |
+| `Owner` | `fs` | `_user_name()`, `_group_name()` | `owner()`, `group()` | `Stat` |
+| `Chown` | `fs` | `_chown()` | `chown()` | none |
 | `Utime` | `fs` | `_utime()` | | none |
-| `Create` | `fs` | `_mkdir()` | `mkdir()`, `touch()` | `Chmod`, `Utime` |
+| `Create` | `fs` | `_mkdir()` | `mkdir()`, `touch()` | `Stat`, `Chmod`, `Utime` |
 | `BinaryOpen` | `io` | `_open()` | `open()`, `read_bytes()`, `read_text()`, `write_bytes()`, `write_text()`, `copy()` | none |
 | `Listing` | `tree` | `iterdir()` | `_scandir()`, `glob()`, `rglob()`, `walk()`, iteration | `Stat` |
 | `Remove` | `tree` | `unlink()`, `rmdir()` | `rm()` | `Listing` |
-| `Symlink` | `links` | `readlink()` | `symlink_to()` (needs `_symlink_to()`), `_symlink_target()` | `Remove` |
+| `Readlink` | `links` | `readlink()` | | `Stat` |
+| `Symlink` | `links` | `_symlink_to()` | `symlink_to()`, `_symlink_target()` | `Remove` |
 | `Hardlink` | `links` | `_hardlink_to()` | `hardlink_to()` | `Stat` |
-| `Resolve` | `resolve` | `_cwd()` | `absolute()`, `resolve()` | `Symlink` |
+| `Resolve` | `resolve` | `_cwd()` | `absolute()`, `resolve()` | `Readlink` |
 | `Identity` | `transfer` | none | `samefile()`, `_same_filesystem()`, `_node_key()` | `Stat` |
-| `Copy` | `transfer` | none | `copy()`, `copy_into()`, `_copy_from()`, `_coerce_target()`, `_write_batch()` | `Identity`, `Create`, `Symlink`, `BinaryOpen` |
+| `Copy` | `transfer` | none | `copy()`, `copy_into()`, `_copy_from()`, `_coerce_target()`, `_write_batch()` | `Identity`, `Create`, `Symlink`, `Readlink`, `BinaryOpen` |
 | `Move` | `transfer` | `rename()` | `move()`, `move_into()`, `replace()` | `Copy`, `Remove` |
 | `NativeChecksum` | `checksum` | `checksum()` | `supported_checksums()` | none |
 
-`Create` also calls `open()` and `unlink()` in `touch()`; `Symlink` creates
-links through `_symlink_to()`, an optional stub of its own (an archive reads
-links and creates none, so it implements `readlink()` only). All names are
+One protocol per primitive that a backend can have without the others: an
+archive reads links and makes none (`Readlink` and not `Symlink`), a server may
+set times and not modes, and `Owner` reads names where `Chown` writes ids.
+`BinaryOpen` is one protocol: a single `_open(mode)` serves reading and writing,
+and a mode the backend cannot honour raises `NotImplementedError` per call.
+`Create` also calls `open()` and `unlink()` in `touch()`. All names are
 imported from `pathlib_next.protocols`; the module column is where each one
 is defined.
 
@@ -1488,9 +1493,10 @@ lists the protocols for which that holds. Ask once instead of calling and
 catching `NotImplementedError`. A primitive also counts as implemented when
 another library defines the operation it feeds: `pathlib`'s `mkdir` for
 `_mkdir`, `open` for `_open`, `absolute` for `_cwd`, `hardlink_to` for
-`_hardlink_to`, and the class's own `chown` for `_chown`; so `LocalPath`
-supports `Owner` on Windows too (`_chown` is defined on every platform),
-though pathlib's own `owner()` raises there. A protocol with no primitives
+`_hardlink_to`, `chown` for `_chown`, `symlink_to` for `_symlink_to`, `owner`
+for `_user_name` and `group` for `_group_name`; so `LocalPath` supports `Owner`
+where `pathlib` defines `owner()` and `group()`, which includes Windows, where
+they exist and raise `NotImplementedError` when called. A protocol with no primitives
 (`Identity`, `Copy`) is supported by a class that has it as a base. A class
 whose answer depends on its connection defines `_supports(protocol) -> bool |
 None`, asked first for an instance; `None` falls back to the answer from the
@@ -1556,7 +1562,7 @@ from `stat()` reads as `False`. `info`, `is_junction()`, `is_mount()` and
 ### `fs.Chmod`
 
 ```python
-class Chmod(Owner, Utime, Protocol):
+class Chmod(Chown, Utime, Protocol):
     def chmod(self, mode, *, follow_symlinks=True): ...
     def lchmod(self, mode): ...
 ```
@@ -1564,7 +1570,7 @@ class Chmod(Owner, Utime, Protocol):
 `chmod()` (stub; every
 implementation normalizes through `providers.parse_mode()`, so `"0755"` works)
 and `lchmod()`. `supports(x, Chmod)` asks for `chmod()` alone. `Chmod`
-inherits `Owner` and `Utime` for compatibility, because `chown()`, `_chown()`
+inherits `Chown` and `Utime` for compatibility, because `chown()`, `_chown()`
 and `_utime()` were documented with it: a class that lists `Chmod` has them,
 and a new class lists the protocol it means.
 
@@ -1576,14 +1582,22 @@ class Owner(Stat, Protocol):
     def group(self, *, follow_symlinks=True) -> str: ...
     def _user_name(self, uid) -> str: ...
     def _group_name(self, gid) -> str: ...
-    def _chown(self, uid, gid, *, follow_symlinks=True) -> None: ...
-    def chown(self, uid=None, gid=None, *, follow_symlinks=True) -> None: ...
 ```
 
 `owner()` and `group()` (the 3.13 signature) take `st_uid` and `st_gid` from
 `stat()` and map them through `_user_name(uid)` and `_group_name(gid)` (stubs);
 a stat without the field, or a class without the mapping, raises
-`NotImplementedError`. `LocalPath` keeps pathlib's. `_chown()` (stub, receives a
+`NotImplementedError`. `LocalPath` keeps pathlib's.
+
+### `fs.Chown`
+
+```python
+class Chown(Protocol):
+    def _chown(self, uid, gid, *, follow_symlinks=True) -> None: ...
+    def chown(self, uid=None, gid=None, *, follow_symlinks=True) -> None: ...
+```
+
+`_chown()` (stub, receives a
 canonical pair) / `chown()` —
 `None` or `-1` leaves a field unchanged, `int` is an id, `str` a name; an
 all-unchanged call returns without touching the backend.
@@ -1605,7 +1619,7 @@ a time at all raises `NotImplementedError`. `touch()` of an existing file and
 ### `fs.Create`
 
 ```python
-class Create(Chmod, Utime, Protocol):
+class Create(Stat, Chmod, Utime, Protocol):
     def touch(self, mode=None, exist_ok=True): ...
     def _mkdir(self, mode): ...
     def mkdir(self, mode=0o777, parents=False, exist_ok=False): ...
@@ -1635,7 +1649,9 @@ class BinaryOpen(Protocol):
 validates the mode like builtin `open()` (`ValueError`) and passes
 `_open()` a canonical `r`/`w`/`x`/`a` plus optional `+` (never `b`/`t`);
 text mode wraps in `TextIOWrapper` and closes the handle if wrapping fails.
-An `_open()` that cannot honor a mode raises `NotImplementedError`. A stream
+An `_open()` that cannot honor a mode raises `NotImplementedError` per
+call: one `_open(mode)` primitive serves reading and writing, so there is no
+separate read-only protocol. A stream
 that commits on close inherits `providers.DiscardOnError`, so a `with` block
 over the file that raised commits nothing (see "For path implementers");
 `write_bytes()`, `write_text()` and `copy()` whose data fails half way commit
@@ -1684,11 +1700,22 @@ class Remove(Listing, Protocol):
 `unlink()` and `rmdir()` (stubs); `rm()` derives from them and from
 `_scandir()` (see `Path`).
 
+### `links.Readlink`
+
+```python
+class Readlink(Stat, Protocol):
+    def readlink(self) -> Self: ...
+```
+
+`readlink()` (stub) returns a path of this class whose `str()` and
+`as_posix()` are the link text, unresolved (`OSError(EINVAL)` where the path
+is not a link). A read-only backend such as `ZipPath` and `TarPath` has this
+and not `Symlink`.
+
 ### `links.Symlink`
 
 ```python
 class Symlink(Remove, Protocol):
-    def readlink(self) -> Self: ...
     def _symlink_to(self, target, target_is_directory=False) -> None: ...
     def _symlink_target(self, target) -> Self: ...
     def symlink_to(
@@ -1696,9 +1723,6 @@ class Symlink(Remove, Protocol):
     ) -> None: ...
 ```
 
-`readlink()` (stub) returns a path of this class whose `str()` and
-`as_posix()` are the link text, unresolved (`OSError(EINVAL)` where the path
-is not a link); it is the primitive `supports(x, Symlink)` asks for.
 `_symlink_to()` (stub) creates a link, and `symlink_to()` is described under
 `Path`.
 
@@ -1718,7 +1742,7 @@ same backend first. `LocalPath` has pathlib's `hardlink_to()` and, before
 ### `resolve.Resolve`
 
 ```python
-class Resolve(Symlink, Protocol):
+class Resolve(Readlink, Protocol):
     def _cwd(self) -> Self: ...
     def absolute(self) -> Self: ...
     def resolve(self, strict=False) -> Self: ...
@@ -1749,7 +1773,7 @@ No primitives: the hooks are described under `Path`.
 ### `transfer.Copy`
 
 ```python
-class Copy(Identity, Create, Symlink, BinaryOpen, Protocol):
+class Copy(Identity, Create, Symlink, Readlink, BinaryOpen, Protocol):
     def copy(
         self, target, *, overwrite=False, follow_symlinks=True,
         preserve_metadata=True, recursive=False, ignore_error=None,

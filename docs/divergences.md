@@ -110,7 +110,7 @@ these for free from `pathlib.Path` via MRO -- this list only describes what
 `MemPath`, `FTPPath` and the archive paths (and custom `Path` subclasses in general) don't get:
 
 - `resolve()`, `absolute()`, `readlink()`, `hardlink_to()`, `owner()`, `group()`
-  exist on every `Path`, each a protocol (`Resolve`, `Symlink`, `Hardlink`,
+  exist on every `Path`, each a protocol (`Resolve`, `Readlink`, `Hardlink`,
   `Owner`), and need a primitive the backend supplies; until it does the method
   raises `NotImplementedError`, and `protocols.supports()` says whether it did.
   `absolute()` needs `_cwd()` (`MemPath` and the tree paths answer with their

@@ -18,15 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `_supports(protocol) -> bool | None`.
 - **The operations of `Path` are protocols you can mix in.** `Create` (`mkdir`,
   `touch`), `Listing` (`iterdir`, `glob`, `rglob`, `walk`), `Remove` (`unlink`, `rmdir`,
-  `rm`), `Symlink` (`readlink`, `symlink_to`), `Identity` (`samefile`), `Copy`, `Move`
+  `rm`), `Readlink` (`readlink`), `Symlink` (`symlink_to`), `Identity` (`samefile`), `Copy`, `Move`
   and the pure-path description `Named` are in `pathlib_next.protocols`, and
   `Path` is built from them. A read-only backend can be a class built from `Pathname`,
   `Listing`, `Stat` and `BinaryOpen` with no `Path`: `glob`, `checksum.md5`
   and `PathSyncer` take it as a source.
-- **`Chmod` is split.** `Owner` (`owner()`, `group()`, `chown()`) and `Utime`
-  (`_utime()`) are protocols of their own, so `supports(path, Chmod)` asks for
-  `chmod()` alone. `Chmod` still inherits both, so `chown`, `_chown` and `_utime` stay
-  reachable from it.
+- **`Chmod` is split, and so is every pair of a reader and a writer.** `Chown`
+  (`chown()`), `Owner` (`owner()`, `group()`), `Utime` (`_utime()`), `Readlink` and
+  `Symlink` are protocols of their own, so `supports(path, Chmod)` asks for `chmod()`
+  alone and an archive supports `Readlink` and not `Symlink`. `Chmod` still inherits
+  `Chown` and `Utime`, so `chown`, `_chown` and `_utime` stay reachable from it.
 - **`owner()`, `group()`, `readlink()`, `hardlink_to()`, `absolute()` and `resolve()`
   on every `Path`.** A backend supplies `_user_name()` and `_group_name()`,
   `readlink()`, `_hardlink_to()` and `_cwd()`; `resolve()` follows links through
@@ -39,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Every `Path` now has a `readlink()`, which raises `NotImplementedError` where the class
   cannot read links, so `hasattr(path, "readlink")` no longer tells the two apart. What
-  to do: ask `supports(path, Symlink)`.
+  to do: ask `supports(path, Readlink)`.
 
 ## [0.10.0] - 2026-10-14
 
