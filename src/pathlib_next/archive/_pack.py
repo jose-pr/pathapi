@@ -21,8 +21,7 @@ def detect_format(name: str, peek: "_ty.Callable[[], bytes] | None" = None) -> s
     magic-byte sniffing (`PK` header -> zip) via `peek()` -- called lazily,
     only when the extension is inconclusive, so callers backed by a remote
     Path don't pay for a round trip in the common case. Shared by
-    `unpack_archive` and the `archive:` catch-all URI scheme so both use one
-    detection policy."""
+    `unpack_archive` and `ArchivePath` so both use one detection policy."""
     name_lower = name.lower()
     if name_lower.endswith((".zip", ".jar")):
         return "zip"
@@ -84,7 +83,7 @@ def _archive_members(
     entry below the directory `src`, each directory before what is in it and
     the empty ones too. The name is built from the listed names while
     descending, so it works for any `Path` (no `relative_to()`/`parts`,
-    which MemPath and UriPath do not provide in that form). Directories are
+    which MemPath and URI paths do not provide in that form). Directories are
     recognised without following symlinks, as `walk()` does; the stat is the
     one that decided that, or None when it failed."""
     pending = [(src, "")]
@@ -284,7 +283,7 @@ def unpack_archive(archive: Path, dest: Path) -> None:
     On a Windows-flavoured `dest` so is a member with a part Windows would
     store under another name (a trailing dot or space) or send to a device
     (`NUL`, `CON`, `COM1`, ...), with a `UserWarning` naming it.
-    A non-seekable archive stream (e.g. `HttpPath`) is buffered first.
+    A non-seekable archive stream (e.g. an HTTP response) is buffered first.
     A tar hard link, or a symlink to a regular file inside the archive, is
     extracted as a regular file with the target member's content (no link
     is created, so `dest` needs no symlink support); a link that does not

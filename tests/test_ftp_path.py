@@ -389,23 +389,6 @@ def _pythonpath(source):
     return os.pathsep.join([source, *filter(None, [os.environ.get("PYTHONPATH", "")])])
 
 
-def test_the_ftp_package_imports_without_the_uri_layer():
-    result = _run(
-        """
-        import sys
-        from pathlib_next.ftp import FTPPath
-        loaded = [m for m, v in sys.modules.items() if v is not None
-                  and m.split(".")[0] in ("uritools", "netimps")]
-        loaded += [m for m in sys.modules if m.startswith("pathlib_next.uri")]
-        print(loaded)
-        assert FTPPath("/x", host="h").as_uri() == "ftp://h/x"
-        """,
-        blocked=("uritools", "netimps"),
-    )
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "[]"
-
-
 def test_importing_the_root_loads_neither_ftplib_nor_ssl():
     result = _run("""
         import sys
@@ -416,15 +399,6 @@ def test_importing_the_root_loads_neither_ftplib_nor_ssl():
         """)
     assert result.returncode == 0, result.stderr
     assert result.stdout.splitlines() == ["[]", "True pathlib_next.ftp._path"]
-
-
-def test_the_ftp_sources_name_no_uri_dependency():
-    import pathlib
-
-    sources = (pathlib.Path(pathlib_next.__file__).parent / "ftp").glob("*.py")
-    text = "\n".join(path.read_text(encoding="utf-8") for path in sources)
-    for forbidden in ("pathlib_next.uri", "..uri", "netimps", "uritools"):
-        assert forbidden not in text
 
 
 # --- the contract ---------------------------------------------------------------------

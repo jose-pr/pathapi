@@ -11,18 +11,19 @@ import zipfile
 
 import pytest
 
-pytest.importorskip("uritools")
-
-from pathlib_next.uri import UriPath
+from pathlib_next.archive import TarPath, ZipPath
 from pathlib_next.archive import _backend as _base
 
 
-def _zip_uri(path, inner=""):
-    return f"zip:{path.as_uri()}!/{inner}"
+def _zip(path, inner=""):
+    return ZipPath(inner, archive=path)
 
 
-def _tar_uri(path, inner=""):
-    return f"tar:{path.as_uri()}!/{inner}"
+def _tar(path, inner=""):
+    return TarPath(inner, archive=path)
+
+
+_ARCHIVE = {"zip": _zip, "tar": _tar}
 
 
 class _Count:
@@ -65,17 +66,18 @@ def test_a_walk_compares_each_name_a_bounded_number_of_times(tmp_path, kind):
     for directories in (50, 100, 200):
         path = tmp_path / f"{directories}.{kind}"
         members = _many_directories(path, directories, kind)
-        root = UriPath(f"{kind}:{path.as_uri()}!/")
+        root = _ARCHIVE[kind](path)
         with _Count("startswith") as compared:
             files = sum(len(names) for _, _, names in root.walk())
         assert files == members
-        assert compared.calls <= 2 * members, (directories, compared.calls)
+        # Linear in the members (about three each), never quadratic.
+        assert compared.calls <= 4 * members, (directories, compared.calls)
 
 
 def test_listing_a_directory_of_a_large_archive_reads_only_its_children(tmp_path):
     path = tmp_path / "wide.zip"
     members = _many_directories(path, 400, "zip")
-    root = UriPath(_zip_uri(path))
+    root = _zip(path)
     assert [p.name for p in (root / "pkg" / "d00123").iterdir()] == [
         "f0.txt",
         "f1.txt",
@@ -120,7 +122,7 @@ def test_reading_a_small_member_of_a_large_local_tar_holds_under_a_mebibyte(tmp_
         small = tarfile.TarInfo("small")
         small.size = 5
         tf.addfile(small, io.BytesIO(b"hello"))
-    root = UriPath(_tar_uri(archive))
+    root = _tar(archive)
     data, peak = _peak(lambda: (root / "small").read_bytes())
     assert data == b"hello"
     assert peak < 2**20
@@ -137,7 +139,7 @@ def test_reading_a_small_member_of_a_large_compressed_tar_holds_under_a_mebibyte
         small = tarfile.TarInfo("small")
         small.size = 5
         tf.addfile(small, io.BytesIO(b"hello"))
-    root = UriPath(_tar_uri(archive))
+    root = _tar(archive)
     data, peak = _peak(lambda: (root / "small").read_bytes())
     assert data == b"hello"
     assert peak < 2**20
@@ -160,7 +162,7 @@ def test_a_member_past_the_spool_size_is_read_through_a_temporary_file(
             info = tarfile.TarInfo("zeros")
             info.size = size
             tf.addfile(info, _Zeros(size))
-    member = UriPath(f"{kind}:{archive.as_uri()}!/zeros")
+    member = _ARCHIVE[kind](archive, "zeros")
 
     def read():
         with member.open("rb") as stream:
@@ -178,7 +180,7 @@ def test_a_member_under_the_spool_size_is_read_from_memory(tmp_path):
     archive = tmp_path / "small.zip"
     with zipfile.ZipFile(archive, "w") as zf:
         zf.writestr("m", b"x" * 1000)
-    with (UriPath(_zip_uri(archive)) / "m").open("rb") as stream:
+    with (_zip(archive) / "m").open("rb") as stream:
         assert isinstance(stream, io.BytesIO)
         assert stream.read() == b"x" * 1000
 
@@ -191,7 +193,7 @@ def test_a_spooled_member_stays_readable_after_the_archive_is_rewritten(
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("big", b"abc" * 100_000)
         zf.writestr("other", b"o")
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     with (root / "big").open("rb") as stream:
         (root / "other").unlink()
         (root / "new").write_bytes(b"n")

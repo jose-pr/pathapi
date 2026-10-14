@@ -42,16 +42,6 @@ from . import sync as sync
 from ._filestat import FileStat
 from .exceptions import NonRelativePatternError, PathError
 
-_uri_unavailable: "ImportError | None" = None
-try:
-    from .uri import Uri as Uri
-    from .uri import UriPath as UriPath
-except ImportError as _error:
-    _uri_unavailable = _error
-else:
-    __all__ += ["Uri", "UriPath"]
-
-
 #: Path classes of the standard-library providers, imported on first use so
 #: that `import pathlib_next` loads neither `ftplib` nor `ssl`, and no archive
 #: code.
@@ -69,10 +59,4 @@ def __getattr__(name: str):
         value = getattr(_importlib.import_module(module, __name__), name)
         globals()[name] = value
         return value
-    # `hasattr(pathlib_next, "UriPath")` stays False without the extra: this
-    # is an AttributeError that says why.
-    if name in ("Uri", "UriPath") and _uri_unavailable is not None:
-        raise AttributeError(
-            f"module {__name__!r} has no attribute {name!r}: {_uri_unavailable}"
-        ) from _uri_unavailable
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

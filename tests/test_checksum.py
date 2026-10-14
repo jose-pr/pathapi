@@ -314,7 +314,7 @@ def test_pathsyncer_custom_checksum_callable_bypasses_native_pairing():
 
 class _NonLocalMemPath(MemPath):
     """`MemPath` with an explicit `is_local() -> False` and a controllable
-    `st_mtime`, standing in for a real non-local `UriPath` (e.g. `SftpPath`)
+    `st_mtime`, standing in for a real non-local path (an SFTP server's)
     without needing a real/fake `Source`/DNS resolution -- `quick_check`
     only cares about the `is_local()` boolean and `PathAndStat.stat`'s
     `st_size`/`st_mtime`, both of which this fully controls. Also tracks

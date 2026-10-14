@@ -25,9 +25,9 @@ def _supports_symlinks(path: Path) -> bool:
 
 
 def _link_text(path: Path) -> str:
-    """The raw, unresolved target string of the symlink at `path`. A Uri's
-    `.path` is the un-prefixed link text (`Uri.as_posix()` prepends "host:"
-    when the result carries a host, e.g. SftpPath's absolute targets); plain
+    """The raw, unresolved target string of the symlink at `path`. A path
+    that has a `.path` attribute (a URI path) holds the un-prefixed link text there,
+    since `as_posix()` prepends "host:" when the result carries a host; plain
     stdlib Path has no `.path`, so `.as_posix()` is the only accessor there.
     Both sides of a comparison must use this same extraction."""
     link = path.readlink()

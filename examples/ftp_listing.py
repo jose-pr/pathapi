@@ -1,4 +1,4 @@
-"""List files on a remote FTP server using FtpPath.
+"""List files on a remote FTP server using FTPPath.
 Requires credentials -- guarded under `if __name__ == "__main__"` so importing
 this module is always safe, and skipped (prints setup instructions, exit 0) unless
 FTP_EXAMPLE_HOST is set.
@@ -14,28 +14,17 @@ Run directly:
 
 import os
 import sys
-from urllib.parse import quote
 
-from pathlib_next.uri import UriPath
+from pathlib_next import FTPPath
 
 
-def list_ftp(remote: UriPath):
-    # str() of a URI path drops the password, so printing it is safe.
-    print(f"Listing FTP directory: {remote}")
+def list_ftp(remote: FTPPath):
+    # repr() of an FTP path names the server and never shows the password.
+    print(f"Listing FTP directory: {remote!r}")
     for child in remote.iterdir():
         kind = "dir " if child.is_dir() else "file"
         size = "" if child.is_dir() else f" ({child.stat().st_size} bytes)"
         print(f"  [{kind}] {child.name}{size}")
-
-
-def _userinfo(user, password):
-    # Percent-encode both parts: a raw "/", "#", "?" or "@" in a password
-    # would otherwise change where the URI's host and path begin.
-    if not user:
-        return ""
-    if password:
-        return f"{quote(user, safe='')}:{quote(password, safe='')}@"
-    return f"{quote(user, safe='')}@"
 
 
 if __name__ == "__main__":
@@ -52,10 +41,9 @@ if __name__ == "__main__":
     password = os.environ.get("FTP_EXAMPLE_PASSWORD")
     remote_path = os.environ.get("FTP_EXAMPLE_REMOTE_PATH", "/")
 
-    userinfo = _userinfo(user, password)
-    remote = UriPath(f"ftp://{userinfo}{host}{remote_path}")
+    remote = FTPPath(remote_path, host=host, user=user, password=password)
 
     try:
         list_ftp(remote)
     except Exception as error:
-        print(f"Could not connect to {remote} ({error}); skipping.", file=sys.stderr)
+        print(f"Could not connect to {remote!r} ({error}); skipping.", file=sys.stderr)

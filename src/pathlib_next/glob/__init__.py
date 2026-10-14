@@ -2,7 +2,7 @@
 
 Modelled on CPython's pathlib glob selectors, reworked to run over anything
 that implements `_scandir()`/`iterdir()`/`is_dir()`/`name` like
-`pathlib.Path` (`LocalPath`, `MemPath`, every `UriPath` scheme).
+`pathlib.Path` (`LocalPath`, `MemPath`, `FTPPath`, the archive paths).
 """
 
 from __future__ import annotations

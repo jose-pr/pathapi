@@ -7,59 +7,52 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/jose-pr/pathlib-next/test.yml)](https://github.com/jose-pr/pathlib-next/actions/workflows/test.yml)
 
 A **robust, extensible pathlib-like base** for any resource addressable as a
-path or URI. Same method names, signatures, semantics and exception types as
+path. Same method names, signatures, semantics and exception types as
 `pathlib.Path` wherever a `pathlib.Path` equivalent exists: write code once
-against `Path`/`UriPath` and it runs against your local disk, an in-memory
-tree, an archive member, an HTTP or WebDAV server, SFTP/FTP, S3, Google Cloud
-Storage, Azure Blob Storage or a GitHub/GitLab repository. Deliberate
-differences from `pathlib` are listed in
+against `Path` and it runs against your local disk, an in-memory tree, an FTP
+server or the members of a zip or tar file, and against any path class built on
+it. It has no dependencies. Deliberate differences from `pathlib` are listed in
 [Divergences from pathlib](https://jose-pr.github.io/pathlib-next/divergences/).
 
 ## Features
 
-| Scheme (class) | Read | Write | List | Stat | mkdir | Delete | rename | Extra |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| local path (`LocalPath`) | Yes | Yes | Yes | Yes | Yes | Yes | Yes | none |
-| in-memory (`MemPath`, no URI scheme) | Yes | Yes | Yes | Yes | Yes | Yes | No (`move()` copies) | none |
-| `file:` (`FileUri`) | Yes | Yes | Yes | Yes | Yes | Yes | Yes | `uri` |
-| `data:` (`DataUri`, RFC 2397) | Yes | No | No | Yes | No | No | No | `uri` |
-| `zip:` (`ZipUri`) | Yes | Local `file:` archive only | Yes | Yes | Local archive only | Local archive only | Local archive only | `uri` |
-| `tar:` (`TarUri`, incl. gz/bz2/xz) | Yes | No | Yes | Yes | No | No | No | `uri` |
-| `archive:`, `archive+zip:`, `archive+tar:` | As `zip:`/`tar:` for the detected or pinned format | | | | | | | `uri` |
-| `ftp:` / `ftps:` (`FtpPath`) | Yes | Yes | Yes (MLSD, NLST fallback) | Yes | Yes | Yes | Yes | `uri` |
-| `http:` / `https:` (`HttpPath`) | Yes | Yes (PUT, configurable) | Yes (HTML index) | Yes | No | Yes (DELETE) | No | `http` |
-| `dav:` / `davs:` (`DavPath`, WebDAV) | Yes | Yes (no append) | Yes (PROPFIND) | Yes | Yes | Yes | Yes | `http` |
-| `sftp:` (`SftpPath`) | Yes | Yes | Yes | Yes | Yes | Yes | Yes | `sftp` or `sftp-async` |
-| `s3:` (`S3Path`) | Yes | Yes (no append) | Yes (prefixes) | Yes | Yes (marker object) | Yes | Yes (same bucket) | `s3` |
-| `gs:` (`GsPath`) | Yes | Yes (no append) | Yes (prefixes) | Yes | Yes (marker object) | Yes | Yes (same bucket) | `gs` |
-| `az:` (`AzPath`) | Yes | Yes (no append) | Yes (prefixes) | Yes | Yes (marker blob) | Yes | Yes (same container) | `az` |
-| `github:` / `gitlab:` / `git:` | Yes | No | Yes | Yes | No | No | No | `http` |
+| Class | Read | Write | List | Stat | mkdir | Delete | rename |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| local path (`LocalPath`) | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| in-memory (`MemPath`) | Yes | Yes | Yes | Yes | Yes | Yes | No (`move()` copies) |
+| FTP and FTPS (`FTPPath`) | Yes | Yes | Yes (MLSD, NLST fallback) | Yes | Yes | Yes | Yes |
+| zip members (`ZipPath`) | Yes | Local archive only | Yes | Yes | Local archive only | Local archive only | Local archive only |
+| tar members (`TarPath`, incl. gz/bz2/xz) | Yes | No | Yes | Yes | No | No | No |
+| `ArchivePath` | As `ZipPath`/`TarPath` for the format it detects | | | | | | |
 
-Every scheme gets `glob()`, `walk()`, `copy()`/`move()`, `rm()` and `PathSyncer`
-from the base classes; `LocalPath` and a few schemes replace some of them where
-the backend has a faster way. The per-scheme notes (timeouts, host-key and
-certificate verification, authentication, limits) are in
-[Schemes](https://jose-pr.github.io/pathlib-next/guides/schemes/).
+Every class gets `glob()`, `walk()`, `copy()`/`move()`, `rm()` and `PathSyncer`
+from the base classes; `LocalPath` and the other classes replace some of them
+where the backend has a faster way.
 
-- **One path interface** over local files, in-memory trees, archive members
-  and every URI scheme above.
+- **One path interface** over local files, in-memory trees, FTP servers and
+  archive members, and over any class built on `Path`.
 - **`MemPath`**: a virtual filesystem for tests, mocks and transient data.
 - **`FTPPath`, `ZipPath`, `TarPath`, `ArchivePath`**: an FTP server and the
-  members of a zip or tar file as paths, on the standard library alone: no URI
-  and no extra (the `ftp(s):`, `zip:`, `tar:` and `archive:` schemes run on
-  them).
+  members of a zip or tar file as paths, on the standard library alone.
 - **`pathlib_next.http`**: `HTTPClient` and a transport contract for HTTP
   requests on the standard library (redirects that never carry
   `Authorization` to another origin, TLS verified by default, a `proxies=`
-  provider), with no URI and no extra; the `requests` library plugs in as a
-  transport through the `pathlib-next-requests` distribution.
+  provider); the `requests` library plugs in as a transport through the
+  `pathlib-next-requests` distribution.
 - **`PathSyncer`**: one-way, content-compared tree sync between any two
   implementations, with dry runs and event hooks.
-- **`uripath` command**: `read`, `write`, `cp`, `rm` and `sync` across any of
-  these paths, with `-` for stdin/stdout.
-- **Extensible two ways**: subclass `Path` for a non-URI resource, or
-  `UriPath` for a new URI scheme, and verify it with the bundled pytest
-  contracts.
+- **Extensible**: subclass `Path` for any resource, and verify it with the
+  bundled pytest contracts.
+
+Paths for other places are separate distributions built on this one:
+
+| Distribution | Provides |
+| --- | --- |
+| [`uripath`](https://github.com/jose-pr/uripath) | `URIPath`: one class for any URI, with the schemes `file:`, `data:`, `ftp:`, `zip:`, `tar:`, `http:` and `dav:`, and the `uripath` command |
+| [`sftppath`](https://github.com/jose-pr/sftppath) | `SFTPPath` (paramiko or asyncssh) |
+| [`objpath`](https://github.com/jose-pr/objpath) | `S3Path`, `GSPath` and `AZPath` (Amazon S3, Google Cloud Storage, Azure Blob Storage) |
+| [`repopath`](https://github.com/jose-pr/repopath) | `RepoPath`, `GitHubPath` and `GitLabPath` (the REST APIs of the hosting services) |
+| [`pathlib-next-requests`](https://github.com/jose-pr/pathlib-next-requests) | `RequestsTransport`, the HTTP transport that sends through a `requests.Session` |
 
 ## Installation
 
@@ -67,20 +60,9 @@ certificate verification, authentication, limits) are in
 pip install pathlib-next
 ```
 
-| Extra | Adds | Needed for |
-| --- | --- | --- |
-| `uri` | `uritools`, `netimps` | `pathlib_next.uri` and every URI scheme that needs no client library: `file:`, `data:`, `ftp(s):`, archives, `http(s):`, `dav(s):`, `github:`, `gitlab:` and `git:` (HTTP runs on the standard library) |
-| `http` | `requests` (+ `uri`) | `RequestsTransport` for the HTTP schemes: `~/.netrc`, certifi, SOCKS proxies, digest/NTLM auth, cookies |
-| `sftp` | `paramiko` (+ `uri`) | `sftp:` with the paramiko backend |
-| `sftp-async` | `asyncssh` (+ `uri`) | `sftp:` with the asyncssh backend |
-| `s3` | `boto3` (+ `uri`) | `s3:` |
-| `gs` | `google-cloud-storage` (+ `uri`) | `gs:` |
-| `az` | `azure-storage-blob`, `azure-identity` (+ `uri`) | `az:` |
-
-With no extras, `pathlib_next.Path`/`LocalPath`, `pathlib_next.mempath.MemPath`,
-`pathlib_next.FTPPath` and the archive paths (`ZipPath`, `TarPath`,
-`ArchivePath`), the utilities, the test contracts and `uripath` on local paths all work; the
-`uri` extra is what makes `pathlib_next.uri` importable.
+There are no extras and no dependencies: everything above runs on the standard
+library. `pytest` is needed only to import `pathlib_next.testing` and
+`pathlib_next.http.testing`.
 
 ## Quick start
 
@@ -106,45 +88,32 @@ p.write_text('{"debug": true}')
 print([child.name for child in p.parent.iterdir()])
 ```
 
-**Any URI**: `UriPath` returns the class registered for the scheme:
-
-```python
-from pathlib_next.uri import UriPath
-
-print(UriPath("file:data/report.txt").read_text())       # FileUri
-print(UriPath("data:text/plain;base64,aGVsbG8=").read_text())  # DataUri
-```
-
-**Archive members**: `<scheme>:<archive-uri>!/<member>`, where the archive
-itself is any URI (`file:`, `http:`, `sftp:`, ...):
+**Archive members**: the segments are the member path and the archive is any
+path:
 
 ```python
 import zipfile
-from pathlib_next.uri import UriPath
+from pathlib_next import ZipPath
 
 with zipfile.ZipFile("backup.zip", "w") as archive:
     archive.writestr("etc/config.ini", "[main]\n")
 
-member = UriPath("zip:file:backup.zip!/etc/config.ini")
+member = ZipPath("etc/config.ini", archive="backup.zip")
 print(member.read_text())
 print([child.name for child in member.parent.iterdir()])
 ```
 
-**Remote paths** use the same API:
+**FTP**: nothing connects until the first operation:
 
-<!-- example: skip: reads from remote hosts -->
+<!-- example: skip: reads from a remote host -->
 ```python
-from pathlib_next.uri import UriPath
+from pathlib_next import FTPPath
 
-for child in UriPath("https://example.com/data/").iterdir():
+for child in FTPPath("/pub", host="ftp.example.com", user="anonymous").iterdir():
     print(child.name, child.stat().st_size)
-
-print(UriPath("sftp://user@host/var/log/app.log").read_text())
-print(UriPath("s3://bucket/reports/2026.csv").stat().st_mtime)
-print(UriPath("github://github.com/owner/repo/README.md?ref=main").read_text())
 ```
 
-**Copy and sync across schemes**:
+**Copy and sync across classes**:
 
 ```python
 from pathlib_next import Path
@@ -158,35 +127,6 @@ source = MemPath("/site")
 PathSyncer(remove_missing=True).sync(source, Path("site-copy"))
 print(sorted(p.name for p in Path("site-copy").iterdir()))
 ```
-
-## Command line
-
-`uripath` reads, writes, copies, removes and syncs local paths and URIs, with
-`-` for stdin or stdout. It works on local paths with no extra installed; these
-commands run as written in an empty directory:
-
-```bash
-mkdir site
-uripath write site/index.html "<h1>hi</h1>"
-uripath read site/index.html
-uripath cp site/index.html site/copy.html
-uripath sync --dry-run --remove-missing site site-copy
-uripath sync site site-copy
-uripath rm --recursive site-copy
-```
-
-Either side can be a URI instead, with the extra for its scheme installed:
-
-<!-- example: skip: needs an SFTP host and an S3 bucket -->
-```bash
-uripath cp report.txt sftp://host/tmp/report.txt
-uripath sync --dry-run --remove-missing site/ s3://bucket/site/
-```
-
-The exit status is 0 on success, 1 when the operation failed, 2 for a wrong
-invocation, 130 on Ctrl-C and 141 when the reader of stdout went away. Every
-flag is described in the
-[CLI guide](https://jose-pr.github.io/pathlib-next/guides/cli/).
 
 ## API overview
 
@@ -204,11 +144,8 @@ flag is described in the
 | `pathlib_next.checksum` | `md5`, `sha256`, `stream`, `native` |
 | `pathlib_next.providers` | the helpers a class built on `Path` calls |
 | `pathlib_next.exceptions` | `PathError`, `NonRelativePatternError` |
-| `pathlib_next.uri` | `Uri`, `UriPath`, `Source`, `Query` |
-| `pathlib_next.uri.schemes` | Built-in schemes: `file`, `data`, `zip`/`tar`/`archive`, `ftp`, `http`, `dav`, `sftp`, `s3`, `gs`, `az`, `github`, `gitlab`, `git` |
 | `pathlib_next.testing` | pytest contracts for custom implementations |
 | `pathlib_next.http.testing` | testing support (not stable API): the pytest suite that holds an HTTP transport to the promises of the built-in one |
-| `pathlib_next.tools.uripath` | the `uripath` command |
 
 The full reference is on the [documentation site](https://jose-pr.github.io/pathlib-next/);
 an agent-oriented API summary ships inside the package as
@@ -216,36 +153,29 @@ an agent-oriented API summary ships inside the package as
 
 ## Extending
 
-Two first-class ways to add a path-addressable resource, covered with worked
-examples in [Extending](https://jose-pr.github.io/pathlib-next/guides/extending/):
-
-- Subclass `Path` directly for a non-URI resource (`MemPath` is the reference).
-- Subclass `UriPath` and declare `__SCHEMES` for a new URI scheme; it is
-  dispatched as soon as its module is imported, or through a
-  `pathlib_next.schemes` entry point. A scheme name belongs to one class:
-  a second claim raises unless the class statement says `replace=True`, and
-  `UriPath.schemes()` / `UriPath.scheme_class(name)` read the registry.
-
+Subclass `Path` for a resource of your own (`MemPath` is the reference), as
+worked through in
+[Extending](https://jose-pr.github.io/pathlib-next/guides/extending/).
 `pathlib_next.testing` provides the pytest contracts (`PurePathContract`,
-`ReadPathContract`, `PathContract`) and `populate_fixture_tree()` used to
-verify every built-in scheme.
+`ReadPathContract`, `PathContract`) and `populate_fixture_tree()` that every
+class of the package and of the distributions above is verified with.
 
 ## Supported Python versions
 
 Python 3.9 through 3.14. CI runs the full suite on Ubuntu for every version
-from 3.9 to 3.14, on Windows and macOS for 3.9 and 3.14, without any extras
-on 3.9 and 3.14, and with the `gs`/`az` SDKs on 3.9 and 3.14.
+from 3.9 to 3.14, on Windows and macOS for 3.9 and 3.14, and with nothing but
+`pytest` and `pyftpdlib` installed on 3.9 and 3.14.
 
 ## Development
 
 ```bash
-pip install -e ".[dev,uri,http,sftp,sftp-async,s3,gs,az]"
+pip install -e ".[dev]"
 python -m pytest -q -rs
 ```
 
-Tests for an extra that is not installed are skipped, so check the skip list
-(`-rs`). Contributor notes (virtual environments, formatting, CI, releases)
-are in the repository's
+Tests that need an optional package are skipped when it is missing, so check
+the skip list (`-rs`). Contributor notes (virtual environments, formatting, CI,
+releases) are in the repository's
 [`AGENTS.md`](https://github.com/jose-pr/pathlib-next/blob/main/AGENTS.md);
 benchmarks are described in
 [Benchmarks](https://jose-pr.github.io/pathlib-next/benchmarks/). To preview

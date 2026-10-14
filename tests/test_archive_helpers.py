@@ -1,13 +1,11 @@
 """`make_archive`, `unpack_archive` and `detect_format`: what a member holds, how it
 is sized and dated, which directories it has, and links that lead nowhere."""
 
-import http.server
 import io
 import os
 import stat as _stat
 import sys
 import tarfile
-import threading
 import time
 import traceback
 import warnings
@@ -15,7 +13,6 @@ import zipfile
 
 import pytest
 
-from capabilities import requires_uri_extra
 from pathlib_next import LocalPath
 from pathlib_next.mempath import MemPath
 from pathlib_next.archive import detect_format, make_archive, unpack_archive
@@ -75,46 +72,6 @@ def test_a_zip_member_holds_what_was_read_whatever_stat_says(claimed):
 
     with zipfile.ZipFile(io.BytesIO(target.read_bytes())) as archive:
         assert archive.read("data.bin") == PAYLOAD
-
-
-@requires_uri_extra
-def test_a_tar_of_an_http_file_served_without_a_length_holds_all_its_bytes():
-    from pathlib_next.uri import UriPath
-
-    class Handler(http.server.BaseHTTPRequestHandler):
-        protocol_version = "HTTP/1.0"  # the body ends when the connection does
-
-        def _head(self):
-            self.send_response(200)
-            self.send_header("Content-Type", "application/octet-stream")
-            self.end_headers()
-
-        def do_HEAD(self):
-            self._head()
-
-        def do_GET(self):
-            self._head()
-            self.wfile.write(PAYLOAD)
-
-        def log_message(self, *args):
-            pass
-
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        source = UriPath(f"http://127.0.0.1:{server.server_address[1]}/data.bin")
-        assert source.stat().st_size == 0
-        target = MemPath("/out.tar")
-        make_archive(source, "tar", target)
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(5)
-
-    member, content = _read_tar(target.read_bytes())["data.bin"]
-    assert member.size == len(PAYLOAD)
-    assert content == PAYLOAD
 
 
 # --- directories are members, empty ones too --------------------------------
@@ -417,3 +374,34 @@ def test_detect_format_does_not_peek_when_extension_is_conclusive():
 
     assert detect_format("a.zip", _boom) == "zip"
     assert detect_format("a.tar", _boom) == "tar"
+
+
+# --- a single file, and the stat of a member that is a link ----------------
+
+
+@pytest.mark.parametrize("fmt", ["zip", "tar"])
+def test_a_single_file_is_an_archive_of_one_member(fmt):
+    source = MemPath("/data.bin")
+    source.write_bytes(PAYLOAD)
+    target = MemPath(f"/out.{fmt}")
+
+    make_archive(source, fmt, target)
+
+    if fmt == "zip":
+        with zipfile.ZipFile(io.BytesIO(target.read_bytes())) as archive:
+            assert archive.namelist() == ["data.bin"]
+            assert archive.read("data.bin") == PAYLOAD
+    else:
+        assert list(_read_tar(target.read_bytes())) == ["data.bin"]
+
+
+def test_the_stat_of_a_link_member_is_what_the_link_resolves_to():
+    from pathlib_next.archive._pack import _content_stat
+
+    target = MemPath("/f")
+    target.write_bytes(b"abc")
+    listed = FileStat(st_mode=_stat.S_IFLNK | 0o777)
+
+    assert _content_stat(target, listed).st_size == 3
+    assert _content_stat(target, None).st_size == 3
+    assert _content_stat(MemPath("/missing"), listed) is None

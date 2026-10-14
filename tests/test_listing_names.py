@@ -4,9 +4,8 @@ it, for every consumer that turns a listed name into a child:
 
 The directory under test lists a real temporary directory plus the rows a
 server could invent (`..`, `.`, `a/b`, an empty name), so the damage a join
-would do is visible on disk. It runs as a `LocalPath` subclass (where the
-operating system resolves a joined `..`) and as a `file:` URI subclass (where
-`/` itself resolves it).
+would do is visible on disk. It runs as a `LocalPath` subclass, where the
+operating system resolves a joined `..`.
 """
 
 import itertools
@@ -26,7 +25,6 @@ def _listing_class(base, *, unsafe_first):
     named `tree`."""
 
     class Listed(base):
-        __SCHEMES = ()
         __slots__ = ()
 
         def _scandir(self):
@@ -44,18 +42,12 @@ def _listing_class(base, *, unsafe_first):
     return Listed
 
 
-@pytest.fixture(params=["local", "file-uri"])
-def make_tree(request, tmp_path):
+@pytest.fixture
+def make_tree(tmp_path):
     """`make_tree(unsafe_first=False) -> (victim, tree)`: `victim/tree` is the
     directory the operation is given, beside `victim/sibling` and
     `victim/precious.txt`, which it must never touch."""
-    if request.param == "file-uri":
-        pytest.importorskip("uritools")
-        from pathlib_next.uri.schemes.file import FileUri
-
-        base = FileUri
-    else:
-        base = LocalPath
+    base = LocalPath
 
     def make(unsafe_first=False):
         victim = tmp_path / "victim"
@@ -70,7 +62,7 @@ def make_tree(request, tmp_path):
             (victim / name).write_text(name)
         cls = _listing_class(base, unsafe_first=unsafe_first)
         tree = victim / "tree"
-        return victim, cls(tree if base is LocalPath else tree.as_uri())
+        return victim, cls(tree)
 
     return make
 

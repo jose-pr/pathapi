@@ -10,12 +10,13 @@ import zipfile
 
 import pytest
 
-from pathlib_next.uri import UriPath
+from pathlib_next.archive import TarPath, ZipPath
+from pathlib_next.mempath import MemPath
 from pathlib_next.archive._zip import _ZipBackend
 
 
-def _zip_uri(path, inner=""):
-    return f"zip:{path.as_uri()}!/{inner}"
+def _zip(path, inner=""):
+    return ZipPath(inner, archive=path)
 
 
 def _write_zip(path, members):
@@ -57,7 +58,7 @@ def test_rm_recursive_removes_an_implicit_directory_in_one_rewrite(tmp_path, rew
         tmp_path / "a.zip",
         [("imp/sub/a.txt", b"a"), ("imp/b.txt", b"b"), ("keep.txt", b"k")],
     )
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     (root / "imp").rm(recursive=True)
     assert _names(archive) == ["keep.txt"]
     assert not (root / "imp").exists()
@@ -75,7 +76,7 @@ def test_rm_recursive_removes_an_explicit_directory_with_its_marker(tmp_path, re
             ("k", b""),
         ],
     )
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     (root / "d").rm(recursive=True)
     assert _names(archive) == ["k"]
     assert len(rewrites) == 1
@@ -83,7 +84,7 @@ def test_rm_recursive_removes_an_explicit_directory_with_its_marker(tmp_path, re
 
 def test_rm_recursive_of_the_archive_root_empties_the_archive(tmp_path):
     archive = _write_zip(tmp_path / "a.zip", [("imp/a.txt", b"a"), ("top.txt", b"t")])
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     root.rm(recursive=True)
     assert _names(archive) == []
     assert root.is_dir()
@@ -92,7 +93,7 @@ def test_rm_recursive_of_the_archive_root_empties_the_archive(tmp_path):
 
 def test_rm_recursive_keeps_the_parent_of_what_it_removed(tmp_path):
     archive = _write_zip(tmp_path / "a.zip", [("a/b/c.txt", b"c")])
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     (root / "a" / "b").rm(recursive=True)
     assert _names(archive) == ["a/"]
     assert (root / "a").is_dir()
@@ -103,7 +104,7 @@ def test_rm_recursive_refuses_a_member_under_a_file_and_removes_nothing(tmp_path
     archive = _write_zip(
         tmp_path / "a.zip", [("d/y", b"file"), ("d/y/z", b"under"), ("d/w", b"w")]
     )
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     with pytest.raises(OSError) as raised:
         (root / "d").rm(recursive=True)
     assert raised.value.errno == errno.ENOTEMPTY
@@ -112,7 +113,7 @@ def test_rm_recursive_refuses_a_member_under_a_file_and_removes_nothing(tmp_path
 
 def test_rm_recursive_reports_through_ignore_error(tmp_path):
     archive = _write_zip(tmp_path / "a.zip", [("d/y", b"file"), ("d/y/z", b"under")])
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     seen = []
     (root / "d").rm(
         recursive=True, ignore_error=lambda error, path: seen.append(path) or True
@@ -123,7 +124,7 @@ def test_rm_recursive_reports_through_ignore_error(tmp_path):
 
 def test_rm_recursive_of_a_missing_member_follows_missing_ok(tmp_path):
     archive = _write_zip(tmp_path / "a.zip", [("k", b"")])
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     (root / "nope").rm(recursive=True, missing_ok=True)
     with pytest.raises(FileNotFoundError):
         (root / "nope").rm(recursive=True)
@@ -135,7 +136,7 @@ def test_rm_recursive_of_a_missing_member_follows_missing_ok(tmp_path):
 
 def test_unlink_of_the_last_file_keeps_an_implicit_parent(tmp_path):
     archive = _write_zip(tmp_path / "a.zip", [("imp/a.txt", b"a"), ("k", b"")])
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     (root / "imp" / "a.txt").unlink()
     assert _names(archive) == ["k", "imp/"]
     assert (root / "imp").is_dir()
@@ -145,13 +146,13 @@ def test_unlink_of_the_last_file_keeps_an_implicit_parent(tmp_path):
 
 def test_unlink_with_siblings_left_adds_no_marker(tmp_path):
     archive = _write_zip(tmp_path / "a.zip", [("imp/a.txt", b"a"), ("imp/b.txt", b"b")])
-    (UriPath(_zip_uri(archive)) / "imp" / "a.txt").unlink()
+    (_zip(archive) / "imp" / "a.txt").unlink()
     assert _names(archive) == ["imp/b.txt"]
 
 
 def test_rmdir_of_a_directory_emptied_by_unlink_succeeds(tmp_path):
     archive = _write_zip(tmp_path / "a.zip", [("a/b/c.txt", b"c")])
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     (root / "a" / "b" / "c.txt").unlink()
     (root / "a" / "b").rmdir()
     assert _names(archive) == ["a/"]
@@ -161,7 +162,7 @@ def test_rmdir_of_a_directory_emptied_by_unlink_succeeds(tmp_path):
 
 def test_rmdir_of_the_root_needs_an_empty_archive(tmp_path):
     archive = _write_zip(tmp_path / "a.zip", [("k", b"")])
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     with pytest.raises(OSError) as raised:
         root.rmdir()
     assert raised.value.errno == errno.ENOTEMPTY
@@ -173,7 +174,7 @@ def test_rmdir_of_the_root_needs_an_empty_archive(tmp_path):
 
 def test_rename_out_of_a_directory_keeps_the_directory(tmp_path):
     archive = _write_zip(tmp_path / "a.zip", [("imp/a.txt", b"a")])
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     (root / "imp" / "a.txt").rename(root / "out.txt")
     assert sorted(_names(archive)) == ["imp/", "out.txt"]
     assert (root / "imp").is_dir()
@@ -181,7 +182,7 @@ def test_rename_out_of_a_directory_keeps_the_directory(tmp_path):
 
 def test_rename_inside_a_directory_adds_no_marker(tmp_path):
     archive = _write_zip(tmp_path / "a.zip", [("imp/a.txt", b"a")])
-    (UriPath(_zip_uri(archive)) / "imp" / "a.txt").rename("b.txt")
+    (_zip(archive) / "imp" / "a.txt").rename("b.txt")
     assert _names(archive) == ["imp/b.txt"]
 
 
@@ -190,7 +191,7 @@ def test_rename_inside_a_directory_adds_no_marker(tmp_path):
 
 def test_rename_below_a_file_is_refused(tmp_path):
     archive = _write_zip(tmp_path / "a.zip", [("a.txt", b"A"), ("b.txt", b"B")])
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     with pytest.raises(NotADirectoryError):
         (root / "a.txt").rename("b.txt/inside.txt")
     assert _names(archive) == ["a.txt", "b.txt"]
@@ -198,7 +199,7 @@ def test_rename_below_a_file_is_refused(tmp_path):
 
 def test_rename_below_a_missing_directory_is_refused(tmp_path):
     archive = _write_zip(tmp_path / "a.zip", [("a.txt", b"A")])
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     with pytest.raises(FileNotFoundError):
         (root / "a.txt").rename("nodir/x.txt")
     assert _names(archive) == ["a.txt"]
@@ -206,7 +207,7 @@ def test_rename_below_a_missing_directory_is_refused(tmp_path):
 
 def test_rename_of_a_directory_into_itself_is_refused(tmp_path):
     archive = _write_zip(tmp_path / "a.zip", [("d/x", b"x")])
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     with pytest.raises(OSError) as raised:
         (root / "d").rename("d/sub")
     assert raised.value.errno == errno.EINVAL
@@ -216,7 +217,7 @@ def test_rename_of_a_directory_into_itself_is_refused(tmp_path):
 def test_rename_of_a_missing_member_is_not_found(tmp_path):
     archive = _write_zip(tmp_path / "a.zip", [("k", b"")])
     with pytest.raises(FileNotFoundError):
-        (UriPath(_zip_uri(archive)) / "nope").rename("other")
+        (_zip(archive) / "nope").rename("other")
     assert _names(archive) == ["k"]
 
 
@@ -227,7 +228,7 @@ def test_unlink_removes_every_spelling_of_the_name(tmp_path):
     archive = _write_zip(
         tmp_path / "a.zip", [("norm", b"norm-1"), ("./norm", b"norm-2")]
     )
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     (root / "norm").unlink()
     assert _names(archive) == []
     assert not (root / "norm").exists()
@@ -238,7 +239,7 @@ def test_rename_moves_every_spelling_and_the_winning_content(tmp_path):
     archive = _write_zip(
         tmp_path / "a.zip", [("norm", b"norm-1"), ("./norm", b"norm-2")]
     )
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     (root / "norm").rename("n2")
     assert _names(archive) == ["n2"]
     assert not (root / "norm").exists()
@@ -249,7 +250,7 @@ def test_rename_over_a_name_with_two_spellings_replaces_them_all(tmp_path):
     archive = _write_zip(
         tmp_path / "a.zip", [("src", b"SRC"), ("dst", b"old-1"), ("./dst", b"old-2")]
     )
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     (root / "src").rename("dst")
     assert _names(archive) == ["dst"]
     assert (root / "dst").read_bytes() == b"SRC"
@@ -257,7 +258,7 @@ def test_rename_over_a_name_with_two_spellings_replaces_them_all(tmp_path):
 
 def test_rmdir_removes_every_spelling_of_a_directory_marker(tmp_path):
     archive = _write_zip(tmp_path / "a.zip", [("d/", b""), ("./d/", b"")])
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     (root / "d").rmdir()
     assert _names(archive) == []
     assert not (root / "d").exists()
@@ -268,7 +269,7 @@ def test_rm_recursive_removes_every_spelling_under_a_directory(tmp_path):
         tmp_path / "a.zip",
         [("d/x", b"1"), ("./d/x", b"2"), ("./d/", b""), ("d/y", b"y"), ("k", b"")],
     )
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     (root / "d").rm(recursive=True)
     assert _names(archive) == ["k"]
 
@@ -277,7 +278,7 @@ def test_rename_of_a_directory_with_two_spellings_moves_all(tmp_path):
     archive = _write_zip(
         tmp_path / "a.zip", [("d/x", b"1"), ("./d/x", b"2"), ("d/y", b"y")]
     )
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     (root / "d").rename("e")
     assert _names(archive) == ["e/x", "e/y"]
     assert not (root / "d").exists()
@@ -289,7 +290,7 @@ def test_rename_of_a_directory_with_two_spellings_moves_all(tmp_path):
 
 def test_member_under_a_file_is_absent_for_every_lookup(tmp_path):
     archive = _write_zip(tmp_path / "a.zip", [("y", b"file"), ("y/z", b"under")])
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     below = root / "y" / "z"
     assert (root / "y").is_file()
     assert not below.exists()
@@ -301,12 +302,12 @@ def test_member_under_a_file_is_absent_for_every_lookup(tmp_path):
         below.read_bytes()
     with pytest.raises(NotADirectoryError):
         list((root / "y").iterdir())
-    assert [p.path for p in root.glob("**/*")] == ["y"]
+    assert [str(p) for p in root.glob("**/*")] == ["y"]
 
 
 def test_member_under_a_file_cannot_be_removed_or_renamed(tmp_path):
     archive = _write_zip(tmp_path / "a.zip", [("y", b"file"), ("y/z", b"under")])
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     below = root / "y" / "z"
     with pytest.raises(FileNotFoundError):
         below.unlink()
@@ -317,7 +318,7 @@ def test_member_under_a_file_cannot_be_removed_or_renamed(tmp_path):
 
 def test_writing_below_a_file_is_refused(tmp_path):
     archive = _write_zip(tmp_path / "a.zip", [("y", b"file")])
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     with pytest.raises(NotADirectoryError):
         (root / "y" / "z").write_text("x")
     with pytest.raises(NotADirectoryError):
@@ -332,18 +333,18 @@ def test_tar_member_under_a_file_is_absent_too(tmp_path):
             info = tarfile.TarInfo(name)
             info.size = len(data)
             tf.addfile(info, io.BytesIO(data))
-    root = UriPath(f"tar:{archive.as_uri()}!/")
+    root = TarPath(archive=archive)
     assert not (root / "y" / "z").exists()
     with pytest.raises(FileNotFoundError):
         (root / "y" / "z").read_bytes()
-    assert sorted(p.path for p in root.glob("**/*")) == ["d", "d/x", "y"]
+    assert sorted(str(p) for p in root.glob("**/*")) == ["d", "d/x", "y"]
 
 
 # --- the archive root is the archive ----------------------------------------
 
 
 def test_root_of_a_missing_archive_does_not_exist(tmp_path):
-    root = UriPath(_zip_uri(tmp_path / "missing.zip"))
+    root = _zip(tmp_path / "missing.zip")
     assert not root.exists()
     assert not root.is_dir()
     with pytest.raises(FileNotFoundError):
@@ -355,7 +356,7 @@ def test_root_of_a_missing_archive_does_not_exist(tmp_path):
 def test_root_of_a_file_that_is_not_an_archive_raises_as_a_listing_does(tmp_path):
     notes = tmp_path / "notes.txt"
     notes.write_bytes(b"not a zip file")
-    root = UriPath(_zip_uri(notes))
+    root = _zip(notes)
     with pytest.raises(zipfile.BadZipFile):
         root.stat()
     with pytest.raises(zipfile.BadZipFile):
@@ -368,7 +369,7 @@ def test_root_of_a_file_that_is_not_an_archive_raises_as_a_listing_does(tmp_path
 def test_root_of_a_tar_that_is_not_an_archive_raises_as_a_listing_does(tmp_path):
     notes = tmp_path / "notes.tar"
     notes.write_bytes(b"not a tar file")
-    root = UriPath(f"tar:{notes.as_uri()}!/")
+    root = TarPath(archive=notes)
     with pytest.raises(tarfile.ReadError):
         root.stat()
     with pytest.raises(tarfile.ReadError):
@@ -376,7 +377,7 @@ def test_root_of_a_tar_that_is_not_an_archive_raises_as_a_listing_does(tmp_path)
 
 
 def test_root_of_a_missing_archive_cannot_be_made_a_directory(tmp_path):
-    root = UriPath(_zip_uri(tmp_path / "missing.zip"))
+    root = _zip(tmp_path / "missing.zip")
     with pytest.raises(FileNotFoundError):
         root.mkdir()
     assert not (tmp_path / "missing.zip").exists()
@@ -385,12 +386,12 @@ def test_root_of_a_missing_archive_cannot_be_made_a_directory(tmp_path):
 def test_root_of_an_existing_archive_exists_already(tmp_path):
     archive = _write_zip(tmp_path / "a.zip", [("k", b"")])
     with pytest.raises(FileExistsError):
-        UriPath(_zip_uri(archive)).mkdir()
-    UriPath(_zip_uri(archive)).mkdir(exist_ok=True)
+        _zip(archive).mkdir()
+    _zip(archive).mkdir(exist_ok=True)
 
 
-def test_root_of_an_archive_the_server_does_not_have_does_not_exist(http_status_server):
-    root = UriPath(f"zip:{http_status_server}/404!/")
+def test_root_of_an_archive_another_path_does_not_have_does_not_exist():
+    root = _zip(MemPath("/missing.zip"))
     assert not root.exists()
     with pytest.raises(FileNotFoundError):
         root.stat()

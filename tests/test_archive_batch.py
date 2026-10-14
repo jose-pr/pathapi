@@ -1,4 +1,4 @@
-"""`ArchiveUri.batch()`: the changes made to a zip inside the block reach the
+"""`ArchivePath.batch()`: the changes made to a zip inside the block reach the
 file in one replacement when it ends, every path of the archive reads them
 meanwhile, and an exception leaves the file as it was. `copy(recursive=True)`
 into a zip and `PathSyncer` onto one enter a batch by themselves."""
@@ -12,22 +12,20 @@ import zipfile
 
 import pytest
 
-pytest.importorskip("uritools")
-
 from pathlib_next import LocalPath
 from pathlib_next.mempath import MemPath
-from pathlib_next.uri import UriPath
+from pathlib_next.archive import TarPath, ZipPath
 from pathlib_next.archive import _zipentries as zip_module
 from pathlib_next.archive._zip import _ZipBackend
 from pathlib_next.sync import PathSyncer
 
 
-def _zip_uri(path, inner=""):
-    return f"zip:{path.as_uri()}!/{inner}"
+def _zip(path, inner=""):
+    return ZipPath(inner, archive=path)
 
 
-def _tar_uri(path, inner=""):
-    return f"tar:{path.as_uri()}!/{inner}"
+def _tar(path, inner=""):
+    return TarPath(inner, archive=path)
 
 
 def _digest(path):
@@ -96,7 +94,7 @@ def _tree_members(base):
 
 
 def test_every_change_in_a_batch_is_written_by_one_replacement(archive, rewrites):
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     with root.batch():
         (root / "new.txt").write_bytes(b"new")
         (root / "keep.txt").write_bytes(b"kept again")
@@ -116,7 +114,7 @@ def test_every_change_in_a_batch_is_written_by_one_replacement(archive, rewrites
 
 
 def test_a_change_outside_a_batch_is_one_replacement_each(archive, rewrites):
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     (root / "new.txt").write_bytes(b"new")
     (root / "keep.txt").write_bytes(b"again")
     (root / "d" / "two.txt").unlink()
@@ -126,7 +124,7 @@ def test_a_change_outside_a_batch_is_one_replacement_each(archive, rewrites):
 def test_a_batch_that_changes_nothing_does_not_touch_the_file(archive, rewrites):
     before = _digest(archive)
     mtime = os.stat(archive).st_mtime_ns
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     with root.batch():
         assert (root / "keep.txt").read_bytes() == b"keep"
         assert not (root / "none.txt").exists()
@@ -136,7 +134,7 @@ def test_a_batch_that_changes_nothing_does_not_touch_the_file(archive, rewrites)
 
 
 def test_a_batch_inside_a_batch_joins_it(archive, rewrites):
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     before = _digest(archive)
     with root.batch():
         with root.batch():
@@ -151,8 +149,8 @@ def test_a_batch_inside_a_batch_joins_it(archive, rewrites):
 def test_a_batch_made_through_another_path_of_the_archive_is_the_same_batch(
     archive, rewrites
 ):
-    first = UriPath(_zip_uri(archive))
-    second = UriPath(_zip_uri(archive))
+    first = _zip(archive)
+    second = _zip(archive)
     with first.batch():
         with second.batch():
             (second / "a.txt").write_bytes(b"a")
@@ -166,7 +164,7 @@ def test_a_batch_made_through_another_path_of_the_archive_is_the_same_batch(
 
 def test_the_file_is_untouched_until_the_block_ends(archive, tmp_path):
     before = _digest(archive)
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     with root.batch():
         (root / "new.txt").write_bytes(b"new")
         (root / "d" / "one.txt").unlink()
@@ -177,8 +175,8 @@ def test_the_file_is_untouched_until_the_block_ends(archive, tmp_path):
 
 
 def test_every_path_of_the_archive_reads_the_changes_made_in_the_block(archive):
-    root = UriPath(_zip_uri(archive))
-    other = UriPath(_zip_uri(archive))
+    root = _zip(archive)
+    other = _zip(archive)
     with root.batch():
         (root / "new.txt").write_bytes(b"new")
         (root / "keep.txt").write_bytes(b"kept again")
@@ -199,7 +197,7 @@ def test_every_path_of_the_archive_reads_the_changes_made_in_the_block(archive):
             "made",
             "new.txt",
         ]
-        walked = {str(top.path): sorted(files) for top, _dirs, files in other.walk()}
+        walked = {str(top): sorted(files) for top, _dirs, files in other.walk()}
         assert walked["d"] == ["two.txt"]
         assert walked["e"] == ["moved.txt"]
     assert sorted(p.name for p in root.iterdir()) == [
@@ -212,7 +210,7 @@ def test_every_path_of_the_archive_reads_the_changes_made_in_the_block(archive):
 
 
 def test_a_member_written_in_the_block_reports_the_stat_it_has_afterwards(archive):
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     with root.batch():
         (root / "new.txt").write_bytes(b"new bytes")
         (root / "keep.txt").write_bytes(b"x")
@@ -232,7 +230,7 @@ def test_a_member_written_in_the_block_reports_the_stat_it_has_afterwards(archiv
 
 
 def test_a_member_read_in_the_block_that_is_in_the_file_is_read_from_it(archive):
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     with root.batch():
         (root / "new.txt").write_bytes(b"new")
         assert (root / "d" / "two.txt").read_bytes() == b"two"
@@ -243,7 +241,7 @@ def test_a_member_read_in_the_block_that_is_in_the_file_is_read_from_it(archive)
 
 
 def test_an_existing_member_written_in_the_block_keeps_its_place(archive):
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     with root.batch():
         (root / "d" / "one.txt").write_bytes(b"ONE")
         (root / "added.txt").write_bytes(b"added")
@@ -260,7 +258,7 @@ def test_an_existing_member_written_in_the_block_keeps_its_place(archive):
 def test_a_member_larger_than_the_spool_is_held_and_written_whole(archive, monkeypatch):
     monkeypatch.setattr(zip_module, "MEMBER_SPOOL_BYTES", 64)
     big = os.urandom(5000)
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     with root.batch():
         (root / "big.bin").write_bytes(big)
         (root / "other.bin").write_bytes(big[::-1])
@@ -276,7 +274,7 @@ def test_an_exception_in_the_block_leaves_the_archive_byte_for_byte(
     archive, rewrites, tmp_path
 ):
     before = _digest(archive)
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     with pytest.raises(RuntimeError, match="stop"):
         with root.batch():
             (root / "new.txt").write_bytes(b"new")
@@ -297,7 +295,7 @@ def test_an_exception_in_the_block_leaves_the_archive_byte_for_byte(
 def test_a_member_write_that_raised_is_not_staged_and_the_other_changes_commit(
     archive, rewrites
 ):
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     with root.batch():
         (root / "a.txt").write_bytes(b"A")
         for mode, data in (("wb", b"part"), ("w", "part")):
@@ -322,7 +320,7 @@ def test_an_exception_in_a_joined_block_discards_the_outer_changes_too(
     archive, rewrites
 ):
     before = _digest(archive)
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     with pytest.raises(RuntimeError):
         with root.batch():
             (root / "outer.txt").write_bytes(b"outer")
@@ -337,7 +335,7 @@ def test_a_batch_that_fails_while_writing_leaves_the_archive_byte_for_byte(
     archive, monkeypatch, tmp_path
 ):
     before = _digest(archive)
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
 
     def refuse(tmp, original, src, steps):
         raise OSError(errno.ENOSPC, "No space left on device")
@@ -368,7 +366,7 @@ def test_a_failed_copy_into_a_zip_leaves_the_archive_byte_for_byte(
 
     monkeypatch.setattr(_ZipBackend, "write_member", fail_on_the_fifth)
     with pytest.raises(OSError):
-        LocalPath(source).copy(UriPath(_zip_uri(archive, "tree")), recursive=True)
+        LocalPath(source).copy(_zip(archive, "tree"), recursive=True)
     assert len(writes) == 5
     assert _digest(archive) == before
 
@@ -376,7 +374,7 @@ def test_a_failed_copy_into_a_zip_leaves_the_archive_byte_for_byte(
 def test_a_file_changed_by_someone_else_during_the_block_is_not_overwritten(
     archive, tmp_path
 ):
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     with pytest.raises(OSError) as raised:
         with root.batch():
             (root / "mine.txt").write_bytes(b"mine")
@@ -392,7 +390,7 @@ def test_a_file_changed_by_someone_else_during_the_block_is_not_overwritten(
 
 def test_a_batch_creates_a_missing_archive_when_it_ends(tmp_path):
     archive = tmp_path / "new.zip"
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     with root.batch():
         assert not root.exists()
         (root / "a.txt").write_bytes(b"a")
@@ -406,7 +404,7 @@ def test_a_batch_creates_a_missing_archive_when_it_ends(tmp_path):
 
 def test_a_batch_that_fails_leaves_a_missing_archive_missing(tmp_path):
     archive = tmp_path / "new.zip"
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     with pytest.raises(RuntimeError):
         with root.batch():
             (root / "a.txt").write_bytes(b"a")
@@ -416,7 +414,7 @@ def test_a_batch_that_fails_leaves_a_missing_archive_missing(tmp_path):
 
 def test_an_archive_that_appears_during_a_batch_that_would_create_it_is_kept(tmp_path):
     archive = tmp_path / "new.zip"
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     with pytest.raises(FileExistsError):
         with root.batch():
             (root / "a.txt").write_bytes(b"a")
@@ -427,7 +425,7 @@ def test_an_archive_that_appears_during_a_batch_that_would_create_it_is_kept(tmp
 def test_a_batch_of_a_file_that_is_not_an_archive_fails_on_the_first_change(tmp_path):
     archive = tmp_path / "plain.zip"
     archive.write_bytes(b"not a zip at all")
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     with pytest.raises(zipfile.BadZipFile):
         with root.batch():
             (root / "a.txt").write_bytes(b"a")
@@ -444,11 +442,11 @@ def test_a_tar_has_no_batch(tmp_path):
     with tarfile.open(path, "w"):
         pass
     with pytest.raises(NotImplementedError):
-        UriPath(_tar_uri(path)).batch()
+        _tar(path).batch()
 
 
 def test_an_archive_inside_an_archive_has_no_batch(archive):
-    nested = UriPath(f"zip:zip:{archive.as_uri()}!/keep.txt!/x")
+    nested = ZipPath("x", archive=ZipPath("keep.txt", archive=archive))
     with pytest.raises(NotImplementedError):
         nested.batch()
 
@@ -461,18 +459,18 @@ def test_copying_a_tree_into_a_tar_is_refused_as_before(tmp_path):
         pass
     source = _tree(tmp_path / "src", files=3, directories=1)
     with pytest.raises(NotImplementedError):
-        LocalPath(source).copy(UriPath(_tar_uri(path, "tree")), recursive=True)
+        LocalPath(source).copy(_tar(path, "tree"), recursive=True)
 
 
 # --- another thread -------------------------------------------------------------
 
 
 def test_another_thread_waits_for_the_block_and_then_reads_the_result(archive):
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     seen = []
 
     def reader():
-        seen.append((UriPath(_zip_uri(archive)) / "new.txt").read_bytes())
+        seen.append((_zip(archive) / "new.txt").read_bytes())
 
     thread = threading.Thread(target=reader)
     with root.batch():
@@ -491,7 +489,7 @@ def test_another_thread_waits_for_the_block_and_then_reads_the_result(archive):
 def test_copying_a_tree_into_a_zip_is_one_replacement(tmp_path, rewrites):
     source = _tree(tmp_path / "src")
     archive = _write_zip(tmp_path / "a.zip", [("seed.txt", b"seed")])
-    target = UriPath(_zip_uri(archive, "tree"))
+    target = _zip(archive, "tree")
     LocalPath(source).copy(target, recursive=True)
     assert len(rewrites) == 1
     members = _members(archive)
@@ -509,7 +507,7 @@ def test_copying_a_tree_into_a_new_zip_creates_it_without_replacing_it(
 ):
     source = _tree(tmp_path / "src", files=30, directories=3)
     archive = tmp_path / "new.zip"
-    LocalPath(source).copy(UriPath(_zip_uri(archive, "tree")), recursive=True)
+    LocalPath(source).copy(_zip(archive, "tree"), recursive=True)
     members = _members(archive)
     assert {
         n[len("tree/") :]: d for n, d in members.items() if not n.endswith("/")
@@ -523,16 +521,16 @@ def test_a_tree_copied_into_a_zip_equals_the_tree_copied_member_by_member(
     source = _tree(tmp_path / "src", files=40, directories=4)
     batched = _write_zip(tmp_path / "batched.zip", [("seed.txt", b"seed")])
     single = _write_zip(tmp_path / "single.zip", [("seed.txt", b"seed")])
-    LocalPath(source).copy(UriPath(_zip_uri(batched, "tree")), recursive=True)
+    LocalPath(source).copy(_zip(batched, "tree"), recursive=True)
     monkeypatch.setattr(_ZipBackend, "batch", contextlib.nullcontext)
-    LocalPath(source).copy(UriPath(_zip_uri(single, "tree")), recursive=True)
+    LocalPath(source).copy(_zip(single, "tree"), recursive=True)
     assert list(_members(batched).items()) == list(_members(single).items())
 
 
 def test_syncing_a_tree_onto_a_zip_is_one_replacement(tmp_path, rewrites):
     source = _tree(tmp_path / "src")
     archive = _write_zip(tmp_path / "a.zip", [("seed.txt", b"seed")])
-    target = UriPath(_zip_uri(archive, "tree"))
+    target = _zip(archive, "tree")
     PathSyncer().sync(LocalPath(source), target)
     assert len(rewrites) == 1
     members = _members(archive)
@@ -547,7 +545,7 @@ def test_syncing_a_tree_onto_a_zip_is_one_replacement(tmp_path, rewrites):
 def test_a_sync_that_finds_nothing_to_do_does_not_rewrite_the_zip(tmp_path, rewrites):
     source = _tree(tmp_path / "src", files=20, directories=2)
     archive = _write_zip(tmp_path / "a.zip", [("seed.txt", b"seed")])
-    target = UriPath(_zip_uri(archive, "tree"))
+    target = _zip(archive, "tree")
     PathSyncer().sync(LocalPath(source), target)
     done = len(rewrites)
     before = _digest(archive)
@@ -559,7 +557,7 @@ def test_a_sync_that_finds_nothing_to_do_does_not_rewrite_the_zip(tmp_path, rewr
 def test_a_sync_that_adds_changes_and_removes_is_one_replacement(tmp_path, rewrites):
     source = _tree(tmp_path / "src", files=20, directories=2)
     archive = _write_zip(tmp_path / "a.zip", [("seed.txt", b"seed")])
-    target = UriPath(_zip_uri(archive, "tree"))
+    target = _zip(archive, "tree")
     PathSyncer().sync(LocalPath(source), target)
     (source / "d0" / "f0.txt").write_bytes(b"changed")
     (source / "d1" / "f1.txt").unlink()
@@ -584,9 +582,7 @@ def test_a_dry_run_sync_onto_a_zip_opens_no_batch(tmp_path, rewrites, monkeypatc
     monkeypatch.setattr(
         _ZipBackend, "batch", lambda self: opened.append(1) or original(self)
     )
-    PathSyncer().sync(
-        LocalPath(source), UriPath(_zip_uri(archive, "tree")), dry_run=True
-    )
+    PathSyncer().sync(LocalPath(source), _zip(archive, "tree"), dry_run=True)
     assert opened == []
     assert rewrites == []
 
@@ -594,7 +590,7 @@ def test_a_dry_run_sync_onto_a_zip_opens_no_batch(tmp_path, rewrites, monkeypatc
 def test_removing_a_tree_in_a_batch_with_other_changes_is_one_replacement(
     archive, rewrites
 ):
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     with root.batch():
         (root / "d").rm(recursive=True)
         (root / "new.txt").write_bytes(b"new")
@@ -682,8 +678,8 @@ def test_a_script_of_changes_gives_the_same_archive_in_a_batch_and_out_of_one(
 ):
     single = _script_archive(tmp_path / "single.zip")
     batched = _script_archive(tmp_path / "batched.zip")
-    _script(UriPath(_zip_uri(single)))
-    root = UriPath(_zip_uri(batched))
+    _script(_zip(single))
+    root = _zip(batched)
     with root.batch():
         _script(root)
     assert _shape(batched) == _shape(single)
@@ -693,13 +689,12 @@ def test_a_script_of_changes_gives_the_same_archive_in_a_batch_and_out_of_one(
 def test_the_listing_in_the_block_is_the_listing_after_each_change(tmp_path):
     single = _script_archive(tmp_path / "single.zip")
     batched = _script_archive(tmp_path / "batched.zip")
-    alone = UriPath(_zip_uri(single))
-    inside = UriPath(_zip_uri(batched))
+    alone = _zip(single)
+    inside = _zip(batched)
 
     def listing(root):
         return sorted(
-            (str(top.path), sorted(dirs), sorted(files))
-            for top, dirs, files in root.walk()
+            (str(top), sorted(dirs), sorted(files)) for top, dirs, files in root.walk()
         )
 
     with inside.batch():
@@ -862,5 +857,5 @@ def test_copying_a_tree_into_a_zip_derives_the_member_list_a_bounded_number_of_t
         return original(self, *args, **kwargs)
 
     monkeypatch.setattr(_base._Snapshot, "__init__", counted)
-    LocalPath(source).copy(UriPath(_zip_uri(archive, "tree")), recursive=True)
+    LocalPath(source).copy(_zip(archive, "tree"), recursive=True)
     assert len(built) <= 4

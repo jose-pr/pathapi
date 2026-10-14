@@ -16,14 +16,11 @@ import posixpath
 
 import pytest
 
-pytest.importorskip("uritools")
-
 from test_archive_links import FORMATS, _archive, _root
 
 from pathlib_next import LocalPath
 from pathlib_next.mempath import MemPath
-from pathlib_next.uri import UriPath
-from pathlib_next.uri.schemes.archive._base import ArchiveUri
+from pathlib_next.archive import ArchivePath
 from pathlib_next.sync import PathSyncer
 
 RUNAWAY = 100_000
@@ -118,7 +115,7 @@ class Entries:
 @pytest.fixture
 def entries(monkeypatch):
     seen = Entries()
-    original = ArchiveUri._scandir
+    original = ArchivePath._scandir
 
     def counted(self):
         for item in original(self):
@@ -127,7 +124,7 @@ def entries(monkeypatch):
                 pytest.fail(f"a listing went past {RUNAWAY} entries")
             yield item
 
-    monkeypatch.setattr(ArchiveUri, "_scandir", counted)
+    monkeypatch.setattr(ArchivePath, "_scandir", counted)
     return seen
 
 
@@ -170,7 +167,7 @@ def test_a_following_walk_lists_a_link_to_its_own_directory_and_does_not_enter_i
 ):
     root = _open(tmp_path, fmt, LOOPS, "loops")
     walked = [
-        (str(top.path), sorted(d), sorted(f))
+        (str(top), sorted(d), sorted(f))
         for top, d, f in root.walk(follow_symlinks=True)
     ]
     assert walked == [("", [], ["a", "b", "c", "d", "e", "f1", "f2", "f3"])]
@@ -179,7 +176,7 @@ def test_a_following_walk_lists_a_link_to_its_own_directory_and_does_not_enter_i
 
 def test_a_recursive_glob_through_links_lists_each_entry_once(tmp_path, fmt, entries):
     root = _open(tmp_path, fmt, LOOPS, "loops")
-    found = sorted(str(p.path) for p in root.glob("**/*", recurse_symlinks=True))
+    found = sorted(str(p) for p in root.glob("**/*", recurse_symlinks=True))
     assert found == ["a", "b", "c", "d", "e", "f1", "f2", "f3"]
     assert entries.count <= _bound(LOOPS)
 
@@ -242,7 +239,7 @@ def test_nested_links_are_bounded_for_every_operation(tmp_path, fmt, entries):
     bound = _bound(NESTED)
     assert bound == 35 * 23
 
-    tops = [str(top.path) for top, _d, _f in root.walk(follow_symlinks=True)]
+    tops = [str(top) for top, _d, _f in root.walk(follow_symlinks=True)]
     assert entries.count <= bound
     assert "d0/d1/l/d3" in tops and "d0/l/l" not in tops
     entries.reset()
@@ -274,7 +271,7 @@ def test_a_listing_enters_a_link_to_a_sibling_once_and_not_a_link_met_beyond_it(
     tmp_path, fmt, entries
 ):
     root = _open(tmp_path, fmt, ROUTES, "routes")
-    tops = sorted(str(top.path) for top, _d, _f in root.walk(follow_symlinks=True))
+    tops = sorted(str(top) for top, _d, _f in root.walk(follow_symlinks=True))
     assert tops == ["", "d", "d/m", "e", "l1", "l2"]
     assert entries.count <= _bound(ROUTES)
     entries.reset()
@@ -319,7 +316,7 @@ def test_a_link_to_its_own_ancestor_is_not_entered_by_a_following_stat(tmp_path,
     with pytest.raises(OSError) as raised:
         up.stat()
     assert raised.value.errno == errno.ELOOP
-    tops = sorted(str(top.path) for top, _d, _f in root.walk(follow_symlinks=True))
+    tops = sorted(str(top) for top, _d, _f in root.walk(follow_symlinks=True))
     assert "d/up" not in tops
 
 
@@ -331,7 +328,7 @@ def test_a_link_to_a_sibling_directory_is_entered_and_its_files_are_copied(
 ):
     root = _open(tmp_path, fmt, LIBS, "libs")
     walked = {
-        str(top.path): (sorted(d), sorted(f))
+        str(top): (sorted(d), sorted(f))
         for top, d, f in root.walk(follow_symlinks=True)
     }
     assert walked["lib64"] == ([], ["a.txt", "b.txt"])
@@ -370,11 +367,11 @@ def test_a_path_spelled_through_two_directory_links_resolves(tmp_path, fmt):
     # a listing the caller spells goes as far as the path says
     assert [p.name for p in (root / "l1" / "l2").iterdir()] == ["f.txt"]
     walked = [
-        str(top.path) for top, _d, _f in (root / "l1" / "l2").walk(follow_symlinks=True)
+        str(top) for top, _d, _f in (root / "l1" / "l2").walk(follow_symlinks=True)
     ]
     assert walked == ["l1/l2"]
     # but a walk from above stops at the second link
-    tops = sorted(str(top.path) for top, _d, _f in root.walk(follow_symlinks=True))
+    tops = sorted(str(top) for top, _d, _f in root.walk(follow_symlinks=True))
     assert tops == ["", "l1", "mid", "mid/l2", "real"]
     assert not (root / "l1" / "l2").is_dir()
 

@@ -208,3 +208,55 @@ def test_the_stdlib_into_methods_do_not_win_on_python_314(tmp_path):
     (root / "dst" / "f.txt").write_text("old")
     with pytest.raises(FileExistsError):
         (root / "src" / "f.txt").copy_into(root / "dst")
+
+
+# --- another filesystem: rename() and replace() report EXDEV ----------------------
+
+
+class _CrossDevice(MemPath):
+    """A path whose `rename()` and `replace()` report that the target lies on
+    another filesystem, as `os.rename()` does across drives."""
+
+    __slots__ = ()
+
+    def rename(self, target):
+        raise OSError(errno.EXDEV, "Invalid cross-device link")
+
+    def replace(self, target):
+        raise OSError(errno.EXDEV, "Invalid cross-device link")
+
+
+def test_move_copies_and_deletes_when_rename_reports_another_filesystem():
+    backend = MemPathBackend()
+    source = _CrossDevice("/s.txt", backend=backend)
+    source.write_text("payload")
+    target = _CrossDevice("/t.txt", backend=backend)
+    source.move(target)
+    assert target.read_text() == "payload"
+    assert not source.exists()
+
+
+def test_move_over_a_file_copies_and_deletes_when_replace_reports_another_filesystem():
+    backend = MemPathBackend()
+    source = _CrossDevice("/s.txt", backend=backend)
+    source.write_text("new")
+    target = _CrossDevice("/t.txt", backend=backend)
+    target.write_text("old")
+    source.move(target, overwrite=True)
+    assert target.read_text() == "new"
+    assert not source.exists()
+
+
+def test_move_raises_any_other_error_of_rename():
+    class Refusing(MemPath):
+        __slots__ = ()
+
+        def rename(self, target):
+            raise OSError(errno.EACCES, "Permission denied")
+
+    backend = MemPathBackend()
+    source = Refusing("/s.txt", backend=backend)
+    source.write_text("payload")
+    with pytest.raises(PermissionError):
+        source.move(Refusing("/t.txt", backend=backend))
+    assert source.read_text() == "payload"

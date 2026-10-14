@@ -644,14 +644,11 @@ def _walked(top, pattern):
 
 _LINKED_IMPLS = {
     "LocalPath": lambda top: pathlib_next.LocalPath(top),
-    "FileUri": lambda top: pathlib_next.UriPath(top.as_uri()),
 }
 
 
 @pytest.fixture(params=sorted(_LINKED_IMPLS))
 def linked_impl(request, linked):
-    if request.param == "FileUri":
-        pytest.importorskip("uritools")
     return _LINKED_IMPLS[request.param](linked)
 
 

@@ -1,6 +1,6 @@
 """Differential glob tests: `pathlib.Path.glob()`/`rglob()` of the RUNNING
 interpreter is the oracle, compared as sets of relative paths over the same
-real tree for LocalPath, a FileUri of it, and a MemPath copy of it.
+real tree for LocalPath and a MemPath copy of it.
 
 Expected results legitimately differ by interpreter (a trailing "**" also
 selects files on 3.13+), which is why nothing here hard-codes them.
@@ -16,7 +16,6 @@ from capabilities import requires_junctions
 
 import pathlib_next
 from pathlib_next.mempath import MemPath
-from pathlib_next.uri import UriPath
 from pathlib_next import glob as _glob
 
 _FILES = (
@@ -110,7 +109,6 @@ def _mempath(root: pathlib.Path) -> MemPath:
 
 _IMPLS = {
     "LocalPath": lambda root: pathlib_next.LocalPath(root),
-    "FileUri": lambda root: UriPath(root.as_uri()),
     "MemPath": _mempath,
 }
 
@@ -188,7 +186,6 @@ def loop_tree(tmp_path):
     return root
 
 
-@pytest.mark.parametrize("kind", ["LocalPath", "FileUri"])
 @pytest.mark.parametrize(
     "method,pattern",
     [
@@ -202,13 +199,11 @@ def loop_tree(tmp_path):
         ("rglob", "*"),
     ],
 )
-def test_glob_does_not_recurse_into_directory_symlinks(
-    loop_tree, kind, method, pattern
-):
+def test_glob_does_not_recurse_into_directory_symlinks(loop_tree, method, pattern):
     last = pattern.rstrip("/").split("/")[-1]
     if pattern.endswith("/") and last != "**" and sys.version_info < (3, 11):
         pytest.skip("pathlib < 3.11 ignores a trailing separator")
-    base = _IMPLS[kind](loop_tree)
+    base = pathlib_next.LocalPath(loop_tree)
     start = time.monotonic()
     assert _ours(base, method, pattern) == _stdlib(loop_tree, method, pattern)
     assert time.monotonic() - start < 10
@@ -264,14 +259,6 @@ def test_recurse_symlinks_adds_nothing_where_the_tree_has_no_links(impl):
         )
 
 
-def test_uripath_question_mark_is_a_wildcard(tree):
-    (tree / "a1.txt").write_text("1")
-    (tree / "a2.txt").write_text("2")
-    base = UriPath(tree.as_uri())
-    assert {p.name for p in base.glob("a?.txt")} == {"a1.txt", "a2.txt"}
-    assert {p.name for p in base.glob("*/n?sted/*.py")} == {"d.py"}
-
-
 def test_module_glob_excludes_hidden_by_default(tree):
     pattern = pathlib_next.LocalPath(tree) / "**" / "*.py"
     names = {p.name for p in _glob.glob(pattern, recursive=True)}
@@ -321,13 +308,12 @@ def test_full_match_repeated_doublestar_is_not_exponential():
 # --- glob(None): expand the pattern this path carries ---------------------
 
 
-@pytest.mark.parametrize("cls", ["local", "uri"])
-def test_glob_none_expands_the_pattern_the_path_carries(tree, cls):
+def test_glob_none_expands_the_pattern_the_path_carries(tree):
     """`glob("")` raises like pathlib; `glob(None)` is the supported way to
     expand a path that IS a pattern -- what yaconfiglib's `glob("")` did
     before 0.9.4."""
     root = pathlib_next.LocalPath(tree)
-    carrier = root / "*.py" if cls == "local" else UriPath((root / "*.py").as_uri())
+    carrier = root / "*.py"
     got = sorted(p.name for p in carrier.glob(None))
     assert got == sorted(p.name for p in root.glob("*.py"))
     assert got

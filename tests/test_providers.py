@@ -248,3 +248,46 @@ def test_the_name_helpers_are_the_ones_pathname_uses():
     assert path.stem == providers.name_stem(path.name)
     assert path.suffix == providers.name_suffix(path.name)
     assert path.suffixes == providers.name_suffixes(path.name)
+
+
+def test_lru_discard_of_an_absent_key_is_false_and_evicts_nothing():
+    evicted = []
+    cache = providers.LRU(
+        lambda key: [key], maxsize=4, on_evict=lambda key, value: evicted.append(key)
+    )
+    cache(1)
+    assert cache.discard(2) is False
+    assert evicted == []
+    assert cache.discard(1) is True
+    assert evicted == [(1,)]
+
+
+def test_lru_on_evict_that_raises_does_not_stop_the_cache():
+    def refuse(key, value):
+        raise RuntimeError("cannot close")
+
+    cache = providers.LRU(lambda key: [key], maxsize=1, on_evict=refuse)
+    cache(1)
+    cache(2)
+    assert list(cache.cache) == [(2,)]
+    assert cache.discard(2) is True
+
+
+def test_lru_keeps_the_value_a_concurrent_miss_stored_first():
+    evicted = []
+    calls = []
+
+    def make(key):
+        calls.append(key)
+        if len(calls) == 1:
+            # While this call computes, a second miss for the same key
+            # finishes and stores its value.
+            cache(key)
+            return ["outer"]
+        return ["inner"]
+
+    cache = providers.LRU(make, on_evict=lambda key, value: evicted.append(value))
+    result = cache(7)
+    assert result == ["inner"]
+    assert cache(7) is result
+    assert evicted == [["outer"]]  # the value that lost is handed to on_evict

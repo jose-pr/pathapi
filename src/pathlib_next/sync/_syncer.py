@@ -59,11 +59,11 @@ class PathSyncer(object):
     whatever differs from `source` (by `checksum`), optionally removing
     files in `target` that are missing from `source`. Works across any two
     `Path` implementations (e.g. `MemPath` -> `LocalPath`, or between two
-    `UriPath` schemes) -- see `sync()`.
+    remote backends) -- see `sync()`.
 
     The default `checksum` policy prefers each side's backend-native
     digest (`protocols.checksum.NativeChecksum.checksum()`, e.g.
-    `SftpPath`'s `check-file-handle` support) over streaming the file
+    an SFTP path's `check-file-handle` support) over streaming the file
     through `open("rb")`, but only when BOTH sides can produce a digest
     under the same algorithm -- native or streamed. If either side can't
     (missing the protocol, or it raises `NotImplementedError` for the
@@ -74,7 +74,7 @@ class PathSyncer(object):
 
     `quick_check=True` (the default) adds a cheap metadata-only
     pre-check -- the classic rsync "quick check" heuristic -- for any pair
-    where at least one side is non-local (`Uri.is_local()`; a side without
+    where at least one side is non-local (`is_local()`; a side without
     an `is_local()` method at all, e.g. plain `LocalPath`/`MemPath`, is
     treated as local): if `st_size` AND `st_mtime` already match (from the
     listing/stat metadata `PathAndStat` already carries -- no extra round
@@ -96,8 +96,8 @@ class PathSyncer(object):
 
     `preserve_mtime=True` (the default) gives each file the sync copies the
     modification time the source reported, where the target's class can set one
-    (`LocalPath`, `FileUri`, `MemPath`, `SftpPath`, and `FtpPath` on a server
-    that lists `MFMT`), so that the next run's quick check can match. A source
+    (`LocalPath`, `MemPath`, and `FTPPath` on a server that lists `MFMT`;
+    a class of another distribution says so through `_utime()`), so that the next run's quick check can match. A source
     that reports no time (0), and a target that cannot set one, leave the
     time the copy gave the file; neither is an error. Directories and links are
     not touched. `preserve_mtime=False` leaves every copy with the time it was
@@ -112,8 +112,8 @@ class PathSyncer(object):
     links and relative targets included -- never resolved/validated);
     `"reject"` raises `NotImplementedError` instead. If `target` can't
     create symlinks at all
-    (most backends -- only `LocalPath` and `SftpPath` currently implement
-    `symlink_to()`), `"preserve"` mode raises `NotImplementedError` too,
+    (most backends -- `LocalPath` and the SFTP backend of another distribution
+    implement `symlink_to()`), `"preserve"` mode raises `NotImplementedError` too,
     through the same `ignore_error`/`hook()` machinery as every other
     branch -- decided before an existing target entry is touched, and by a
     dry run as by a real one. Replacing

@@ -1,11 +1,11 @@
 # pathlib_next
 
 A **robust, extensible pathlib-like base** for any resource addressable as a
-path or URI. Same method names, signatures, semantics and exception types as
+path. Same method names, signatures, semantics and exception types as
 `pathlib.Path` wherever a `pathlib.Path` equivalent exists: write code against
-`Path`/`UriPath` once and it works against your local disk, an in-memory tree,
-an archive member, HTTP/WebDAV, FTP/SFTP, S3, Google Cloud Storage, Azure Blob
-Storage or a GitHub/GitLab repository.
+`Path` once and it works against your local disk, an in-memory tree, an FTP
+server or the members of a zip or tar file, and against any path class built on
+it. It has no dependencies.
 
 Deliberate behavioral differences from `pathlib` are listed, with their
 reasons, in [Divergences from pathlib](divergences.md).
@@ -16,19 +16,18 @@ reasons, in [Divergences from pathlib](divergences.md).
 pip install pathlib-next
 ```
 
-| Extra | Adds | Needed for |
-| --- | --- | --- |
-| `uri` | `uritools`, `netimps` | `pathlib_next.uri` and every URI scheme that needs no client library (`file:`, `data:`, `ftp(s):`, archives, `http(s):`, `dav(s):`, `github:`, `gitlab:`, `git:`; HTTP runs on the standard library) |
-| `http` | `requests` | `RequestsTransport` for the HTTP schemes (`~/.netrc`, certifi, SOCKS proxies, digest/NTLM auth, cookies) |
-| `sftp` | `paramiko` | `sftp:` with the paramiko backend |
-| `sftp-async` | `asyncssh` | `sftp:` with the asyncssh backend |
-| `s3` | `boto3` | `s3:` |
-| `gs` | `google-cloud-storage` | `gs:` |
-| `az` | `azure-storage-blob`, `azure-identity` | `az:` |
+There are no extras: everything runs on the standard library. `pytest` is
+needed only to import `pathlib_next.testing` and `pathlib_next.http.testing`.
 
-Every scheme extra also installs `uri`. With **no extras**,
-`pathlib_next.Path`/`LocalPath`, `pathlib_next.mempath.MemPath`, the utilities,
-the test contracts and the `uripath` command on local paths all work.
+Paths for other places are separate distributions built on this one:
+
+| Distribution | Provides |
+| --- | --- |
+| [`uripath`](https://github.com/jose-pr/uripath) | `URIPath`: one class for any URI (`file:`, `data:`, `ftp:`, `zip:`, `tar:`, `http:`, `dav:`), and the `uripath` command |
+| [`sftppath`](https://github.com/jose-pr/sftppath) | `SFTPPath` (paramiko or asyncssh) |
+| [`objpath`](https://github.com/jose-pr/objpath) | `S3Path`, `GSPath` and `AZPath` |
+| [`repopath`](https://github.com/jose-pr/repopath) | `RepoPath`, `GitHubPath` and `GitLabPath` |
+| [`pathlib-next-requests`](https://github.com/jose-pr/pathlib-next-requests) | `RequestsTransport` for `pathlib_next.http` |
 
 ## Tour
 
@@ -54,57 +53,38 @@ p.write_text('{"debug": true}')
 print(p.stat().st_size, [child.name for child in p.parent.iterdir()])
 ```
 
-**URIs**: `UriPath` returns the class registered for the scheme:
-
-```python
-from pathlib_next.uri import UriPath
-
-report = UriPath("file:data/report.txt")
-print(type(report).__name__, report.read_text())
-
-inline = UriPath("data:text/plain;base64,aGVsbG8=")
-print(type(inline).__name__, inline.read_text())
-```
-
-**Archives**: a member inside a zip or tar, the archive itself addressed by any
-URI:
+**Archives**: a member inside a zip or tar, the archive itself any path:
 
 ```python
 import zipfile
-from pathlib_next.uri import UriPath
+from pathlib_next import ZipPath
 
 with zipfile.ZipFile("backup.zip", "w") as archive:
     archive.writestr("etc/config.ini", "[main]\n")
 
-member = UriPath("zip:file:backup.zip!/etc/config.ini")
+member = ZipPath("etc/config.ini", archive="backup.zip")
 print(member.read_text())
 ```
 
-**Remote schemes** share the same contract (these need a reachable server):
+**FTP** shares the same contract (this needs a reachable server):
 
-<!-- example: skip: reads from remote hosts -->
+<!-- example: skip: reads from a remote host -->
 ```python
-from pathlib_next.uri import UriPath
+from pathlib_next import FTPPath
 
-for child in UriPath("https://example.com/data/").iterdir():
+for child in FTPPath("/pub", host="ftp.example.com", user="anonymous").iterdir():
     print(child.name, child.stat().st_size)
-
-print(UriPath("sftp://user@host/var/log/app.log").read_text())
 ```
 
 `exists()`, `is_dir()`, `iterdir()`, `glob()`, `walk()`,
 `read_text()`/`write_text()`, `copy()`/`move()` and `rm()` behave the same way
-on every backend; what a backend cannot do (for example `mkdir()` over plain
-HTTP, or any write to a `github:` path) raises `NotImplementedError`. The
-per-scheme capabilities are in [Schemes](guides/schemes.md).
+on every class; what a backend cannot do (for example `mkdir()` on a tar file)
+raises `NotImplementedError`.
 
 ## Where to go next
 
-- **[Schemes](guides/schemes.md)**: capability matrix and per-scheme notes
-  (backends, timeouts, authentication, security defaults).
-- **[CLI](guides/cli.md)**: the `uripath` command.
-- **[Extending](guides/extending.md)**: add a path type by subclassing `Path`
-  or `UriPath`, and verify it with the bundled contracts.
+- **[Extending](guides/extending.md)**: add a path type by subclassing `Path`,
+  and verify it with the bundled contracts.
 - **[Divergences from pathlib](divergences.md)**: every deliberate behavioral
   difference from `pathlib.Path`.
 - **[API Reference](api/path.md)**: generated from the docstrings.

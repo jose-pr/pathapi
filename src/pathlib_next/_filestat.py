@@ -26,7 +26,7 @@ def sizeof_fmt(num: _ty.Union[int, float]) -> str:
 
 class FileStat(_FStat):
     """Concrete, slotted `FileStatLike` for backends without a real
-    `os.stat_result` (e.g. `MemPath`, `HttpPath`). `from_path()` builds one
+    `os.stat_result` (e.g. `MemPath`, an HTTP index). `from_path()` builds one
     from any object with a `stat()` method, or passes a `FileStat` through
     unchanged."""
 

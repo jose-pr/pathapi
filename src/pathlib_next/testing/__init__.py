@@ -1,4 +1,4 @@
-"""Test-suite building blocks for verifying custom Path/UriPath
+"""Test-suite building blocks for verifying custom Path
 implementations satisfy the library's filesystem contract.
 
 Not imported by `pathlib_next/__init__.py` -- this module requires pytest,

@@ -442,3 +442,69 @@ def test_symlink_to_force_leaves_a_directory_to_the_link_attempt():
         ("/d", "elsewhere")
     ]
     assert (root / "d").is_dir()
+
+
+# --- operations the classes of other distributions reach by their own spelling ---
+
+
+def test_iterating_a_path_lists_its_children():
+    root = MemPath("/")
+    (root / "d").mkdir()
+    (root / "d" / "a.txt").write_text("a")
+    (root / "d" / "b.txt").write_text("b")
+    assert sorted(p.name for p in root / "d") == ["a.txt", "b.txt"]
+
+
+def test_copy_and_move_take_a_str_destination_on_the_same_backend():
+    root = MemPath("/")
+    (root / "a.txt").write_text("payload")
+    (root / "a.txt").copy("/b.txt")
+    assert (root / "b.txt").read_text() == "payload"
+    (root / "a.txt").move("/c.txt")
+    assert (root / "c.txt").read_text() == "payload"
+    assert not (root / "a.txt").exists()
+
+
+def test_copying_a_directory_onto_a_file_is_file_exists():
+    root = MemPath("/")
+    (root / "d").mkdir()
+    (root / "d" / "x.txt").write_text("x")
+    (root / "f").write_text("f")
+    with pytest.raises(FileExistsError):
+        (root / "d").copy(root / "f", recursive=True, overwrite=True)
+    assert (root / "f").read_text() == "f"
+
+
+def test_the_protocol_stubs_raise_not_implemented_error():
+    from pathlib_next import BinaryOpen, Stat
+
+    with pytest.raises(NotImplementedError, match="stat"):
+        Stat.stat(None)
+    with pytest.raises(NotImplementedError, match="_open"):
+        BinaryOpen._open(None)
+
+
+class _BuildsChildrenByName(MemPath):
+    """A class that attaches a listed name as one segment and takes the stat of
+    the listing along, as a class for URIs does (`_make_child_relpath()` and
+    `_pop_stat_hint()` are the hooks `glob()` and `walk()` look for)."""
+
+    __slots__ = ()
+    built: list = []
+
+    def _pop_stat_hint(self):
+        return None
+
+    def _make_child_relpath(self, name, stat_hint=None, **kwargs):
+        type(self).built.append((name, stat_hint is not None))
+        return self.joinpath(name)
+
+
+def test_glob_builds_a_child_by_name_when_the_class_offers_to():
+    _BuildsChildrenByName.built = []
+    root = _BuildsChildrenByName("/")
+    (root / "d").mkdir()
+    (root / "d" / "a.txt").write_text("a")
+    found = sorted(p.as_posix() for p in root.glob("**/*.txt"))
+    assert found == ["/d/a.txt"]
+    assert ("a.txt", True) in _BuildsChildrenByName.built

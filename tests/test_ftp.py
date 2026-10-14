@@ -1,4 +1,4 @@
-"""Unit-only FTP tests: mock BaseFtpBackend, no real server. Covers MLSD
+"""Unit-only FTP tests: mock BaseFTPBackend, no real server. Covers MLSD
 listing/stat, the NLST/SIZE fallback path, upload-on-close writes, and
 rename/chmod/mkdir/unlink error translation.
 """
@@ -7,8 +7,7 @@ import ftplib
 
 import pytest
 
-from pathlib_next.uri import Source, Uri
-from pathlib_next.uri.schemes.ftp import BaseFtpBackend, FtpBackend, FtpPath
+from pathlib_next.ftp import BaseFTPBackend, FTPPath
 
 
 class _FakeFtpClient:
@@ -80,71 +79,18 @@ class _FakeFtpClient:
         self.rename_calls.append((path, target))
 
 
-class _FakeBackend(BaseFtpBackend):
+class _FakeBackend(BaseFTPBackend):
     def __init__(self):
         self.client_calls = 0
         self._client = _FakeFtpClient()
 
-    def client(self, source, tls):
+    def client(self):
         self.client_calls += 1
         return self._client
 
 
 def _ftp(path, backend=None):
-    return FtpPath(path, backend=backend or _FakeBackend())
-
-
-# --- FtpBackend.client(): real connect() call, default port ---
-
-
-def test_ftpbackend_client_uses_netimps_default_port_when_source_has_none(
-    monkeypatch,
-):
-    # FtpBackend.client() used to hardcode 21 inline; now delegates to
-    # netimps.get_default_port("ftp"), which returns the same 21 -- assert
-    # the actual value ftplib.FTP.connect() receives, not just that it's
-    # unchanged by coincidence.
-    calls = []
-
-    class _FakeClient:
-        def __init__(self, timeout=None):
-            pass
-
-        def connect(self, host, port):
-            calls.append((host, port))
-
-        def login(self, user, password):
-            pass
-
-        def set_pasv(self, value):
-            pass
-
-    monkeypatch.setattr(ftplib, "FTP", _FakeClient)
-    backend = FtpBackend()
-    backend.client(Source("ftp", None, "host", None), tls=False)
-    assert calls == [("host", 21)]
-
-
-def test_ftpbackend_client_source_port_overrides_default(monkeypatch):
-    calls = []
-
-    class _FakeClient:
-        def __init__(self, timeout=None):
-            pass
-
-        def connect(self, host, port):
-            calls.append((host, port))
-
-        def login(self, user, password):
-            pass
-
-        def set_pasv(self, value):
-            pass
-
-    monkeypatch.setattr(ftplib, "FTP", _FakeClient)
-    backend = FtpBackend()
-    backend.client(Source("ftp", None, "host", 2121), tls=False)
-    assert calls == [("host", 2121)]
+    return FTPPath(path, backend=backend or _FakeBackend())
 
 
 # --- connection caching ---
@@ -152,44 +98,26 @@ def test_ftpbackend_client_source_port_overrides_default(monkeypatch):
 
 def test_ftpclient_cached_across_accesses():
     backend = _FakeBackend()
-    p = _ftp("ftp://host/a", backend=backend)
-    c1 = p._core_path._ftpclient
-    c2 = p._core_path._ftpclient
+    p = _ftp("/a", backend=backend)
+    c1 = p._ftpclient
+    c2 = p._ftpclient
     assert c1 is c2
     assert backend.client_calls == 1
 
 
 def test_ftpclient_recreated_when_noop_fails():
     backend = _FakeBackend()
-    p = _ftp("ftp://host/a", backend=backend)
-    c1 = p._core_path._ftpclient
+    p = _ftp("/a", backend=backend)
+    c1 = p._ftpclient
 
     def failing_noop(cmd):
         raise OSError("broken pipe")
 
     c1.voidcmd = failing_noop
     backend._client = _FakeFtpClient()  # what a fresh connect would return
-    c2 = p._core_path._ftpclient
+    c2 = p._ftpclient
     assert c2 is not c1
     assert backend.client_calls == 2
-
-
-def test_ftps_scheme_requests_tls():
-    backend = _FakeBackend()
-    calls = []
-    backend.client = lambda source, tls: (calls.append(tls), _FakeFtpClient())[1]
-    p = FtpPath("ftps://host/a", backend=backend)
-    p._core_path._ftpclient
-    assert calls == [True]
-
-
-def test_ftp_scheme_no_tls():
-    backend = _FakeBackend()
-    calls = []
-    backend.client = lambda source, tls: (calls.append(tls), _FakeFtpClient())[1]
-    p = FtpPath("ftp://host/a", backend=backend)
-    p._core_path._ftpclient
-    assert calls == [False]
 
 
 # --- listdir: MLSD, falling back to NLST ---
@@ -203,16 +131,16 @@ def test_listdir_via_mlsd():
         ("a.txt", {"type": "file", "size": "3"}),
         ("sub", {"type": "dir"}),
     ]
-    p = _ftp("ftp://host/dir", backend=backend)
-    assert sorted(p._listdir()) == ["a.txt", "sub"]
+    p = _ftp("/dir", backend=backend)
+    assert sorted(dict(p._scandir())) == ["a.txt", "sub"]
 
 
 def test_listdir_falls_back_to_nlst_when_mlsd_unsupported():
     backend = _FakeBackend()
     backend._client.mlsd_unsupported = True
     backend._client.nlst_data["/dir"] = ["/dir/a.txt", "/dir/sub"]
-    p = _ftp("ftp://host/dir", backend=backend)
-    assert sorted(p._listdir()) == ["a.txt", "sub"]
+    p = _ftp("/dir", backend=backend)
+    assert sorted(dict(p._scandir())) == ["a.txt", "sub"]
 
 
 # --- stat: MLSD, falling back to SIZE ---
@@ -223,7 +151,7 @@ def test_stat_file_via_mlsd():
     backend._client.mlsd_data["/dir"] = [
         ("a.txt", {"type": "file", "size": "5", "modify": "20260101120000"}),
     ]
-    p = _ftp("ftp://host/dir/a.txt", backend=backend)
+    p = _ftp("/dir/a.txt", backend=backend)
     st = p.stat()
     assert st.st_size == 5
     assert not st.is_dir()
@@ -233,7 +161,7 @@ def test_stat_file_via_mlsd():
 def test_stat_dir_via_mlsd():
     backend = _FakeBackend()
     backend._client.mlsd_data["/"] = [("dir", {"type": "dir"})]
-    p = _ftp("ftp://host/dir", backend=backend)
+    p = _ftp("/dir", backend=backend)
     assert p.stat().is_dir()
 
 
@@ -241,7 +169,7 @@ def test_stat_fallback_size_when_mlsd_unsupported():
     backend = _FakeBackend()
     backend._client.mlsd_unsupported = True
     backend._client.size_data["/a.txt"] = 7
-    p = _ftp("ftp://host/a.txt", backend=backend)
+    p = _ftp("/a.txt", backend=backend)
     st = p.stat()
     assert st.st_size == 7
     assert not st.is_dir()
@@ -250,7 +178,7 @@ def test_stat_fallback_size_when_mlsd_unsupported():
 def test_stat_missing_raises_file_not_found():
     backend = _FakeBackend()
     backend._client.mlsd_unsupported = True
-    p = _ftp("ftp://host/missing.txt", backend=backend)
+    p = _ftp("/missing.txt", backend=backend)
     with pytest.raises(FileNotFoundError):
         p.stat()
 
@@ -261,27 +189,27 @@ def test_stat_missing_raises_file_not_found():
 def test_open_read_downloads_via_retrbinary():
     backend = _FakeBackend()
     backend._client.retrieved["/a.txt"] = b"hello"
-    p = _ftp("ftp://host/a.txt", backend=backend)
+    p = _ftp("/a.txt", backend=backend)
     assert p.read_bytes() == b"hello"
 
 
 def test_open_read_missing_raises_file_not_found():
     backend = _FakeBackend()
-    p = _ftp("ftp://host/missing.txt", backend=backend)
+    p = _ftp("/missing.txt", backend=backend)
     with pytest.raises(FileNotFoundError):
         p.read_bytes()
 
 
 def test_open_write_uploads_via_storbinary_on_close():
     backend = _FakeBackend()
-    p = _ftp("ftp://host/a.txt", backend=backend)
+    p = _ftp("/a.txt", backend=backend)
     p.write_bytes(b"hello")
     assert backend._client.stored["/a.txt"] == b"hello"
 
 
 def test_open_append_uses_appe():
     backend = _FakeBackend()
-    p = _ftp("ftp://host/a.txt", backend=backend)
+    p = _ftp("/a.txt", backend=backend)
     with p.open("ab") as f:
         f.write(b"hello")
     assert backend._client.append_calls == ["/a.txt"]
@@ -293,7 +221,7 @@ def test_open_append_uses_appe():
 
 def test_mkdir_creates_via_mkd():
     backend = _FakeBackend()
-    p = _ftp("ftp://host/newdir", backend=backend)
+    p = _ftp("/newdir", backend=backend)
     p.mkdir()
     assert backend._client.mkd_calls == ["/newdir"]
 
@@ -306,14 +234,14 @@ def test_mkdir_existing_raises_file_exists_error():
         raise ftplib.error_perm("550 Directory already exists")
 
     backend._client.mkd = mkd
-    p = _ftp("ftp://host/newdir", backend=backend)
+    p = _ftp("/newdir", backend=backend)
     with pytest.raises(FileExistsError):
         p.mkdir()
 
 
 def test_unlink_deletes_via_delete():
     backend = _FakeBackend()
-    p = _ftp("ftp://host/a.txt", backend=backend)
+    p = _ftp("/a.txt", backend=backend)
     p.unlink()
     assert backend._client.delete_calls == ["/a.txt"]
 
@@ -325,7 +253,7 @@ def test_unlink_missing_ok_swallows_error():
         raise ftplib.error_perm("550 No such file")
 
     backend._client.delete = delete
-    p = _ftp("ftp://host/missing.txt", backend=backend)
+    p = _ftp("/missing.txt", backend=backend)
     p.unlink(missing_ok=True)
 
 
@@ -336,25 +264,25 @@ def test_unlink_missing_without_missing_ok_raises():
         raise ftplib.error_perm("550 No such file")
 
     backend._client.delete = delete
-    p = _ftp("ftp://host/missing.txt", backend=backend)
+    p = _ftp("/missing.txt", backend=backend)
     with pytest.raises(FileNotFoundError):
         p.unlink()
 
 
-# --- rename: sibling-relative str target (mirrors sftp.py) ---
+# --- rename: sibling-relative str target ---
 
 
 def test_rename_uses_target_path():
     backend = _FakeBackend()
-    p = _ftp("ftp://host/a.txt", backend=backend)
-    target = Uri("ftp://host/b.txt")
+    p = _ftp("/a.txt", backend=backend)
+    target = FTPPath("/b.txt", backend=backend)
     p.rename(target)
     assert backend._client.rename_calls == [("/a.txt", "/b.txt")]
 
 
 def test_rename_accepts_str_target():
     backend = _FakeBackend()
-    p = _ftp("ftp://host/a.txt", backend=backend)
+    p = _ftp("/a.txt", backend=backend)
     p.rename("b.txt")
     assert backend._client.rename_calls == [("/a.txt", "/b.txt")]
 
@@ -364,28 +292,27 @@ def test_rename_accepts_str_target():
 
 def test_chmod_sends_site_chmod():
     backend = _FakeBackend()
-    p = _ftp("ftp://host/a.txt", backend=backend)
+    p = _ftp("/a.txt", backend=backend)
     p.chmod(0o644)
     assert "SITE CHMOD 644 /a.txt" in backend._client.voidcmd_calls
 
 
 def test_chmod_follow_symlinks_false_raises_notimplemented():
     backend = _FakeBackend()
-    p = _ftp("ftp://host/a.txt", backend=backend)
+    p = _ftp("/a.txt", backend=backend)
     with pytest.raises(NotImplementedError):
         p.chmod(0o644, follow_symlinks=False)
 
 
-# --- destination arguments are decoded paths, not URI syntax (0.9.3) ------
-# Same defect as SftpPath's (`Uri(self.parent, target)` re-parsed the
-# destination as a URI); FtpPath's `.path` is likewise a filesystem path on
-# the server, so "?" / "#" / "%xx" in it are ordinary filename characters.
+# --- destination arguments are paths on the server ----------------------------
+# A destination is a filesystem path on the server, so "?" / "#" / "%xx" in
+# it are ordinary filename characters.
 
 
 @pytest.mark.parametrize("name", ["rn?b.txt", "rn#b.txt", "rn%20b.txt", "rn:b.txt"])
 def test_rename_str_destination_is_a_literal_path(name):
     backend = _FakeBackend()
-    p = _ftp("ftp://host/mnt/a.txt", backend=backend)
+    p = _ftp("/mnt/a.txt", backend=backend)
     p.rename(name)
     assert backend._client.rename_calls == [("/mnt/a.txt", f"/mnt/{name}")]
 
@@ -405,7 +332,7 @@ def test_mlsd_named_cdir_and_pdir_entries_are_not_children():
         ("capmux.tar.z", {"type": "file", "size": "1"}),
         ("sub", {"type": "Dir"}),
     ]
-    listing = dict(_ftp("ftp://host/tmp", backend=backend)._scandir())
+    listing = dict(_ftp("/tmp", backend=backend)._scandir())
     assert sorted(listing) == ["capmux.tar.z", "sub"]
     assert listing["sub"].is_dir()
     assert not listing["capmux.tar.z"].is_dir()
@@ -416,7 +343,7 @@ def test_stat_ignores_a_cdir_entry_named_like_the_child():
     backend = _FakeBackend()
     backend._client.mlsd_data["/tmp"] = [("tmp", {"type": "cdir"})]
     with pytest.raises(FileNotFoundError):
-        _ftp("ftp://host/tmp/tmp", backend=backend).stat()
+        _ftp("/tmp/tmp", backend=backend).stat()
 
 
 def test_iterdir_on_a_file_via_nlst_raises_not_a_directory():
@@ -426,7 +353,7 @@ def test_iterdir_on_a_file_via_nlst_raises_not_a_directory():
     backend._client.nlst_data["/d/f.txt"] = ["/d/f.txt"]
     backend._client.size_data["/d/f.txt"] = 5
     with pytest.raises(NotADirectoryError):
-        list(_ftp("ftp://host/d/f.txt", backend=backend).iterdir())
+        list(_ftp("/d/f.txt", backend=backend).iterdir())
 
 
 def test_iterdir_on_a_file_whose_mlsd_lists_itself_raises_not_a_directory():
@@ -434,16 +361,14 @@ def test_iterdir_on_a_file_whose_mlsd_lists_itself_raises_not_a_directory():
     backend._client.mlsd_data["/d/f.txt"] = [("f.txt", {"type": "file"})]
     backend._client.mlsd_data["/d"] = [("f.txt", {"type": "file", "size": "5"})]
     with pytest.raises(NotADirectoryError):
-        list(_ftp("ftp://host/d/f.txt", backend=backend).iterdir())
+        list(_ftp("/d/f.txt", backend=backend).iterdir())
 
 
 def test_directory_holding_one_same_named_file_still_lists():
     backend = _FakeBackend()
     backend._client.mlsd_data["/d/x"] = [("x", {"type": "file"})]
     backend._client.mlsd_data["/d"] = [("x", {"type": "dir"})]
-    assert [p.path for p in _ftp("ftp://host/d/x", backend=backend).iterdir()] == [
-        "/d/x/x"
-    ]
+    assert [str(p) for p in _ftp("/d/x", backend=backend).iterdir()] == ["/d/x/x"]
 
 
 # --- a listed name is one component inside the directory that listed it ------
@@ -455,7 +380,7 @@ def test_mlsd_listing_skips_names_that_are_not_one_component():
         (name, {"type": "file", "size": "1"})
         for name in ("..", ".", "a/b", "", "x\0y", "ok.txt")
     ]
-    listing = dict(_ftp("ftp://host/dir", backend=backend)._scandir())
+    listing = dict(_ftp("/dir", backend=backend)._scandir())
     assert sorted(listing) == ["ok.txt"]
 
 
@@ -472,5 +397,5 @@ def test_nlst_listing_skips_names_that_are_not_one_component():
         "/dir/ok.txt",
         "/dir/other.txt",
     ]
-    listing = dict(_ftp("ftp://host/dir", backend=backend)._scandir())
+    listing = dict(_ftp("/dir", backend=backend)._scandir())
     assert sorted(listing) == ["ok.txt", "other.txt"]

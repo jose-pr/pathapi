@@ -394,22 +394,6 @@ def _run(code, blocked=()):
     )
 
 
-def test_the_archive_package_imports_without_the_uri_layer():
-    result = _run(
-        """
-        import sys
-        from pathlib_next.archive import ZipPath, TarPath, ArchivePath
-        loaded = [m for m, v in sys.modules.items() if v is not None
-                  and m.split(".")[0] in ("uritools", "netimps")]
-        loaded += [m for m in sys.modules if m.startswith("pathlib_next.uri")]
-        print(loaded)
-        """,
-        blocked=("uritools", "netimps"),
-    )
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "[]"
-
-
 def test_the_root_exports_the_archive_paths_without_importing_them_early():
     result = _run("""
         import sys
@@ -423,15 +407,6 @@ def test_the_root_exports_the_archive_paths_without_importing_them_early():
         "False",
         "pathlib_next.archive._path True True",
     ]
-
-
-def test_the_archive_sources_name_no_uri_dependency():
-    import pathlib
-
-    sources = (pathlib.Path(pathlib_next.__file__).parent / "archive").glob("*.py")
-    text = "\n".join(path.read_text(encoding="utf-8") for path in sources)
-    for forbidden in ("pathlib_next.uri", "..uri", "netimps", "uritools", "FileUri"):
-        assert forbidden not in text
 
 
 # --- the contracts ------------------------------------------------------------------------
@@ -510,3 +485,23 @@ class TestArchivePathContract(ReadPathContract):
     def root(self, tmp_path_factory, fixture_tree):
         archive = _archive_of_tree(fixture_tree, tmp_path_factory, "zip")
         return ArchivePath("", archive=archive)
+
+
+class _Unkeyed(MemPath):
+    """A path that names its tree by nothing but its URI."""
+
+    __slots__ = ()
+
+    def _node_key(self):
+        return None
+
+    def as_uri(self):
+        return "unkeyed://host" + self.as_posix()
+
+
+def test_archives_on_outers_that_name_no_node_share_a_handle_by_their_uri():
+    first = ZipPath(archive=_Unkeyed("/a.zip"))
+    again = ZipPath(archive=_Unkeyed("/a.zip"))
+    other = ZipPath(archive=_Unkeyed("/b.zip"))
+    assert first.backend is again.backend
+    assert first.backend is not other.backend

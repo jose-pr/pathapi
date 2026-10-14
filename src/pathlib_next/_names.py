@@ -11,7 +11,7 @@ def is_windows_flavoured(path: object) -> bool:
     """Whether names joined onto `path` are interpreted with Windows rules.
 
     True for a `pathlib.PureWindowsPath` (so `LocalPath` on Windows) and for
-    a path whose `filepath` is one (`FileUri` on Windows). Everything else --
+    a path whose `filepath` is one (a `file:` URI path on Windows). Everything else --
     `MemPath`, remote schemes, POSIX local paths -- treats `\\` and `:` as
     ordinary filename characters.
     """

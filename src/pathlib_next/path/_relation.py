@@ -21,7 +21,7 @@ _INNER = "inner"  # the target lies inside the source
 def _local_file(path) -> "_pathlib.Path | None":
     """The `pathlib.Path` through which `path` is a file of this machine, or
     None: a `LocalPath`, a stdlib path, or a path holding one as `filepath`
-    (a `file:` URI)."""
+    (a `file:` URI class)."""
     if isinstance(path, _pathlib.Path):
         return path
     try:

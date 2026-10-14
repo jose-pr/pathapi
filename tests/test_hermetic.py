@@ -18,9 +18,7 @@ import urllib.request
 
 import pytest
 
-import conftest
 import hermetic
-from capabilities import requires_uri_extra
 from hermetic import NetworkAccessBlocked, ProcessSpawnBlocked
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
@@ -272,20 +270,13 @@ def test_the_isolated_environment_has_no_proxy_cloud_or_home_setting(
     )
 
 
-def test_a_proxy_in_the_developers_shell_is_not_used_for_a_loopback_server(
-    http_server, monkeypatch
-):
-    requests = pytest.importorskip("requests")
-    assert requests.get(f"{http_server}/a.txt", timeout=10).text == "a"
-
-
-@requires_uri_extra
 def test_a_proxy_in_the_developers_shell_is_not_used_by_the_built_in_transport(
-    http_server, monkeypatch
+    http_server,
 ):
-    from pathlib_next.uri import UriPath
+    from pathlib_next.http import HTTPClient
 
-    assert UriPath(f"{http_server}/a.txt").read_text() == "a"
+    with HTTPClient() as client:
+        assert client.request("GET", f"{http_server}/a.txt").read() == b"a"
 
 
 # --- the session itself, in a child pytest ------------------------------------
@@ -346,11 +337,3 @@ def test_a_test_that_leaves_the_environment_changed_fails_at_teardown(tmp_path):
     assert "2 passed, 1 error" in result.stdout, result.stdout
     assert "left the process environment changed" in result.stdout
     assert "PATHLIB_NEXT_LEAKED: None -> 'yes'" in result.stdout
-
-
-def test_the_header_names_the_modules_left_out_without_the_uri_extra(monkeypatch):
-    monkeypatch.setattr(conftest, "collect_ignore", ["test_a.py", "test_b.py"])
-    header = conftest.pytest_report_header(None)
-    assert "2 test modules are not collected: test_a, test_b" in header
-    monkeypatch.setattr(conftest, "collect_ignore", [])
-    assert conftest.pytest_report_header(None) is None

@@ -1,4 +1,4 @@
-"""Local filesystem, MemPath, glob, Query/Source, and PathSyncer -- all
+"""Local filesystem, MemPath, glob and PathSyncer -- all
 self-contained (no network, no external services). Run directly:
 
     python examples/local_and_mem.py
@@ -8,7 +8,6 @@ import tempfile
 
 from pathlib_next import Path, glob
 from pathlib_next.mempath import MemPath
-from pathlib_next.uri import Query, Source
 from pathlib_next.sync import PathAndStat, PathSyncer
 
 
@@ -28,15 +27,6 @@ def mempath_basics():
     mempath.write_text("test")
     print("MemPath round-trip:", mempath.read_text())
     mempath.parent.rm(recursive=True)
-
-
-def query_and_source_basics():
-    query = Query({"page": "1", "tags": ["a", "b"]})
-    print("Query string:", str(query))
-    print("Query decoded:", query.to_dict())
-
-    source = Source(scheme="https", userinfo="user", host="example.com", port=443)
-    print("Source:", str(source))
 
 
 def glob_and_sync(root: Path):
@@ -60,5 +50,4 @@ if __name__ == "__main__":
         root = Path(tmp)
         local_path_basics(root)
         mempath_basics()
-        query_and_source_basics()
         glob_and_sync(root)

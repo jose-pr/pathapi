@@ -1,13 +1,11 @@
-"""`ftp:` sets a modification time with `MFMT` (draft-somers-ftp-mfxx), and only
+"""`FTPPath` sets a modification time with `MFMT` (draft-somers-ftp-mfxx), and only
 on a server whose `FEAT` lists it. A scriptable loopback server logs every
 command it receives (tests/ftp_loopback.py)."""
 
 import pytest
 
-pytest.importorskip("uritools")
-
+from pathlib_next.ftp import FTPBackend, FTPPath
 from pathlib_next.ftp import _backend as ftp_mod
-from pathlib_next.uri.schemes.ftp import FtpBackend, FtpPath
 
 from ftp_loopback import LoopbackFtp
 
@@ -26,10 +24,10 @@ def make():
     def start(**options):
         server = LoopbackFtp(**options)
         servers.append(server)
-        backend = FtpBackend(timeout=5)
+        backend = FTPBackend("127.0.0.1", server.port, timeout=5)
 
         def path(text):
-            return FtpPath(f"{server.url}{text}", backend=backend)
+            return FTPPath(text, backend=backend)
 
         return server, path
 

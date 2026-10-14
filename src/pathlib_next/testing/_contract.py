@@ -16,7 +16,7 @@ from ._read import ReadPathContract
 
 class PathContract(ReadPathContract):
     """Mixin of filesystem-contract tests every writable Path implementation
-    (custom `Path` subclass, or `UriPath` scheme) must satisfy.
+    (a custom `Path` subclass) must satisfy.
 
     Subclasses must provide a `root` fixture pointing to a fresh, writable,
     function-scoped directory pre-populated with the standard tree (see

@@ -86,25 +86,21 @@ def _default_checksums_match(source: "PathAndStat", target: "PathAndStat") -> bo
 
 
 def _is_local(path) -> bool:
-    """`quick_check`'s locality test. `Uri.is_local()` (`uri/__init__.py`)
-    exists only on `Uri`/`UriPath` -- a plain `LocalPath` or `MemPath` has
-    no such method at all. Both of those ARE effectively local for this
-    purpose (a real local filesystem, or an in-memory structure with no
-    network cost either way), so "no `is_local()` method" is treated as
-    local -- the safe default, since it only preserves the pre-`quick_check`
-    always-checksum behavior rather than skipping a comparison it shouldn't.
+    """`quick_check`'s locality test. `is_local()` is an optional method of a
+    path whose server may be this machine or another one (a URI path, an SFTP
+    path); a plain `LocalPath` or `MemPath` has no such method at all. Both of
+    those ARE effectively local for this purpose (a real local filesystem, or
+    an in-memory structure with no network cost either way), so "no
+    `is_local()` method" is treated as local -- the safe default, since it
+    only preserves the always-checksum behavior rather than skipping a
+    comparison it shouldn't.
 
-    `Uri.is_local()` does a real (`lru_cache`d) hostname resolution
-    (`Source.is_local()`, see `uri/source.py`, backed by
-    `netimps.resolve()`) -- a hostname that genuinely
-    doesn't resolve anywhere correctly returns `False` (non-local), not an
-    exception, but a transport-level failure in the resolver chain itself
-    (all backends erroring, e.g. no network at all) can still raise
-    `OSError`. Treated as "local" on that exception for the same
-    safe-default reason as the "no `is_local()` method" case above:
-    quick_check simply doesn't kick in, falling through to a real checksum
-    comparison exactly like pre-`quick_check` behavior, rather than
-    letting an unrelated resolver failure crash the sync outright.
+    An `is_local()` that resolves a host name can fail with `OSError` when the
+    resolver itself fails (no network at all), as opposed to a name that
+    resolves nowhere, which answers `False`. That is treated as "local" for
+    the same safe-default reason: quick_check does not kick in and the sync
+    falls through to a real checksum comparison, rather than letting an
+    unrelated resolver failure crash the sync outright.
     """
     is_local = getattr(path, "is_local", None)
     if is_local is None:

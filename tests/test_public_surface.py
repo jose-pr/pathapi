@@ -155,15 +155,8 @@ EXPORTS = {
     },
 }
 
-# Documented too, in modules that declare no `__all__` of their own.
-ALSO_IMPORTABLE = {
-    "pathlib_next.uri": {"Uri", "UriPath"},
-}
-
-
 # Every module of the core that is public: it declares `__all__`. Every other
-# module of the core starts with an underscore. The URI layer (`uri`, `tools`)
-# is outside this list.
+# module of the core starts with an underscore.
 CORE_PUBLIC = {
     "pathlib_next",
     "pathlib_next.archive",
@@ -195,7 +188,7 @@ def _core_modules():
     found = set()
     for path in PACKAGE.rglob("*.py"):
         parts = path.relative_to(PACKAGE).with_suffix("").parts
-        if parts[0] in ("uri", "tools") or "__pycache__" in parts:
+        if "__pycache__" in parts:
             continue
         if parts[-1] == "__init__":
             parts = parts[:-1]
@@ -222,32 +215,20 @@ def test_every_other_module_of_the_core_is_private():
     assert public == CORE_PUBLIC | TESTING_SUPPORT
 
 
-def _uri_available():
-    try:
-        importlib.import_module("pathlib_next.uri")
-    except ImportError:
-        return False
-    return True
-
-
 @pytest.mark.parametrize("module", sorted(EXPORTS))
 def test_module_declares_exactly_the_documented_exports(module):
     imported = importlib.import_module(module)
     declared = set(imported.__all__)
     expected = set(EXPORTS[module])
-    if module == "pathlib_next" and _uri_available():
-        expected |= {"Uri", "UriPath"}
     assert declared == expected
     assert len(imported.__all__) == len(declared)
     for name in declared:
         assert hasattr(imported, name), name
 
 
-@pytest.mark.parametrize("module", sorted({**EXPORTS, **ALSO_IMPORTABLE}))
+@pytest.mark.parametrize("module", sorted(EXPORTS))
 def test_documented_names_stay_importable_from_where_they_are_documented(module):
-    names = EXPORTS.get(module, set()) | ALSO_IMPORTABLE.get(module, set())
-    if module == "pathlib_next.uri" and not _uri_available():
-        pytest.skip("the uri extra is not installed")
+    names = EXPORTS[module]
     imported = importlib.import_module(module)
     missing = sorted(name for name in names if not hasattr(imported, name))
     assert missing == []
@@ -384,22 +365,11 @@ joined = bare / "y"
 """
 
 
-URI_CONSUMER = """
-from pathlib_next.uri import UriPath
-
-remote = UriPath("sftp://h/x")
-allowed = UriPath("data:,x", schemesmap={})
-"""
-
-
 def _consumer(tmp_path):
     # Outside any dot-directory: pyright silently skips those.
     directory = tmp_path / "consumer"
     directory.mkdir()
-    source = CONSUMER
-    if importlib.util.find_spec("uritools") and importlib.util.find_spec("netimps"):
-        source += URI_CONSUMER
-    (directory / "consumer.py").write_text(source, encoding="utf-8")
+    (directory / "consumer.py").write_text(CONSUMER, encoding="utf-8")
     return directory
 
 

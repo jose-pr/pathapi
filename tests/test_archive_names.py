@@ -1,14 +1,12 @@
-"""Member names an archive holds that are not valid UTF-8: they list, print,
-compare, hash, read and round-trip through their URI like any other path."""
+"""Member names an archive holds that are not valid UTF-8: they list, compare,
+hash and read like any other path, as a surrogate-escaped name."""
 
 import io
 import tarfile
 
 import pytest
 
-pytest.importorskip("uritools")
-
-from pathlib_next.uri import UriPath
+from pathlib_next.archive import TarPath
 
 
 @pytest.fixture
@@ -31,18 +29,16 @@ def _child(root):
     return child
 
 
-def test_a_member_name_that_is_not_utf8_is_one_printable_component(latin1_tar):
-    root = UriPath(f"tar:{latin1_tar.as_uri()}!/")
+def test_a_member_name_that_is_not_utf8_is_one_component(latin1_tar):
+    root = TarPath(archive=latin1_tar)
     child = _child(root)
     assert child.name == "caf\udce9.txt"
     assert child.parent == root / "d"
-    assert str(child).endswith("!/d/caf%E9.txt")
-    assert child.as_uri().endswith("!/d/caf%E9.txt")
-    assert repr(child).endswith("!/d/caf%E9.txt')")
+    assert str(child) == "d/caf\udce9.txt"
 
 
 def test_such_a_name_compares_hashes_and_deduplicates(latin1_tar):
-    root = UriPath(f"tar:{latin1_tar.as_uri()}!/")
+    root = TarPath(archive=latin1_tar)
     first, second = _child(root), _child(root)
     assert first == second and hash(first) == hash(second)
     assert len({first, second}) == 1
@@ -50,21 +46,20 @@ def test_such_a_name_compares_hashes_and_deduplicates(latin1_tar):
 
 
 def test_such_a_name_reads_through_every_spelling_of_it(latin1_tar):
-    root = UriPath(f"tar:{latin1_tar.as_uri()}!/")
+    root = TarPath(archive=latin1_tar)
     child = _child(root)
     assert child.read_bytes() == b"x"
     assert child.stat().st_size == 1
     assert child.exists() and child.is_file()
-    typed = UriPath(f"tar:{latin1_tar.as_uri()}!/d/caf%E9.txt")
+    typed = TarPath("d/caf\udce9.txt", archive=latin1_tar)
     assert typed == child
     assert typed.read_bytes() == b"x"
-    assert UriPath(child.as_uri()) == child
-    assert UriPath(str(child)).read_bytes() == b"x"
+    assert TarPath(str(child), archive=latin1_tar).read_bytes() == b"x"
 
 
 def test_such_a_name_is_listed_by_walk_and_glob(latin1_tar):
-    root = UriPath(f"tar:{latin1_tar.as_uri()}!/")
+    root = TarPath(archive=latin1_tar)
     walked = sorted(name for _, _, files in root.walk() for name in files)
     assert walked == ["caf\udce9.txt", "plain.txt"]
     globbed = sorted(str(p) for p in root.glob("d/*.txt"))
-    assert [g.rsplit("/", 1)[-1] for g in globbed] == ["caf%E9.txt", "plain.txt"]
+    assert [g.rsplit("/", 1)[-1] for g in globbed] == ["caf\udce9.txt", "plain.txt"]

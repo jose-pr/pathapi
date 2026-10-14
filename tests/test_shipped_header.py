@@ -14,7 +14,6 @@ import importlib
 import inspect
 import pathlib
 import re
-import sys
 
 import pytest
 
@@ -274,14 +273,15 @@ def test_the_stubs_of_each_block_match_the_code(modules, source):
     assert problems == []
 
 
-def test_the_header_has_blocks_for_both_layers():
+def test_the_header_has_blocks_for_the_modules_it_documents():
     found = blocks(HEADER.read_text(encoding="utf-8"))
-    assert len(found) > 40
+    assert len(found) > 30
     assert {m for _t, mods, _l, _s in found for m in mods} >= {
         "pathlib_next.path",
         "pathlib_next.sync",
-        "pathlib_next.uri",
-        "pathlib_next.uri.schemes.sftp",
+        "pathlib_next.ftp",
+        "pathlib_next.archive",
+        "pathlib_next.http",
     }
 
 
@@ -330,18 +330,13 @@ def _headings(text, level):
     return [m.group(1) for m in re.finditer(rf"(?m)^{'#' * level} (.+)$", text)]
 
 
-def test_the_header_closes_with_the_four_standard_sections():
+def test_the_header_closes_with_the_standard_sections():
     text = HEADER.read_text(encoding="utf-8")
-    assert _headings(text, 2)[-4:] == [
+    assert _headings(text, 2)[-3:] == [
         "Exceptions",
-        "Command line",
         "Environment variables",
         "Gotchas",
     ]
-    for section in ("Exceptions", "Gotchas"):
-        body = text.split(f"\n## {section}\n", 1)[1].split("\n## ", 1)[0]
-        assert re.search(r"(?m)^### Core\b", body)
-        assert re.search(r"(?m)^### URI layer\b", body)
 
 
 def test_the_header_opens_as_the_standard_says():
@@ -360,67 +355,7 @@ def test_the_header_links_only_to_absolute_urls():
         assert private not in text
 
 
-def test_each_layer_is_one_contiguous_run_of_sections():
-    text = HEADER.read_text(encoding="utf-8")
-    titles = _headings(text, 2)
-    uri = [
-        i for i, t in enumerate(titles) if t.startswith(("URIs", "Built-in schemes"))
-    ]
-    assert uri == list(range(uri[0], uri[0] + len(uri)))
-    core = titles[: uri[0]]
-    assert core[0].startswith("Package root") and core[-1].startswith("Testing helpers")
-
-
-# --- the environment variable the header documents ---
-
-
-@pytest.fixture
-def sftp(monkeypatch):
-    module = pytest.importorskip("pathlib_next.uri.schemes.sftp")
-    monkeypatch.setattr(module, "_resolved_backend_cls", None)
-    return module
-
-
-def test_the_variable_in_the_header_is_the_one_the_code_reads(sftp):
-    section = HEADER.read_text(encoding="utf-8").split("\n## Environment variables\n")[
-        1
-    ]
-    assert sftp._ENV_VAR == "PATHLIB_NEXT_SFTP_BACKEND"
-    assert f"### `{sftp._ENV_VAR}`" in section
-
-
-@pytest.mark.parametrize("value", ["", "Paramiko", "ASYNCSSH", "other"])
-def test_an_empty_or_unrecognised_or_differently_cased_value_is_an_error(
-    sftp, monkeypatch, value
-):
-    monkeypatch.setenv(sftp._ENV_VAR, value)
-    with pytest.raises(ValueError, match="PATHLIB_NEXT_SFTP_BACKEND"):
-        sftp._resolve_default_backend_cls()
-    assert sftp._resolved_backend_cls is None
-
-
-def test_an_unset_variable_is_auto(sftp, monkeypatch):
-    monkeypatch.delenv(sftp._ENV_VAR, raising=False)
-    try:
-        chosen = sftp._resolve_default_backend_cls()
-    except ImportError:
-        pytest.skip("neither SSH library is installed")
-    monkeypatch.setattr(sftp, "_resolved_backend_cls", None)
-    monkeypatch.setenv(sftp._ENV_VAR, "auto")
-    assert sftp._resolve_default_backend_cls() is chosen
-
-
-def test_the_resolved_backend_is_kept_for_the_life_of_the_process(sftp, monkeypatch):
-    kept = type("Kept", (), {})
-    monkeypatch.setattr(sftp, "_resolved_backend_cls", kept)
-    monkeypatch.setenv(sftp._ENV_VAR, "other")
-    assert sftp._resolve_default_backend_cls() is kept
-
-
-def test_a_named_library_that_is_not_installed_is_an_import_error(sftp, monkeypatch):
-    monkeypatch.setattr(sftp, "_BACKEND_REGISTRY", {})
-    monkeypatch.setattr(sftp, "_paramiko_probed", False)
-    monkeypatch.setitem(sys.modules, sftp.__name__ + "._paramiko", None)
-    monkeypatch.setenv(sftp._ENV_VAR, "paramiko")
-    with pytest.raises(ImportError, match="sftp"):
-        sftp._resolve_default_backend_cls()
+def test_the_module_sections_run_from_the_root_to_the_testing_helpers():
+    titles = _headings(HEADER.read_text(encoding="utf-8"), 2)
+    assert titles[0].startswith("Package root")
+    assert titles[-4].startswith("Testing helpers")

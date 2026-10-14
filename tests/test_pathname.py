@@ -1,8 +1,8 @@
-"""Pure-path operations exercised across the three Pathname implementations
+"""Pure-path operations exercised across the two Pathname implementations
 that route through Pathname's generic (non-pathlib-inherited) code: a plain
 Pathname (PosixPathname -- LocalPath itself is excluded here since pathlib's
-own PurePath wins those methods via MRO, see test_parity_pure.py instead),
-Uri, and MemPath.
+own PurePath wins those methods via MRO, see test_parity_pure.py instead)
+and MemPath.
 """
 
 import pathlib
@@ -12,9 +12,8 @@ import pytest
 
 from pathlib_next.fspath import PosixPathname
 from pathlib_next.mempath import MemPath
-from pathlib_next.uri import Uri
 
-IMPLS = [PosixPathname, Uri, MemPath]
+IMPLS = [PosixPathname, MemPath]
 
 
 @pytest.mark.parametrize("cls", IMPLS)
@@ -101,7 +100,7 @@ def test_parent_and_parents(cls):
     # Stdlib's own `parents` (which PosixPathname inherits) gained slices and
     # negative indices in 3.10. Only that combination may refuse them: a
     # blanket try/except also hid a regression in the generic
-    # `_PathnameParents` used by Uri and MemPath.
+    # `_PathnameParents` used by MemPath.
     stdlib_39_parents = cls is PosixPathname and sys.version_info < (3, 10)
 
     # Slicing
@@ -151,7 +150,7 @@ def test_parents_of_a_rooted_path_end_at_the_root(cls):
     ],
 )
 def test_match_is_right_anchored_per_segment(cls, path, pattern, expected):
-    # PosixPathname resolves stdlib's match (MRO); Uri and MemPath the
+    # PosixPathname resolves stdlib's match (MRO); MemPath the
     # generic Pathname.match -- both routes must agree with pathlib.
     assert pathlib.PurePosixPath(path).match(pattern) is expected
     assert cls(path).match(pattern) is expected
@@ -166,7 +165,7 @@ def test_has_glob_pattern(cls):
 
 @pytest.mark.parametrize("cls", IMPLS)
 def test_match_b6_b7(cls):
-    # B6: reversed isinstance() args used to crash Uri/MemPath's match().
+    # B6: reversed isinstance() args used to crash MemPath's match().
     # B7: WILCARD_PATTERN.match (anchored) missed "foo*"-style trailing
     # wildcards during has_glob_pattern's internal use.
     p = cls("dir/foo.txt")
@@ -333,10 +332,9 @@ def test_generic_paths_sort_by_their_segments():
     assert [p.as_posix() for p in sorted(paths)] == ["/", "/a", "/a/x", "/b", "c"]
 
 
-@pytest.mark.parametrize("cls", [MemPath, Uri])
-def test_ordering_agrees_with_equality(cls):
-    a, b = cls("/a/b"), cls("/a/c")
-    same = cls("/a/b")
+def test_ordering_agrees_with_equality():
+    a, b = MemPath("/a/b"), MemPath("/a/c")
+    same = MemPath("/a/b")
     assert a < b and a <= b and b > a and b >= a
     assert not (b < a) and not (b <= a) and not (a > b) and not (a >= b)
     assert a == same and a <= same and a >= same
@@ -345,7 +343,7 @@ def test_ordering_agrees_with_equality(cls):
 
 def test_ordering_is_unavailable_between_unrelated_types():
     memory = MemPath("/a")
-    for other in (PosixPathname("/a"), Uri("file:///a"), "/a", 1):
+    for other in (PosixPathname("/a"), "/a", 1):
         for compare in (
             lambda x, y: x < y,
             lambda x, y: x <= y,
@@ -364,15 +362,6 @@ def test_a_subclass_does_not_order_against_its_base():
     with pytest.raises(TypeError):
         Sub("/a") < MemPath("/b")
     assert Sub("/a") < Sub("/b")
-
-
-def test_uris_sort_by_their_text_so_the_host_counts():
-    uris = [Uri("http://b/a"), Uri("http://a/z"), Uri("http://a/b?q=1")]
-    assert [u.as_uri() for u in sorted(uris)] == [
-        "http://a/b?q=1",
-        "http://a/z",
-        "http://b/a",
-    ]
 
 
 def test_localpath_keeps_stdlib_ordering():

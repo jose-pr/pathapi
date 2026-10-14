@@ -283,8 +283,8 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
     def _scandir(self) -> "_ty.Iterator[_ty.Tuple[str, _ty.Optional[FileStat]]]":
         """Yield (name, stat_or_None) for each directory entry. Used by
         `walk()`/`glob()` instead of `iterdir()` so schemes whose listing
-        call already returns metadata (HttpPath, DavPath, SftpPath, FtpPath,
-        S3Path) can answer `is_dir()` on the results without a further
+        call already returns metadata (an HTTP index, SFTP, FTP, an object
+        store) can answer `is_dir()` on the results without a further
         round trip per entry. Default: falls back to `iterdir()` + one
         `stat()` per child (no round-trip savings, but no subclass is
         required to implement this) -- see `docs/guides/extending.md`.
@@ -558,7 +558,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         - An existing file's access and modification times are set to the
           current time through `_utime()`; a backend that cannot set a time
           leaves the file as it is, since rewriting the content to bump it
-          is not a touch. `LocalPath` and `FileUri` use pathlib's own touch.
+          is not a touch. `LocalPath` uses pathlib's own touch.
         """
         # stat() directly, not exists(): exists() reads *any* OSError (a
         # timeout, a dropped connection) as "missing", which let a transient
@@ -805,7 +805,8 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         `MemPath`'s in-memory filesystem) via `with_segments()`; the bare
         constructor used before gave every str destination a fresh, empty
         backend, so `move("/c.txt")` wrote there and then deleted the source.
-        `UriPath` overrides this to parse the string as a URI."""
+        A class whose strings are URI references overrides this to parse the
+        string as one."""
         return self.with_segments(target)
 
     def _rename_compatible(self, target: "Path") -> bool:
@@ -814,7 +815,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         path of this very class, since `rename()` runs inside this class's
         own store and would otherwise be handed a path of another store (a
         `MemPath` subclass given a `LocalPath` renamed within memory).
-        `UriPath` decides per target in `rename()` (raising
+        A class for URI references decides per target in `rename()` (raising
         NotImplementedError); `LocalPath` requires a local target, since
         `os.rename()` would otherwise take a remote path's `__fspath__()` as
         a local name."""
@@ -867,8 +868,8 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         non-following stat reports a plain directory -- which is exactly why
         a symlink check cannot protect a recursive walk from it.
 
-        Default False; `LocalPath`/`FileUri` answer for real. A remote
-        scheme has no such concept unless it says otherwise.
+        Default False; `LocalPath` answers for real. A remote
+        backend has no such concept unless it says otherwise.
         """
         return False
 
@@ -877,7 +878,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
 
         The POSIX half of the same idea: a bind mount makes one tree visible
         under a second name, with no link anywhere to say so. Default False;
-        `LocalPath`/`FileUri` answer for real.
+        `LocalPath` answers for real.
         """
         return False
 
@@ -923,8 +924,8 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         turning it into a path is the wrapper's job, not the primitive's.
 
         Implementations take the raw target string from the path object the
-        way their own backend needs it (`Uri.path` for wire protocols,
-        `os.fspath()`/`as_posix()` locally); it never carries a scheme or
+        way their own backend needs it (the path of the request for wire
+        protocols, `os.fspath()`/`as_posix()` locally); it never carries a scheme or
         host prefix, and a relative target stays relative.
         """
         ...
@@ -938,8 +939,8 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         `with_segments()`, which keeps per-instance state (a `MemPath`'s
         backend) but normalizes the text as this class parses a path;
         override it wherever that would reinterpret the string instead of
-        taking it literally (`LocalPath` hands it on untouched, `UriPath`
-        does not parse it as a URI; see `UriPath._symlink_target`).
+        taking it literally (`LocalPath` hands it on untouched, and a class
+        for URI references must not parse it as one).
         """
         return self.with_segments(target) if isinstance(target, str) else target
 
@@ -1037,7 +1038,7 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         (only the files inside them do). With `progress=None` (the
         default), behavior is unchanged -- no per-chunk overhead. Native
         backend transfers that bypass the generic streaming copy (e.g.
-        `SftpPath`'s asyncssh concurrent fan-out) do not invoke `progress`;
+        an SFTP backend's concurrent fan-out) do not invoke `progress`;
         see `docs/divergences.md`'s "Deliberate extensions" section.
         """
         offering = copy_error_predicate(ignore_error, on_error)

@@ -64,7 +64,7 @@ def glob(
 ) -> _ty.Iterator[_Globable]:
     """Return an iterator which yields the paths matching a pathname pattern.
 
-    `path` is the pattern itself, as a path (e.g. `UriPath("file:/x/**/*.py")`).
+    `path` is the pattern itself, as a path (e.g. `LocalPath("/x/**/*.py")`).
     The pattern may contain simple shell-style wildcards a la fnmatch. Like
     the stdlib `glob` module, and unlike `Path.glob()`, hidden entries (names
     starting with a dot) are not matched by wildcards and not descended into

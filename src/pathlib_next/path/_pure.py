@@ -259,7 +259,7 @@ class Pathname(FsPathLike, _ty.Generic[_P]):
         or set members, so a pure subclass that defines none gets this one.
         `_BaseFSPathname`/`LocalPath` are unaffected: `pathlib.PurePath`
         precedes `Pathname` in their MRO and keeps its own `__eq__`, as
-        does `Uri`, which defines one.
+        does any class that defines one.
         """
         if type(self) is not type(other):
             return NotImplemented
@@ -374,7 +374,7 @@ class Pathname(FsPathLike, _ty.Generic[_P]):
 
         A compiled `re.Pattern` cannot be split into segments; it is matched
         against the whole path string instead ("/"-joined segments, so a
-        `Uri`'s scheme and host are never part of it).
+        URI's scheme and host are never part of it).
         """
         import fnmatch as _fnmatch
 

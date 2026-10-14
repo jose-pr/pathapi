@@ -1,4 +1,4 @@
-"""Property-based tests (hypothesis) for URI parsing/joining and parity
+"""Property-based tests (hypothesis) for the generic `Pathname` code: parity
 with `pathlib.PurePosixPath` on the operations that are supposed to behave
 identically (see `docs/divergences.md` for the ones that deliberately
 don't -- those are out of scope here, not asserted against).
@@ -6,22 +6,17 @@ don't -- those are out of scope here, not asserted against).
 
 from __future__ import annotations
 
-import ipaddress
 import pathlib
 import sys
 
-import uritools
-from hypothesis import given, settings
-from hypothesis import strategies as st
+import pytest
 
-from pathlib_next.uri import Uri
-from pathlib_next.uri.source import (
-    Source,
-    _compose_uri,
-    _decode_host,
-    _remove_dot_segments,
-    _split_authority,
-)
+pytest.importorskip("hypothesis")
+
+from hypothesis import given, settings  # noqa: E402
+from hypothesis import strategies as st  # noqa: E402
+
+from pathlib_next.mempath import MemPath, MemPathBackend  # noqa: E402
 
 # A "safe" path segment: letters/digits/-/_ only, never empty, never "."
 # or ".." -- keeps every property below unambiguous without wading into
@@ -43,37 +38,20 @@ def _posix(segs: list[str]) -> str:
     return "/" + "/".join(segs)
 
 
-# --- Parse/Format identity ---
-
-
-@given(segs=segments_list)
-@settings(max_examples=200)
-def test_uri_str_roundtrip(segs):
-    u = Uri(_posix(segs))
-    assert Uri(str(u)) == u
-
-
-@given(segs=segments_list)
-@settings(max_examples=200)
-def test_uri_as_uri_roundtrip(segs):
-    u = Uri(_posix(segs))
-    assert Uri(u.as_uri()) == u
-
-
 # --- Path joining ---
 
 
 @given(base=segments_list, a=segment, b=segment)
 @settings(max_examples=200)
 def test_join_is_associative(base, a, b):
-    u = Uri(_posix(base))
+    u = MemPath(_posix(base))
     assert (u / a) / b == u.joinpath(a, b)
 
 
 @given(base=segments_list, tail=nonempty_segments_list)
 @settings(max_examples=200)
 def test_joinpath_matches_repeated_truediv(base, tail):
-    u = Uri(_posix(base))
+    u = MemPath(_posix(base))
     joined = u.joinpath(*tail)
     stepped = u
     for part in tail:
@@ -88,9 +66,9 @@ def test_joinpath_matches_repeated_truediv(base, tail):
 @settings(max_examples=200)
 def test_segments_match_pure_posix_path_parts(segs):
     path_str = _posix(segs)
-    u = Uri(path_str)
+    u = MemPath(path_str)
     pp = pathlib.PurePosixPath(path_str)
-    # Uri.segments keeps a leading "" to mark the root ("/a/b" -> ("", "a",
+    # MemPath.segments keeps a leading "" to mark the root ("/a/b" -> ("", "a",
     # "b")); PurePosixPath.parts marks it as "/" instead ("/a/b" -> ("/",
     # "a", "b")). Everything after that first element matches exactly.
     assert u.segments[0] == ""
@@ -101,7 +79,7 @@ def test_segments_match_pure_posix_path_parts(segs):
 @settings(max_examples=200)
 def test_name_matches_pure_posix_path(segs):
     path_str = _posix(segs)
-    assert Uri(path_str).name == pathlib.PurePosixPath(path_str).name
+    assert MemPath(path_str).name == pathlib.PurePosixPath(path_str).name
 
 
 @given(common=segments_list, tail=nonempty_segments_list)
@@ -111,7 +89,9 @@ def test_relative_to_matches_pure_posix_path(common, tail):
     child_str = _posix(child_segs)
     base_str = _posix(common)
 
-    u_child, u_base = Uri(child_str), Uri(base_str)
+    backend = MemPathBackend()
+    u_child = MemPath(child_str, backend=backend)
+    u_base = MemPath(base_str, backend=backend)
     pp_child, pp_base = pathlib.PurePosixPath(child_str), pathlib.PurePosixPath(
         base_str
     )
@@ -131,7 +111,8 @@ def test_relative_to_unrelated_raises_on_both(a, b):
 
     u_raises = False
     try:
-        Uri(a_str).relative_to(Uri(b_str))
+        backend = MemPathBackend()
+        MemPath(a_str, backend=backend).relative_to(MemPath(b_str, backend=backend))
     except ValueError:
         u_raises = True
 
@@ -149,7 +130,7 @@ def test_relative_to_unrelated_raises_on_both(a, b):
 def test_match_trailing_segment_wildcard_matches_pure_posix_path(segs):
     path_str = _posix(segs)
     pattern = "*" + segs[-1][1:] if len(segs[-1]) > 1 else "*"
-    assert Uri(path_str).match(pattern) == pathlib.PurePosixPath(path_str).match(
+    assert MemPath(path_str).match(pattern) == pathlib.PurePosixPath(path_str).match(
         pattern
     )
 
@@ -159,11 +140,11 @@ def test_match_trailing_segment_wildcard_matches_pure_posix_path(segs):
 def test_is_relative_to_matches_pure_posix_path(segs):
     path_str = _posix(segs)
     parent_str = _posix(segs[:-1])
-    u, pp = Uri(path_str), pathlib.PurePosixPath(path_str)
-    u_parent, pp_parent = Uri(parent_str), pathlib.PurePosixPath(parent_str)
+    u, pp = MemPath(path_str), pathlib.PurePosixPath(path_str)
+    u_parent, pp_parent = MemPath(parent_str), pathlib.PurePosixPath(parent_str)
     assert u.is_relative_to(u_parent) == pp.is_relative_to(pp_parent) == True
     # The str form must agree with the object form: it used to anchor
-    # `other` at self's root (Uri(self, _ROOT, other)) and answer False for
+    # `other` at self's root (MemPath(self, _ROOT, other)) and answer False for
     # every *relative* self.
     assert u.is_relative_to(parent_str) == pp.is_relative_to(parent_str) == True
 
@@ -175,11 +156,11 @@ def test_is_relative_to_str_matches_pure_posix_path_for_unrelated_other(segs):
     # prefix must answer False for both, relative and absolute self alike.
     other_str = _posix(["zzz-unrelated"])
     for path_str in (_posix(segs), "/" + _posix(segs)):
-        u, pp = Uri(path_str), pathlib.PurePosixPath(path_str)
+        u, pp = MemPath(path_str), pathlib.PurePosixPath(path_str)
         assert u.is_relative_to(other_str) == pp.is_relative_to(other_str)
 
 
-# --- Generic Pathname (Uri, MemPath) vs PurePosixPath: match, parents,
+# --- Generic Pathname (MemPath) vs PurePosixPath: match, parents,
 # MemPath normalization. Small alphabets so wildcards actually hit. ---
 
 _match_name = st.sampled_from(["a", "b", "ab", "a.py", ".a", "b.a"])
@@ -189,9 +170,7 @@ _match_pattern_part = st.sampled_from(
 
 
 def _generic_classes():
-    from pathlib_next.mempath import MemPath
-
-    return (Uri, MemPath)
+    return (MemPath,)
 
 
 @given(
@@ -257,8 +236,6 @@ _mem_piece = st.sampled_from(["", ".", "a", "b", "cd"])
 )
 @settings(max_examples=300)
 def test_mempath_normalizes_like_pure_posix_path(args):
-    from pathlib_next.mempath import MemPath
-
     # POSIX keeps exactly two leading slashes as a distinct root; MemPath has
     # one root, so such arguments are not generated.
     strs = [("/" if rooted else "") + "/".join(pieces) for rooted, pieces in args]
@@ -274,326 +251,7 @@ def test_mempath_normalizes_like_pure_posix_path(args):
     assert ours.root == pp.root
 
 
-# --- uritools oracle: one-pass parse/compose fast paths ---
-# `Uri._parse_uri`/`Uri._format_parsed_parts` bypass uritools' get*()
-# accessors and uricompose() for speed (one-pass authority/path extraction,
-# direct string assembly) but must remain byte-for-byte equivalent to them
-# -- uritools stays installed as the oracle here specifically so that
-# equivalence stays enforced, not just true at the moment the bypass was
-# written. A mismatch means the fast path is wrong, not these tests.
-
-_scheme_st = st.one_of(
-    st.none(), st.from_regex(r"[a-zA-Z][a-zA-Z0-9+.-]{0,8}", fullmatch=True)
-)
-_userinfo_st = st.one_of(
-    st.none(), st.text(alphabet="abcXYZ012:%40@!$&'()*+,;=~-._", max_size=12)
-)
-_host_st = st.one_of(
-    st.none(),
-    st.just(""),
-    st.text(alphabet="abcXYZ012.-%~", max_size=15),
-    st.just("[::1]"),
-    st.just("[2001:db8::1]"),
-    st.just("[::1"),  # malformed bracket -- must raise on both sides
-    st.text(alphabet="0123456789", max_size=6),  # pure-digit host (uritools quirk)
-)
-_port_st = st.one_of(st.none(), st.integers(min_value=0, max_value=99999).map(str))
-_path_st = st.text(alphabet="abcXYZ012/.%20~!$&'()*+,;=:@-_", max_size=25)
-_query_st = st.one_of(st.none(), st.text(alphabet="abcXYZ012=&%20+", max_size=15))
-_frag_st = st.one_of(st.none(), st.text(alphabet="abcXYZ012%20-_", max_size=10))
-
-
-@st.composite
-def _uri_string(draw):
-    scheme = draw(_scheme_st)
-    userinfo = draw(_userinfo_st)
-    host = draw(_host_st)
-    port = draw(_port_st)
-    path = draw(_path_st)
-    query = draw(_query_st)
-    frag = draw(_frag_st)
-
-    parts = []
-    if scheme is not None:
-        parts.append(scheme + ":")
-    has_authority = host is not None
-    if has_authority:
-        parts.append("//")
-        if userinfo is not None:
-            parts.append(userinfo + "@")
-        parts.append(host)
-        if port is not None:
-            parts.append(":" + port)
-    if path:
-        if has_authority and not path.startswith("/"):
-            path = "/" + path
-        parts.append(path)
-    if query is not None:
-        parts.append("?" + query)
-    if frag is not None:
-        parts.append("#" + frag)
-    return "".join(parts)
-
-
-# The oracle is uritools' getters, with these deliberate contract changes:
-# * the query is the RAW, still-encoded component, never decoded at parse;
-# * percent-escapes that are not UTF-8 decode with surrogateescape instead
-#   of raising UnicodeDecodeError;
-# * a data: path skips dot-segment removal (RFC 2397 payloads are opaque);
-# * the authority differs from uritools in three ways, all applied by
-#   `_oracle_authority` and nowhere else:
-#   - a host of ASCII digits alone (no ':' after it) is the host, as
-#     RFC 3986 3.2.2 has it; uritools reads it as a port and returns '';
-#   - a port above 65535 is a ValueError (RFC 3986 3.2.3 leaves the range
-#     open, TCP does not); uritools accepts any number of digits;
-#   - a ':' followed by anything but digits, after a name that is not a
-#     bracketed address, is an invalid port (ValueError); uritools makes the
-#     whole `h:abc` the host name.
-_ERRORS = "surrogateescape"
-
-
-def _oracle_authority(uri: str, parsed):
-    """`(host, port)` of uritools, with the three documented differences."""
-    authority = parsed.authority
-    hostinfo = "" if authority is None else authority.rpartition("@")[2]
-    _, colon, tail = hostinfo.rpartition(":")
-    if colon and tail.lstrip("0123456789") and not hostinfo.startswith("["):
-        raise ValueError("invalid port: it must be digits")
-    host, port = parsed.gethost(errors=_ERRORS) or "", parsed.getport()
-    if hostinfo and ":" not in hostinfo and hostinfo.isascii() and hostinfo.isdigit():
-        host = hostinfo
-    if port is not None and port > 65535:
-        raise ValueError("port out of range 0-65535")
-    return host, port
-
-
-def _oracle_parse(uri: str):
-    parsed = uritools.urisplit(uri)
-    scheme = parsed.getscheme()
-    if scheme == "data":
-        path = uritools.uridecode(parsed.path, errors=_ERRORS)
-    else:
-        path = parsed.getpath(errors=_ERRORS)
-    host, port = _oracle_authority(uri, parsed)
-    return (
-        scheme,
-        parsed.getuserinfo(errors=_ERRORS),
-        host,
-        port,
-        path,
-        parsed.query or "",
-        parsed.getfragment(errors=_ERRORS) or "",
-    )
-
-
-def _fast_parse(uri: str):
-    scheme, authority, path, query, fragment = uritools.urisplit(uri)
-    scheme = scheme.lower() if scheme is not None else None
-    userinfo, host, port = _split_authority(authority)
-    if userinfo is not None:
-        userinfo = uritools.uridecode(userinfo, errors=_ERRORS)
-    host = _decode_host(host) if host is not None else ""
-    if scheme != "data":
-        path = _remove_dot_segments(path)
-    path = uritools.uridecode(path, errors=_ERRORS)
-    fragment = (
-        uritools.uridecode(fragment, errors=_ERRORS) if fragment is not None else None
-    )
-    return scheme, userinfo, host, port, path, (query or ""), (fragment or "")
-
-
-@given(uri=_uri_string())
-@settings(max_examples=1000)
-def test_fast_parse_matches_uritools_getters(uri):
-    try:
-        fast = _fast_parse(uri)
-    except Exception as e:
-        fast = ("EXC", type(e).__name__)
-    try:
-        oracle = _oracle_parse(uri)
-    except Exception as e:
-        oracle = ("EXC", type(e).__name__)
-    assert fast == oracle, f"uri={uri!r}"
-
-
-@given(uri=_uri_string())
-@settings(max_examples=500)
-def test_uri_parse_uri_matches_oracle_components(uri):
-    """Same oracle check, but through the real `Uri._parse_uri` (not just
-    the standalone helper functions), so a future refactor that changes
-    how they're wired together is still caught."""
-    try:
-        source, path, query, fragment = Uri._parse_uri(uri)
-        fast = (
-            source.scheme,
-            source.userinfo,
-            source.host,
-            source.port,
-            path,
-            str(query),
-            fragment,
-        )
-    except Exception as e:
-        fast = ("EXC", type(e).__name__)
-    try:
-        oracle = _oracle_parse(uri)
-    except Exception as e:
-        oracle = ("EXC", type(e).__name__)
-    assert fast == oracle, f"uri={uri!r}"
-
-
-_compose_scheme_st = st.one_of(st.none(), st.just(""), _scheme_st)
-_compose_userinfo_st = st.one_of(st.none(), st.just(""), _userinfo_st)
-_compose_host_st = st.one_of(
-    st.none(),
-    st.just(""),
-    st.text(alphabet="abcXYZ012.-%~!$&'()*+,;=", max_size=15),
-    st.builds(lambda: ipaddress.IPv6Address("::1")),
-    st.builds(lambda: ipaddress.IPv6Address("2001:db8::1")),
-    st.builds(lambda: ipaddress.IPv4Address("192.168.1.1")),
-    st.just("[::1]"),
-    st.just("::1"),
-)
-_compose_port_st = st.one_of(st.none(), st.integers(min_value=0, max_value=99999))
-_compose_query_st = st.one_of(
-    st.none(),
-    st.just(""),
-    st.text(alphabet="abcXYZ012=&%20+!$&'()*+,;=:@/?~", max_size=20),
-)
-_compose_frag_st = st.one_of(
-    st.none(),
-    st.just(""),
-    st.text(alphabet="abcXYZ012%20-_!$&'()*+,;=:@/?~", max_size=15),
-)
-
-
-_HEX = "0123456789abcdefABCDEF"
-
-
-def _oracle_raw_query(query: str) -> str:
-    """Design Q1: a stored query is already encoded, so composing keeps every
-    valid %XX escape and every delimiter, and encodes only characters that
-    cannot appear in a query (uritools.uricompose encodes "%" itself, which
-    double-encoded a received query)."""
-    out = []
-    index = 0
-    while index < len(query):
-        char = query[index]
-        escape = query[index + 1 : index + 3]
-        if char == "%" and len(escape) == 2 and all(h in _HEX for h in escape):
-            out.append(query[index : index + 3])
-            index += 3
-            continue
-        out.append(uritools.uriencode(char, "!$&'()*+,;=:@/?").decode())
-        index += 1
-    return "".join(out)
-
-
-def _with_raw_query(uri: str, query) -> str:
-    if query is None:
-        return uri
-    head, sep, fragment = uri.partition("#")
-    return f"{head}?{_oracle_raw_query(query)}{sep}{fragment}"
-
-
-def _oracle_format_parsed_parts(source, path, query, fragment, sanitize=True):
-    parts = {"path": path}
-    if fragment:
-        parts["fragment"] = fragment
-    if source:
-        source_ = source._asdict()
-        if sanitize:
-            source_["userinfo"] = (source_["userinfo"] or "").split(":", maxsplit=1)[0]
-        parts.update(source_)
-    # Documented differences from uricompose: a port of 0 is kept (it is a
-    # valid port and part of the endpoint's identity), and a port above
-    # 65535 is a ValueError.
-    if (parts.get("port") or 0) > 65535:
-        raise ValueError("port out of range 0-65535")
-    kept = {k: v for k, v in parts.items() if v or (k == "port" and v == 0)}
-    return _with_raw_query(uritools.uricompose(**kept), query or None)
-
-
-@given(
-    scheme=_compose_scheme_st,
-    userinfo=_compose_userinfo_st,
-    host=_compose_host_st,
-    port=_compose_port_st,
-    path=_path_st,
-    query=_compose_query_st,
-    fragment=_compose_frag_st,
-    sanitize=st.booleans(),
-)
-@settings(max_examples=1000)
-def test_uri_format_parsed_parts_matches_uricompose(
-    scheme, userinfo, host, port, path, query, fragment, sanitize
-):
-    source = Source(scheme, userinfo, host, port)
-    try:
-        fast = Uri._format_parsed_parts(
-            source, path, query, fragment, sanitize=sanitize
-        )
-    except Exception as e:
-        fast = ("EXC", type(e).__name__)
-    try:
-        oracle = _oracle_format_parsed_parts(source, path, query, fragment, sanitize)
-    except Exception as e:
-        oracle = ("EXC", type(e).__name__)
-    assert (
-        fast == oracle
-    ), f"source={source!r} path={path!r} query={query!r} fragment={fragment!r} sanitize={sanitize}"
-
-
-@given(
-    # `_compose_uri` is a low-level primitive: it expects an
-    # already-lowercased scheme (its callers -- `_format_parsed_parts`,
-    # `DavPath._wire_uri` -- do the lowering themselves before calling it,
-    # matching how it's actually used in production), so this doesn't
-    # generate uppercase schemes -- that's `_format_parsed_parts`'s
-    # contract, already covered by the test above.
-    scheme=st.one_of(st.none(), st.just("http"), st.just("https")),
-    userinfo=_compose_userinfo_st,
-    host=_compose_host_st,
-    port=_compose_port_st,
-    path=_path_st,
-    query=_compose_query_st,
-    fragment=_compose_frag_st,
-)
-@settings(max_examples=300)
-def test_compose_uri_matches_uricompose_direct(
-    scheme, userinfo, host, port, path, query, fragment
-):
-    """`_compose_uri` used directly (not via the truthy-filtering
-    `_format_parsed_parts` wrapper) -- this is DavPath._wire_uri()'s call
-    shape: None-checked, not truthy-filtered."""
-    try:
-        fast = _compose_uri(
-            scheme, userinfo, host, port, path, query or None, fragment or None
-        )
-    except Exception as e:
-        fast = ("EXC", type(e).__name__)
-    try:
-        if (port or 0) > 65535:  # the documented difference, see above
-            raise ValueError("port out of range 0-65535")
-        oracle = _with_raw_query(
-            uritools.uricompose(
-                scheme=scheme,
-                userinfo=userinfo,
-                host=host,
-                port=port,
-                path=path,
-                fragment=fragment or None,
-            ),
-            query or None,
-        )
-    except Exception as e:
-        oracle = ("EXC", type(e).__name__)
-    assert (
-        fast == oracle
-    ), f"scheme={scheme!r} userinfo={userinfo!r} host={host!r} port={port!r}"
-
-
-# --- Names that URI syntax gives a meaning to ---------------------------------
+# --- Names that a URI syntax would give a meaning to --------------------------
 #
 # The properties above draw segments from letters, digits, "-" and "_". These
 # draw any text a POSIX file name may hold, and a set biased towards "?", "#",
@@ -613,27 +271,7 @@ _name = st.one_of(_any_name, _spicy_name)
 
 @given(name=_name)
 @settings(max_examples=300)
-def test_a_joined_child_keeps_the_name_it_was_given(name):
-    base = Uri("sftp://host/dir")
-    child = base / name
-    assert child.name == name
-    assert child.path == "/dir/" + name
-    assert child.parent == base
-
-
-@given(name=_name)
-@settings(max_examples=300)
-def test_a_joined_child_survives_its_own_uri_text(name):
-    child = Uri("sftp://host/dir") / name
-    assert Uri(child.as_uri()) == child
-    assert Uri(str(child)) == child
-
-
-@given(name=_name)
-@settings(max_examples=300)
 def test_a_mempath_child_keeps_the_name_it_was_given(name):
-    from pathlib_next.mempath import MemPath
-
     assert (MemPath("/d") / name).name == name
 
 
@@ -671,57 +309,3 @@ def test_an_archive_member_name_normalizes_once_and_stays_inside(name):
     assert "" not in parts or normal == ""
     assert chr(0) not in normal
     assert _normalize_member_name(normal) == normal
-
-
-_pairs = st.lists(
-    st.tuples(
-        st.text(alphabet="ab=&;%+ #?\u00e9/", min_size=1, max_size=5),
-        st.one_of(st.none(), st.text(alphabet="ab=&;%+ #?\u00e9/", max_size=5)),
-    ),
-    max_size=4,
-)
-
-
-@given(pairs=_pairs)
-@settings(max_examples=300)
-def test_query_pairs_survive_a_uri_round_trip(pairs):
-    from pathlib_next.uri import Query
-
-    assert Query(pairs).decode() == [(k, v) for k, v in pairs]
-    if pairs:
-        uri = Uri("http://host/p").with_query(Query(pairs))
-        assert Query(Uri(uri.as_uri()).query).decode() == [(k, v) for k, v in pairs]
-
-
-_userinfo = st.one_of(
-    st.none(), st.text(alphabet="abU:@/?#%" + chr(233) + " ", min_size=1, max_size=8)
-)
-_host = st.text(alphabet="abc.-", min_size=1, max_size=8).filter(
-    lambda h: not h.startswith((".", "-"))
-)
-
-
-@given(
-    userinfo=_userinfo,
-    host=_host,
-    port=st.one_of(st.none(), st.integers(min_value=1, max_value=65535)),
-)
-@settings(max_examples=300)
-def test_a_source_survives_its_unsanitized_text(userinfo, host, port):
-    source = Source("sftp", userinfo, host, port)
-    assert Source.from_str(source.as_str(sanitize=False)) == source
-
-
-@given(
-    user=st.text(alphabet="abU", min_size=1, max_size=4),
-    password=st.text(alphabet="xyz%@/#" + chr(233), min_size=3, max_size=8),
-    host=_host,
-)
-@settings(max_examples=300)
-def test_a_password_in_the_userinfo_is_not_in_the_text_a_log_would_show(
-    user, password, host
-):
-    source = Source("sftp", f"{user}:{password}", host, None)
-    assert password not in repr(source)
-    assert password not in str(source)
-    assert password not in str(Uri(source.as_str(sanitize=False) + "/x"))

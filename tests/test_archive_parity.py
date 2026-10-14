@@ -2,7 +2,7 @@
 review, wave 5 / G1).
 
 Each test asserts an outcome a caller relies on: paths listed from the
-archive root exist and read back, a URI string names the member it came
+archive root exist and read back, a member's text names the member it came
 from, errors carry pathlib's exception types, writes and stored modes are
 not lost, and `make_archive`/`unpack_archive` work for any `Path`.
 """
@@ -19,16 +19,16 @@ import pytest
 
 from pathlib_next import LocalPath
 from pathlib_next.mempath import MemPath
-from pathlib_next.uri import UriPath
+from pathlib_next.archive import TarPath, ZipPath
 from pathlib_next.archive import make_archive, unpack_archive
 
 
-def _zip_uri(path, inner=""):
-    return f"zip:{path.as_uri()}!/{inner}"
+def _zip(path, inner=""):
+    return ZipPath(inner, archive=path)
 
 
-def _tar_uri(path, inner=""):
-    return f"tar:{path.as_uri()}!/{inner}"
+def _tar(path, inner=""):
+    return TarPath(inner, archive=path)
 
 
 @pytest.fixture
@@ -57,8 +57,8 @@ def tar_archive(tmp_path):
 @pytest.fixture(params=["zip", "tar"])
 def archive_root(request, zip_archive, tar_archive):
     if request.param == "zip":
-        return UriPath(_zip_uri(zip_archive))
-    return UriPath(_tar_uri(tar_archive))
+        return _zip(zip_archive)
+    return _tar(tar_archive)
 
 
 def _tree(local):
@@ -88,8 +88,8 @@ def test_root_children_exist_and_read(archive_root):
 
 
 def test_root_glob_and_rglob_find_every_member(archive_root):
-    assert sorted(p.path for p in archive_root.glob("*")) == ["docs", "top.txt"]
-    found = {p.path: p.read_text() for p in archive_root.rglob("*.txt")}
+    assert sorted(str(p) for p in archive_root.glob("*")) == ["docs", "top.txt"]
+    found = {str(p): p.read_text() for p in archive_root.rglob("*.txt")}
     assert found == {"docs/readme.txt": "hello world", "top.txt": "top level"}
 
 
@@ -116,67 +116,46 @@ def dotslash_tgz(tmp_path):
 
 
 def test_tar_dotslash_members_are_addressable(dotslash_tgz, tmp_path):
-    root = UriPath(_tar_uri(dotslash_tgz))
+    root = _tar(dotslash_tgz)
     assert sorted(p.name for p in root.iterdir()) == ["docs", "top.txt"]
     assert (root / "top.txt").read_text() == "top level"
     assert (root / "docs").is_dir()
-    assert UriPath(_tar_uri(dotslash_tgz, "docs/readme.txt")).read_bytes() == (
-        b"hello world"
-    )
+    assert _tar(dotslash_tgz, "docs/readme.txt").read_bytes() == (b"hello world")
     dest = tmp_path / "out"
     root.copy(LocalPath(dest), recursive=True)
     assert _tree(dest) == _EXPECTED_TREE
 
 
-# --- ftparchive-archive-uri-not-roundtrippable ---
+# --- a member's text names the same member ---
 
 _ODD_NAMES = ["a#1.txt", "b?.txt", "c%41.txt", "cA.txt", "d e.txt"]
 
 
-def test_member_uri_round_trips_to_the_same_member(tmp_path):
+def test_member_text_round_trips_to_the_same_member(tmp_path):
     path = tmp_path / "odd.zip"
     with zipfile.ZipFile(path, "w") as zf:
         for name in _ODD_NAMES:
             zf.writestr(f"d/{name}", name)
-    children = list(UriPath(_zip_uri(path, "d")).iterdir())
+    children = list(_zip(path, "d").iterdir())
     assert sorted(c.name for c in children) == sorted(_ODD_NAMES)
     for child in children:
-        for text in (child.as_uri(), str(child)):
-            again = UriPath(text)
-            assert again.path == child.path
-            assert again.read_text() == child.name
-            assert again.as_uri() == child.as_uri()
+        again = _zip(path, str(child))
+        assert str(again) == str(child)
+        assert again.read_text() == child.name
+        assert again == child
 
 
-def test_outer_archive_name_with_uri_delimiters(tmp_path):
+def test_outer_archive_name_with_uri_delimiters_reads(tmp_path):
     path = tmp_path / "we#ird %41.zip"
     with zipfile.ZipFile(path, "w") as zf:
         zf.writestr("x.txt", "inside")
-    member = UriPath(_zip_uri(path, "x.txt"))
+    member = _zip(path, "x.txt")
     assert member.read_text() == "inside"
-    assert UriPath(member.as_uri()).read_text() == "inside"
     assert sorted(p.name for p in tmp_path.iterdir()) == ["we#ird %41.zip"]
 
 
-def test_outer_query_stays_with_the_outer_uri():
-    member = UriPath("zip:https://example.invalid/a.zip?sig=1!/docs/x.txt")
-    assert member.path == "docs/x.txt"
-    assert not member.query
-    outer = member.backend.outer
-    assert outer.path == "/a.zip"
-    assert str(outer.query) == "sig=1"
-    assert UriPath(member.as_uri()).path == "docs/x.txt"
-
-
-def test_inner_dot_segments_never_change_the_outer_archive(zip_archive):
-    member = UriPath(_zip_uri(zip_archive, "../../elsewhere/../top.txt"))
-    assert member.backend.outer.name == "a.zip"
-    assert member.path == "top.txt"
-    assert member.read_text() == "top level"
-
-
 def test_relative_to_gives_a_relative_path_not_a_none_scheme(zip_archive):
-    readme = UriPath(_zip_uri(zip_archive)) / "docs" / "readme.txt"
+    readme = _zip(zip_archive) / "docs" / "readme.txt"
     rel = readme.relative_to(readme.parent)
     assert str(rel) == "readme.txt"
     assert "None" not in repr(rel)
@@ -205,7 +184,7 @@ def _names(path):
 
 
 def test_zip_mutations_check_the_type_of_the_path(zip_archive):
-    root = UriPath(_zip_uri(zip_archive))
+    root = _zip(zip_archive)
     before = _names(zip_archive)
     with pytest.raises(IsADirectoryError):
         (root / "docs").unlink()
@@ -220,7 +199,7 @@ def test_zip_mutations_check_the_type_of_the_path(zip_archive):
 
 
 def test_zip_creation_needs_an_existing_directory_parent(zip_archive):
-    root = UriPath(_zip_uri(zip_archive))
+    root = _zip(zip_archive)
     before = _names(zip_archive)
     with pytest.raises(FileNotFoundError):
         (root / "no" / "such").mkdir()
@@ -238,9 +217,9 @@ def test_zip_creation_needs_an_existing_directory_parent(zip_archive):
 
 
 def test_zip_rename_returns_the_new_path(zip_archive):
-    root = UriPath(_zip_uri(zip_archive))
+    root = _zip(zip_archive)
     renamed = (root / "top.txt").rename("moved.txt")
-    assert renamed.path == "moved.txt"
+    assert str(renamed) == "moved.txt"
     assert renamed.read_text() == "top level"
     assert renamed.backend is root.backend
 
@@ -249,7 +228,7 @@ def test_zip_rename_returns_the_new_path(zip_archive):
 
 
 def test_zip_r_plus_writes_reach_the_archive(zip_archive):
-    member = UriPath(_zip_uri(zip_archive, "top.txt"))
+    member = _zip(zip_archive, "top.txt")
     with member.open("r+b") as f:
         assert f.read(3) == b"top"
         f.seek(0)
@@ -265,17 +244,16 @@ def test_zip_r_plus_writes_reach_the_archive(zip_archive):
 
 def test_zip_r_plus_without_writes_leaves_the_archive_untouched(zip_archive):
     before = zip_archive.read_bytes()
-    with UriPath(_zip_uri(zip_archive, "top.txt")).open("r+b") as f:
+    with _zip(zip_archive, "top.txt").open("r+b") as f:
         assert f.read() == b"top level"
     assert zip_archive.read_bytes() == before
 
 
 def test_r_plus_on_a_read_only_archive_is_refused(zip_archive, tar_archive):
-    import base64
-
-    b64 = base64.b64encode(zip_archive.read_bytes()).decode()
-    remote = UriPath(f"zip:data:application/zip;base64,{b64}!/top.txt")
-    tar_member = UriPath(_tar_uri(tar_archive, "top.txt"))
+    memory = MemPath("/a.zip")
+    memory.write_bytes(zip_archive.read_bytes())
+    remote = _zip(memory, "top.txt")
+    tar_member = _tar(tar_archive, "top.txt")
     for member in (remote, tar_member):
         with pytest.raises(NotImplementedError):
             member.open("r+b")
@@ -295,7 +273,7 @@ def test_zip_member_reports_its_stored_unix_mode(tmp_path):
         dos.create_system = 0
         dos.external_attr = 0x20
         zf.writestr(dos, "dos")
-    root = UriPath(_zip_uri(path))
+    root = _zip(path)
     st = (root / "bin" / "tool").stat()
     assert st.st_mode == stat.S_IFREG | 0o755
     assert st.mode_known
@@ -315,7 +293,7 @@ def test_tar_member_reports_its_stored_mode(tmp_path):
         folder.type = tarfile.DIRTYPE
         folder.mode = 0o711
         tf.addfile(folder)
-    root = UriPath(_tar_uri(path))
+    root = _tar(path)
     st = (root / "tool").stat()
     assert (st.st_mode, st.mode_known) == (stat.S_IFREG | 0o750, True)
     st = (root / "dir").stat()
@@ -329,7 +307,7 @@ def test_copying_a_member_out_keeps_it_writable_and_repeatable(tmp_path):
         info.create_system = 3
         info.external_attr = (stat.S_IFREG | 0o755) << 16
         zf.writestr(info, "#!/bin/sh\n")
-    member = UriPath(_zip_uri(path, "tool"))
+    member = _zip(path, "tool")
     out = LocalPath(tmp_path / "tool")
     member.copy(out)
     member.copy(out, overwrite=True)
@@ -352,7 +330,7 @@ def _mem_tree():
 
 
 @pytest.mark.parametrize("fmt", ["zip", "tar"])
-@pytest.mark.parametrize("kind", ["mem", "fileuri"])
+@pytest.mark.parametrize("kind", ["mem", "local"])
 def test_make_archive_from_any_path_directory(tmp_path, fmt, kind):
     if kind == "mem":
         src = _mem_tree()
@@ -361,7 +339,7 @@ def test_make_archive_from_any_path_directory(tmp_path, fmt, kind):
         (local / "docs").mkdir(parents=True)
         (local / "top.txt").write_bytes(b"top level")
         (local / "docs" / "readme.txt").write_bytes(b"hello world")
-        src = UriPath(local.as_uri())
+        src = LocalPath(local)
     target = MemPath(f"/out.{fmt}")
     make_archive(src, fmt, target)
     dest = tmp_path / "out"
@@ -415,7 +393,7 @@ def test_make_archive_zip_member_past_the_zip64_limit(tmp_path, monkeypatch):
 
 
 class _NonSeekableArchive:
-    """A `Path`-like archive whose stream cannot seek, like `HttpPath`."""
+    """A `Path`-like archive whose stream cannot seek, like a reply from a web server."""
 
     def __init__(self, name, data):
         self.name = name

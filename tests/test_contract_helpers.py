@@ -1,9 +1,6 @@
 """The shipped `pathlib_next.testing` contracts themselves: the documented
 example runs verbatim, capability opt-outs skip instead of passing, and the
 negative-path tests fail on a backend that breaks pathlib's rules.
-
-Kept free of `pathlib_next.uri` imports so it also runs without the `uri`
-extra.
 """
 
 import errno

@@ -1,4 +1,4 @@
-"""What `ftp:` sends and accepts on the wire: one `MLST` reply for a stat, a
+"""What `FTPPath` sends and accepts on the wire: one `MLST` reply for a stat, a
 `NOOP` only after idle time, a listing or a size fact that is malformed, a
 refused `RENAME`, and the lifetime of a thread's connection. A scriptable
 loopback server logs every command (tests/ftp_loopback.py)."""
@@ -9,10 +9,8 @@ import threading
 
 import pytest
 
-pytest.importorskip("uritools")
-
+from pathlib_next.ftp import FTPBackend, FTPPath
 from pathlib_next.ftp import _backend as ftp_mod
-from pathlib_next.uri.schemes.ftp import FtpBackend, FtpPath
 
 from ftp_loopback import LoopbackFtp
 from waits import wait_until
@@ -35,10 +33,10 @@ def make():
     def start(**options):
         server = LoopbackFtp(**options)
         servers.append(server)
-        backend = FtpBackend(timeout=5)
+        backend = FTPBackend("127.0.0.1", server.port, timeout=5)
 
         def path(text):
-            return FtpPath(f"{server.url}{text}", backend=backend)
+            return FTPPath(text, backend=backend)
 
         return server, path
 
@@ -242,7 +240,7 @@ def test_a_size_fact_that_is_not_a_number_is_unknown_in_a_listing_and_a_stat(mak
             )
         },
     )
-    sizes = {child.name: child.stat().st_size for child in path("/d").iterdir()}
+    sizes = {name: st.st_size for name, st in path("/d")._scandir()}
     assert sizes == {"a": 0, "b": 0, "c": 0, "d": 0, "e": 7, "f": 0}
     assert path("/d/a").stat().st_size == 0
     assert path("/d/e").stat().st_size == 7
@@ -291,7 +289,7 @@ def test_renaming_a_missing_file_is_not_found(make):
 def test_a_rename_to_a_free_name_lands_and_returns_the_new_path(make):
     server, path = make(files={"/a": b"A"}, dirs={"/"})
     moved = path("/a").rename("b")
-    assert moved.path == "/b" and server.files == {"/b": b"A"}
+    assert str(moved) == "/b" and server.files == {"/b": b"A"}
 
 
 # --- the lifetime of a connection ------------------------------------------------------

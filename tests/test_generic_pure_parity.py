@@ -1,4 +1,4 @@
-"""Pure-path operations that the generic `Pathname` derives (`MemPath`, `Uri`)
+"""Pure-path operations that the generic `Pathname` derives (`MemPath`)
 against `pathlib.PurePosixPath`: `full_match()`, `with_stem()`,
 `is_absolute()`, and the 3.12 pass of `match()`."""
 
@@ -14,9 +14,8 @@ import pytest
 
 from pathlib_next.path import _pure as path_module
 from pathlib_next.mempath import MemPath
-from pathlib_next.uri import Uri
 
-GENERIC = [MemPath, Uri]
+GENERIC = [MemPath]
 
 # --- full_match() ---------------------------------------------------------
 
@@ -165,7 +164,7 @@ def _outcome(call):
         return ValueError
 
 
-@pytest.mark.parametrize("cls", [MemPath, Uri])
+@pytest.mark.parametrize("cls", GENERIC)
 @pytest.mark.parametrize("name", ["c.txt", "c", "c.tar.gz", ".hidden", "c."])
 @pytest.mark.parametrize("stem", ["", "d", "d.e"])
 def test_with_stem_refuses_what_the_running_pathlib_refuses(cls, name, stem):

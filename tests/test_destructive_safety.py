@@ -13,7 +13,7 @@ import pathlib
 import subprocess
 
 import pytest
-from capabilities import can_make_junctions, requires_junctions, requires_uri_extra
+from capabilities import can_make_junctions, requires_junctions
 
 import pathlib_next
 from pathlib_next.mempath import MemPath
@@ -48,17 +48,6 @@ def test_copy_directory_without_recursive_leaves_target_intact(tmp_path):
     with pytest.raises(OSError):
         src.copy(target, overwrite=True)
     assert target.read_text() == "PRECIOUS"
-
-
-@requires_uri_extra
-def test_copy_http_404_source_leaves_local_target_intact(http_server, tmp_path):
-    from pathlib_next.uri import UriPath
-
-    target = LocalPath(tmp_path / "cache.json")
-    target.write_text("GOOD CACHE")
-    with pytest.raises(FileNotFoundError):
-        UriPath(http_server + "/no-such-file.json").copy(target, overwrite=True)
-    assert target.read_text() == "GOOD CACHE"
 
 
 def test_copy_failing_mid_stream_removes_partial_target(monkeypatch):
@@ -307,13 +296,18 @@ def _as_another_class(kind, path):
         return SubLocal(path)
     if kind == "stdlib":
         return pathlib.Path(path)
-    pytest.importorskip("uritools")
-    from pathlib_next.uri import UriPath
 
-    return UriPath(path)
+    # A path class that is not a `pathlib.Path` and names a local file through
+    # `filepath`, as a path for `file:` URIs does.
+    class HoldsLocalFile(MemPath):
+        @property
+        def filepath(self):
+            return pathlib.Path(path)
+
+    return HoldsLocalFile("/elsewhere")
 
 
-@pytest.mark.parametrize("kind", ["subclass", "stdlib", "file-uri"])
+@pytest.mark.parametrize("kind", ["subclass", "stdlib", "filepath"])
 def test_move_onto_the_same_file_under_another_class_keeps_it(tmp_path, kind):
     path = LocalPath(tmp_path / "f.txt")
     path.write_text("PRECIOUS")
@@ -321,7 +315,7 @@ def test_move_onto_the_same_file_under_another_class_keeps_it(tmp_path, kind):
     assert path.read_text() == "PRECIOUS"
 
 
-@pytest.mark.parametrize("kind", ["subclass", "file-uri"])
+@pytest.mark.parametrize("kind", ["subclass", "filepath"])
 def test_move_directory_onto_the_same_directory_under_another_class_keeps_it(
     tmp_path, kind
 ):
@@ -330,7 +324,7 @@ def test_move_directory_onto_the_same_directory_under_another_class_keeps_it(
     _both_trees_survive(dst)
 
 
-@pytest.mark.parametrize("kind", ["subclass", "file-uri"])
+@pytest.mark.parametrize("kind", ["subclass", "filepath"])
 def test_copy_onto_the_same_file_under_another_class_raises_and_keeps_it(
     tmp_path, kind
 ):
@@ -486,56 +480,6 @@ def test_rm_recursive_on_junction_itself_removes_only_the_link(tmp_path):
     LocalPath(link).rm(recursive=True)
     assert not os.path.lexists(link)
     assert (victim / "keep.txt").read_text() == "V"
-
-
-def test_file_uri_rm_recursive_does_not_descend_into_junction(tmp_path):
-    pytest.importorskip("uritools")
-    from pathlib_next.uri import UriPath
-
-    victim = _victim(tmp_path)
-    tree = tmp_path / "tree"
-    tree.mkdir()
-    _junction_or_skip(tree / "j", victim)
-    UriPath(LocalPath(tree)).rm(recursive=True)
-    assert not tree.exists()
-    assert (victim / "keep.txt").read_text() == "V"
-
-
-def test_file_uri_rm_recursive_does_not_follow_directory_symlink(tmp_path):
-    pytest.importorskip("uritools")
-    from pathlib_next.uri import UriPath
-
-    outside = tmp_path / "outside"
-    outside.mkdir()
-    (outside / "precious.txt").write_text("P")
-    tree = tmp_path / "tree"
-    tree.mkdir()
-    (tree / "a.txt").write_text("a")
-    try:
-        os.symlink(outside, tree / "link", target_is_directory=True)
-    except (OSError, NotImplementedError) as error:
-        pytest.skip(f"directory symlink unavailable: {error}")
-
-    UriPath(LocalPath(tree)).rm(recursive=True)
-
-    assert (outside / "precious.txt").read_text() == "P"
-    assert not os.path.lexists(tree / "link")
-
-
-def test_file_uri_scandir_reports_symlink_not_directory(tmp_path):
-    pytest.importorskip("uritools")
-    from pathlib_next.uri import UriPath
-
-    (tmp_path / "real").mkdir()
-    try:
-        os.symlink(tmp_path / "real", tmp_path / "link", target_is_directory=True)
-    except (OSError, NotImplementedError) as error:
-        pytest.skip(f"directory symlink unavailable: {error}")
-
-    stats = dict(UriPath(LocalPath(tmp_path))._scandir())
-    assert stats["link"].is_symlink()
-    assert not stats["link"].is_dir()
-    assert stats["real"].is_dir()
 
 
 # --- untrusted child names ------------------------------------------------

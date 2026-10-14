@@ -4,7 +4,6 @@ bits asks whether it can have one, not which operating system it runs on."""
 
 from __future__ import annotations
 
-import importlib.util
 import os
 import stat
 import tempfile
@@ -29,13 +28,6 @@ def can_make_junctions() -> bool:
         except OSError:
             return False
         return os.path.isdir(link)
-
-
-def has_uri_extra() -> bool:
-    """`uritools` and `netimps`, which `pathlib_next.uri` imports, are installed."""
-    return all(
-        importlib.util.find_spec(name) is not None for name in ("uritools", "netimps")
-    )
 
 
 def can_make_fifos() -> bool:
@@ -68,10 +60,6 @@ def stores_question_marks() -> bool:
 
 requires_junctions = pytest.mark.skipif(
     not can_make_junctions(), reason="this system cannot create directory junctions"
-)
-requires_uri_extra = pytest.mark.skipif(
-    not has_uri_extra(),
-    reason='the "uri" extra (uritools, netimps) is not installed',
 )
 requires_fifos = pytest.mark.skipif(
     not can_make_fifos(), reason="this system has no named pipes (os.mkfifo)"

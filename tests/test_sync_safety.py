@@ -14,7 +14,6 @@ from capabilities import requires_fifos, requires_junctions
 
 import pathlib_next
 from pathlib_next.mempath import MemPath
-from pathlib_next.tools import uripath
 from pathlib_next.sync import PathSyncer, SyncEvent
 
 IS_WINDOWS = sys.platform == "win32"
@@ -89,19 +88,6 @@ def test_missing_root_source_ignored_error_changes_nothing(tmp_path):
     assert isinstance(error, FileNotFoundError)
     assert event is SyncEvent.SyncStart
     assert source.path == MemPath("/missing")
-
-
-def test_missing_root_source_cli_keeps_target(tmp_path):
-    target = tmp_path / "backup"
-    _write(target / "file.txt", "precious")
-    stderr = io.StringIO()
-    code = uripath.main(
-        ["sync", "--remove-missing", str(tmp_path / "buidl"), str(target)],
-        stderr=stderr,
-    )
-    assert code == 1
-    assert "FileNotFoundError" in stderr.getvalue()
-    assert (target / "file.txt").read_text() == "precious"
 
 
 def test_vanished_child_is_still_removed(tmp_path):

@@ -300,17 +300,3 @@ def test_stdlib_path_copy_without_following_links_makes_a_link_where_it_can(tmp_
     link.copy(target, follow_symlinks=False)
 
     assert os.readlink(target) == "elsewhere"
-
-
-@stdlib_copy
-def test_stdlib_path_copy_reaches_a_file_uri(tmp_path):
-    pytest.importorskip("uritools")
-    from pathlib_next.uri.schemes.file import FileUri
-
-    source = tmp_path / "f.txt"
-    source.write_text("through a URI")
-    target = FileUri((tmp_path / "out.txt").as_uri())
-
-    source.copy(target)
-
-    assert (tmp_path / "out.txt").read_text() == "through a URI"

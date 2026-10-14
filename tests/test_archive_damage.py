@@ -12,18 +12,16 @@ import zipfile
 
 import pytest
 
-pytest.importorskip("uritools")
-
-from pathlib_next.uri import UriPath
+from pathlib_next.archive import TarPath, ZipPath
 from pathlib_next.archive._zip import _ZipBackend
 
 
-def _zip_uri(path, inner=""):
-    return f"zip:{path.as_uri()}!/{inner}"
+def _zip(path, inner=""):
+    return ZipPath(inner, archive=path)
 
 
-def _tar_uri(path, inner=""):
-    return f"tar:{path.as_uri()}!/{inner}"
+def _tar(path, inner=""):
+    return TarPath(inner, archive=path)
 
 
 def _make_zip(path, members, compression=zipfile.ZIP_DEFLATED):
@@ -64,7 +62,7 @@ def _declare_newer_zip_version(path):
 def test_a_member_whose_deflate_stream_is_damaged_reads_as_bad_zip_file(tmp_path):
     archive = _make_zip(tmp_path / "a.zip", {"m": b"hello world " * 400})
     _corrupt_deflate_stream(archive)
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     with pytest.raises(zipfile.BadZipFile):
         (root / "m").read_bytes()
     assert (root / "m").stat().st_size == len(b"hello world " * 400)
@@ -73,7 +71,7 @@ def test_a_member_whose_deflate_stream_is_damaged_reads_as_bad_zip_file(tmp_path
 def test_a_central_directory_declaring_an_unknown_version_is_a_bad_zip_file(tmp_path):
     archive = _make_zip(tmp_path / "a.zip", {"m": b"data"})
     _declare_newer_zip_version(archive)
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     with pytest.raises(zipfile.BadZipFile):
         root.exists()
     with pytest.raises(zipfile.BadZipFile):
@@ -95,7 +93,7 @@ def test_an_unsupported_compression_method_is_still_not_implemented(tmp_path):
                 struct.pack_into("<H", raw, at + offset, 99)
             at += 4
     archive.write_bytes(bytes(raw))
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     assert (root / "ok").read_bytes() == b"fine"
     with pytest.raises(NotImplementedError):
         (root / "odd").read_bytes()
@@ -123,7 +121,7 @@ def _damaged_tars(tmp_path):
 @pytest.mark.parametrize("which", ["cut gz", "cut xz", "gzip member CRC"])
 def test_a_damaged_compressed_tar_is_a_read_error_for_every_lookup(tmp_path, which):
     archive = _damaged_tars(tmp_path)[which]
-    root = UriPath(_tar_uri(archive))
+    root = _tar(archive)
     for call in (
         root.exists,
         lambda: list(root.iterdir()),
@@ -142,7 +140,7 @@ def test_a_stat_reads_one_view_of_the_archive_even_if_it_is_replaced_meanwhile(
     tmp_path, monkeypatch
 ):
     archive = _make_zip(tmp_path / "a.zip", {"keep": b"k", "flip": b"f"})
-    flip = UriPath(_zip_uri(archive, "flip"))
+    flip = _zip(archive, "flip")
     real = _ZipBackend._entries
     rewritten = []
 
@@ -169,8 +167,8 @@ def test_readers_never_see_anything_but_an_oserror_while_another_thread_rewrites
     escaped = []
 
     def reader():
-        flip = UriPath(_zip_uri(archive, "flip"))
-        keep = UriPath(_zip_uri(archive, "keep"))
+        flip = _zip(archive, "flip")
+        keep = _zip(archive, "keep")
         while not stop.is_set():
             for call in (flip.exists, flip.is_file, keep.read_bytes, keep.stat):
                 try:
@@ -183,7 +181,7 @@ def test_readers_never_see_anything_but_an_oserror_while_another_thread_rewrites
     readers = [threading.Thread(target=reader) for _ in range(3)]
     for thread in readers:
         thread.start()
-    writer = UriPath(_zip_uri(archive, "flip"))
+    writer = _zip(archive, "flip")
     try:
         for i in range(40):
             try:
@@ -210,7 +208,7 @@ def test_mutating_a_read_only_zip_is_refused_and_leaves_it_untouched(tmp_path):
     archive = _make_zip(tmp_path / "ro.zip", {"a": b"A", "b": b"B"})
     before = archive.read_bytes()
     os.chmod(archive, 0o444)
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     try:
         for call in (
             lambda: (root / "new").write_bytes(b"N"),
@@ -237,7 +235,7 @@ def test_a_write_replaces_the_archive_so_another_hard_link_keeps_the_old_one(
         os.link(archive, link)
     except (OSError, AttributeError, NotImplementedError):
         pytest.skip("the filesystem has no hard links")
-    (UriPath(_zip_uri(archive)) / "new").write_bytes(b"n")
+    (_zip(archive) / "new").write_bytes(b"n")
     with zipfile.ZipFile(archive) as zf:
         assert sorted(zf.namelist()) == ["a", "new"]
     with zipfile.ZipFile(link) as zf:
@@ -252,7 +250,7 @@ def test_a_new_member_is_deflated_and_an_overwritten_member_keeps_its_method(tmp
     with zipfile.ZipFile(archive, "w") as zf:
         zf.writestr("mimetype", b"application/x-first", zipfile.ZIP_STORED)
         zf.writestr("packed", b"p" * 50_000, zipfile.ZIP_DEFLATED)
-    root = UriPath(_zip_uri(archive))
+    root = _zip(archive)
     (root / "added").write_bytes(b"A" * 100_000)
     (root / "mimetype").write_bytes(b"application/x-second")
     (root / "packed").write_bytes(b"q" * 50_000)
@@ -267,7 +265,7 @@ def test_a_new_member_is_deflated_and_an_overwritten_member_keeps_its_method(tmp
 
 def test_the_first_member_of_a_new_archive_is_deflated(tmp_path):
     archive = tmp_path / "fresh.zip"
-    (UriPath(_zip_uri(archive)) / "a.txt").write_bytes(b"A" * 100_000)
+    (_zip(archive) / "a.txt").write_bytes(b"A" * 100_000)
     with zipfile.ZipFile(archive) as zf:
         (info,) = zf.infolist()
         assert zf.testzip() is None

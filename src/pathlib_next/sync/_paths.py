@@ -32,7 +32,7 @@ def _is_mount(path: Path) -> bool:
 
 
 def _child_name(path: Path) -> str:
-    # A directory child of a `UriPath` can end in "/", leaving `.name`
+    # A directory child of a URI path can end in "/", leaving `.name`
     # empty; its last real component is then the parent's name.
     return path.name or path.parent.name
 

@@ -10,11 +10,9 @@ import sys
 
 import pytest
 
-pytest.importorskip("uritools")
-
 REPO = pathlib.Path(__file__).resolve().parent.parent
 EXAMPLES = REPO / "examples"
-LOCAL = {"local_and_mem.py", "data_and_archive.py"}
+LOCAL = {"local_and_mem.py", "archive_members.py"}
 
 # Runs the example as `__main__` after making any connection or name lookup
 # end the process with a message the test can see.

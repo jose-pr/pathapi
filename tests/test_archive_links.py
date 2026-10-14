@@ -17,10 +17,8 @@ from pathlib import PurePosixPath
 
 import pytest
 
-pytest.importorskip("uritools")
-
 from pathlib_next import LocalPath
-from pathlib_next.uri import UriPath
+from pathlib_next.archive import TarPath, ZipPath
 from pathlib_next.archive import MAX_LINKS
 from pathlib_next.sync import PathSyncer
 
@@ -100,7 +98,7 @@ def _archive(tmp_path, fmt, entries=TREE, name="links"):
 
 
 def _root(path, fmt):
-    return UriPath(f"{fmt}:{path.as_uri()}!/")
+    return (ZipPath if fmt == "zip" else TarPath)(archive=path)
 
 
 @pytest.fixture(params=FORMATS)
@@ -294,7 +292,7 @@ def test_a_tar_hard_link_reads_as_the_file_and_is_no_symlink(tmp_path):
         info.type = tarfile.LNKTYPE
         info.linkname = "file.txt"
         archive.addfile(info)
-    hard = UriPath(f"tar:{path.as_uri()}!/hard")
+    hard = TarPath("hard", archive=path)
     assert not hard.is_symlink()
     assert hard.is_file()
     assert hard.stat().st_size == 5
@@ -342,7 +340,7 @@ def test_a_zip_entry_with_a_link_mode_but_made_elsewhere_is_a_file(tmp_path):
         info.create_system = 0
         info.external_attr = (stat.S_IFLNK | 0o777) << 16
         archive.writestr(info, b"target")
-    member = UriPath(f"zip:{path.as_uri()}!/not-a-link")
+    member = ZipPath("not-a-link", archive=path)
     assert not member.is_symlink()
     assert member.read_bytes() == b"target"
 
@@ -352,7 +350,7 @@ def test_a_zip_entry_with_a_link_mode_but_made_elsewhere_is_a_file(tmp_path):
 
 def _all_paths(root, **options):
     return [
-        (str(top.path), sorted(dirs), sorted(files))
+        (str(top), sorted(dirs), sorted(files))
         for top, dirs, files in root.walk(**options)
     ]
 
@@ -372,8 +370,8 @@ def test_a_walk_that_follows_links_does_not_enter_a_link_to_an_ancestor(tmp_path
     root = _root(_archive(tmp_path, fmt, LOOP, "loop"), fmt)
     seen = []
     for top, dirs, files in root.walk(follow_symlinks=True):
-        seen.append((str(top.path), sorted(dirs), sorted(files)))
-        assert top.as_uri().split("!/")[0] == root.as_uri().split("!/")[0]
+        seen.append((str(top), sorted(dirs), sorted(files)))
+        assert top.archive == root.archive
     assert seen == [
         ("", ["d"], ["file.txt"]),
         ("d", [], ["in.txt", "up"]),
@@ -381,7 +379,7 @@ def test_a_walk_that_follows_links_does_not_enter_a_link_to_an_ancestor(tmp_path
 
 
 def test_glob_lists_each_link_once_and_does_not_go_through_one(root):
-    found = sorted(str(path.path) for path in root.glob("**/*"))
+    found = sorted(str(path) for path in root.glob("**/*"))
     for name in LINKS:
         assert found.count(name) == 1, name
     assert not [path for path in found if path.startswith("ln_dir/")]
@@ -393,7 +391,7 @@ def test_glob_that_recurses_through_links_does_not_enter_a_link_to_an_ancestor(
     tmp_path, fmt
 ):
     root = _root(_archive(tmp_path, fmt, LOOP, "loop"), fmt)
-    found = sorted(str(path.path) for path in root.glob("**/*", recurse_symlinks=True))
+    found = sorted(str(path) for path in root.glob("**/*", recurse_symlinks=True))
     assert found == ["d", "d/in.txt", "d/up", "file.txt"]
 
 
