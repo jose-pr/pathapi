@@ -15,9 +15,11 @@ from ..protocols import (
     Identity,
     Listing,
     Move,
+    Owner,
     Remove,
     Stat,
     Symlink,
+    Utime,
 )
 from ._pure import Pathname
 
@@ -83,11 +85,13 @@ class Path(
     Copy,
     Identity,
     Create,
+    Chmod,
+    Owner,
     Symlink,
     Remove,
     Listing,
     Stat,
-    Chmod,
+    Utime,
     BinaryOpen,
 ):
     """Base class for manipulating paths with I/O."""

@@ -431,3 +431,10 @@ def test_concrete_local_downstream_rm_leaves_a_junction_when_told_to(tmp_path):
 
     assert (tmp_path / "target" / "keep.txt").read_text() == "PRECIOUS"
     assert (tmp_path / "tree" / "bind").exists()
+
+
+@pytest.mark.parametrize("name", ["owner", "group"])
+def test_local_path_keeps_stdlibs_owner_and_group(name):
+    local = _impl_module(pathlib_next.LocalPath, name)
+    assert local == "pathlib" or local.startswith("pathlib.")
+    assert _impl_module(DownstreamMemPath, name) == "pathlib_next.protocols.fs"

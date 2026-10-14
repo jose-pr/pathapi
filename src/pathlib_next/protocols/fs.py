@@ -10,7 +10,7 @@ from .. import _permissions, _stubs
 from ._errors import _os_error
 from ._info import _PathInfo
 
-__all__ = ["Chmod", "Create", "FileStatLike", "Stat"]
+__all__ = ["Chmod", "Create", "FileStatLike", "Owner", "Stat", "Utime"]
 
 
 class FileStatLike(_ty.Protocol):
@@ -173,38 +173,44 @@ class Stat(_ty.Protocol):
         return False
 
 
-class Chmod(_ty.Protocol):
-    """Composable protocol for objects supporting permission, owner and time
-    changes."""
+class Owner(Stat, _ty.Protocol):
+    """Reading and changing who owns a path. `owner()` and `group()` map the
+    `st_uid` and `st_gid` of `stat()` through `_user_name()` and
+    `_group_name()`; `chown()` calls the `_chown()` primitive."""
 
     __slots__ = ()
 
-    __primitives__ = ("chmod",)
+    __primitives__ = (("_chown", "chown"),)
+
+    def owner(self, *, follow_symlinks: bool = True) -> str:
+        """The name of the user that owns the path. `NotImplementedError`
+        when `stat()` carries no `st_uid` or the class does not map user ids
+        to names (`_user_name()`)."""
+        uid = getattr(self.stat(follow_symlinks=follow_symlinks), "st_uid", None)
+        if uid is None:
+            raise NotImplementedError("owner() requires stat() to provide st_uid")
+        return self._user_name(uid)
+
+    def group(self, *, follow_symlinks: bool = True) -> str:
+        """The name of the group that owns the path. `NotImplementedError`
+        when `stat()` carries no `st_gid` or the class does not map group ids
+        to names (`_group_name()`)."""
+        gid = getattr(self.stat(follow_symlinks=follow_symlinks), "st_gid", None)
+        if gid is None:
+            raise NotImplementedError("group() requires stat() to provide st_gid")
+        return self._group_name(gid)
 
     @_stubs.primitive
-    def chmod(self, mode: int | str, *, follow_symlinks: bool = True):
-        """
-        Change the permissions of the path, like os.chmod().
+    def _user_name(self, uid: int) -> str:
+        """Backend primitive behind `owner()`: the name of user `uid` (a
+        stub: `NotImplementedError`)."""
+        return _stubs._unimplemented("_user_name")
 
-        Extension: `mode` may be a `str`, which is parsed as **octal**
-        (`"0755"`, `"755"` and `0o755` all mean the same thing) -- see
-        `providers.parse_mode()` for why the base is never left implicit.
-
-        Every implementation normalizes its argument through
-        `providers.parse_mode()` on entry. Unlike `symlink_to`/`chown`, `chmod` is
-        overridden directly by each backend (each has real per-scheme logic
-        -- version shims, capability gates, a `SITE CHMOD` command), so
-        there is no single wrapper to hang the conversion on; the shared
-        helper is what keeps the base from drifting between them.
-        """
-        return _stubs._unimplemented("chmod")
-
-    def lchmod(self, mode: int | str):
-        """
-        Like chmod(), except if the path points to a symlink, the symlink's
-        permissions are changed, rather than its target's.
-        """
-        self.chmod(mode, follow_symlinks=False)
+    @_stubs.primitive
+    def _group_name(self, gid: int) -> str:
+        """Backend primitive behind `group()`: the name of group `gid` (a
+        stub: `NotImplementedError`)."""
+        return _stubs._unimplemented("_group_name")
 
     @_stubs.primitive
     def _chown(
@@ -223,16 +229,6 @@ class Chmod(_ty.Protocol):
         the caller's input is `chown()`'s job, not the primitive's.
         """
         return _stubs._unimplemented("_chown")
-
-    @_stubs.primitive
-    def _utime(self, *, atime: float | None = None, mtime: float | None = None) -> None:
-        """Backend primitive: set the access and/or modification time of the
-        entry, in seconds since the epoch. `None` leaves that time alone. A
-        backend that keeps no such time (or no atime, or whole seconds only)
-        sets what it can and ignores the rest; one that cannot set a time at
-        all raises `NotImplementedError`, which is the default. `touch()` of an
-        existing file and `PathSyncer(preserve_mtime=True)` call it."""
-        return _stubs._unimplemented("_utime")
 
     def chown(
         self,
@@ -266,7 +262,61 @@ class Chmod(_ty.Protocol):
         return self._chown(uid, gid, follow_symlinks=follow_symlinks)
 
 
-class Create(Stat, Chmod, _ty.Protocol):
+class Utime(_ty.Protocol):
+    """Setting the access and modification times of a path."""
+
+    __slots__ = ()
+
+    __primitives__ = ("_utime",)
+
+    @_stubs.primitive
+    def _utime(self, *, atime: float | None = None, mtime: float | None = None) -> None:
+        """Backend primitive: set the access and/or modification time of the
+        entry, in seconds since the epoch. `None` leaves that time alone. A
+        backend that keeps no such time (or no atime, or whole seconds only)
+        sets what it can and ignores the rest; one that cannot set a time at
+        all raises `NotImplementedError`, which is the default. `touch()` of an
+        existing file and `PathSyncer(preserve_mtime=True)` call it."""
+        return _stubs._unimplemented("_utime")
+
+
+class Chmod(Owner, Utime, _ty.Protocol):
+    """Changing the permissions of a path. It also inherits `Owner` and
+    `Utime`, which it documented before they were separate protocols, so
+    `chown()`, `_chown()` and `_utime()` stay reachable from it;
+    `supports(x, Chmod)` asks for `chmod()` only."""
+
+    __slots__ = ()
+
+    __primitives__ = ("chmod",)
+
+    @_stubs.primitive
+    def chmod(self, mode: int | str, *, follow_symlinks: bool = True):
+        """
+        Change the permissions of the path, like os.chmod().
+
+        Extension: `mode` may be a `str`, which is parsed as **octal**
+        (`"0755"`, `"755"` and `0o755` all mean the same thing) -- see
+        `providers.parse_mode()` for why the base is never left implicit.
+
+        Every implementation normalizes its argument through
+        `providers.parse_mode()` on entry. Unlike `symlink_to`/`chown`, `chmod` is
+        overridden directly by each backend (each has real per-scheme logic
+        -- version shims, capability gates, a `SITE CHMOD` command), so
+        there is no single wrapper to hang the conversion on; the shared
+        helper is what keeps the base from drifting between them.
+        """
+        return _stubs._unimplemented("chmod")
+
+    def lchmod(self, mode: int | str):
+        """
+        Like chmod(), except if the path points to a symlink, the symlink's
+        permissions are changed, rather than its target's.
+        """
+        self.chmod(mode, follow_symlinks=False)
+
+
+class Create(Chmod, Utime, _ty.Protocol):
     """Creating a directory or a file: `mkdir()` and `touch()` on top of the
     `_mkdir()` primitive. `touch()` also uses `open()` (`BinaryOpen`) and
     `unlink()` (`Remove`)."""

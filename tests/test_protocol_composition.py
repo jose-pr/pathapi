@@ -16,13 +16,24 @@ from pathlib_next.protocols import (
     Identity,
     Listing,
     Move,
+    Owner,
     Remove,
     Stat,
     Symlink,
+    Utime,
 )
 
 OWNERS = {
     "info": Stat,
+    "owner": Owner,
+    "group": Owner,
+    "chown": Owner,
+    "_chown": Owner,
+    "_user_name": Owner,
+    "_group_name": Owner,
+    "_utime": Utime,
+    "chmod": Chmod,
+    "lchmod": Chmod,
     "is_junction": Stat,
     "is_mount": Stat,
     "is_dir_binding": Stat,
@@ -90,7 +101,9 @@ def test_copy_resolves_before_binary_open_in_every_path_class():
 
 def test_the_bases_of_the_protocols_are_the_ones_their_bodies_call():
     bases = {
-        Create: {Stat, Chmod},
+        Owner: {Stat},
+        Chmod: {Owner, Utime},
+        Create: {Chmod, Utime},
         Listing: {Stat},
         Remove: {Listing},
         Symlink: {Remove},
@@ -105,16 +118,19 @@ def test_the_bases_of_the_protocols_are_the_ones_their_bodies_call():
 
 def test_path_mro_lists_the_protocols_in_the_order_of_its_class_statement():
     names = [cls.__name__ for cls in Path.__mro__]
-    assert names[:11] == [
+    assert names[:14] == [
         "Path",
         "Pathname",
         "Move",
         "Copy",
         "Identity",
         "Create",
+        "Chmod",
+        "Owner",
         "Symlink",
         "Remove",
         "Listing",
         "Stat",
-        "Chmod",
+        "Utime",
+        "BinaryOpen",
     ]

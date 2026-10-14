@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .fs import Chmod, Create, FileStatLike, Stat
+from .fs import Chmod, Create, FileStatLike, Owner, Stat, Utime
 from .io import BinaryOpen
 from .checksum import NativeChecksum
 from .pure import Named
@@ -20,9 +20,11 @@ __all__ = [
     "Move",
     "Named",
     "NativeChecksum",
+    "Owner",
     "Remove",
     "Stat",
     "Symlink",
+    "Utime",
     "capabilities",
     "supports",
 ]
