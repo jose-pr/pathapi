@@ -108,6 +108,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   importing its module or loading its entry point first, and raises
   `ValueError` naming the registered schemes when there is none. They answer
   "why did `UriPath("x://...")` give a plain `UriPath`" without a dispatch.
+- **`pathlib_next.providers.TreePath`**, the base `FTPPath` and the archive
+  paths are built on, for a path whose names are POSIX segments below the
+  root of a tree a backend serves.
 - **`pathlib_next.providers.name_stem()`, `name_suffix()` and
   `name_suffixes()`.** One path component split into stem and suffix as
   `pathlib` of the running interpreter splits it, for a class that computes

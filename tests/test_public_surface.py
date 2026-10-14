@@ -91,6 +91,7 @@ EXPORTS = {
         "DiscardOnError",
         "LRU",
         "OfferedOnce",
+        "TreePath",
         "UNCHANGED",
         "as_error_handler",
         "as_error_predicate",
