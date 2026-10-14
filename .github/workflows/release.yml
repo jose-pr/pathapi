@@ -160,7 +160,8 @@ jobs:
           for name in ("py.typed", "AGENTS.md", "README.md"):
               assert (root / name).is_file(), "the wheel does not ship %s" % name
           assert not (root / "uri").is_dir(), "the wheel ships the removed URI layer"
-          assert requires("pathlib-next") is None, "the wheel declares a dependency"
+          required = [r for r in requires("pathlib-next") or [] if "extra ==" not in r]
+          assert required == [], "the wheel declares a dependency: %s" % required
           found = entry_points()
           if hasattr(found, "select"):
               transports = list(found.select(group="pathlib_next.http_transports"))
