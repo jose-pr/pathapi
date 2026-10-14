@@ -346,7 +346,10 @@ Base class for I/O paths.
 - `touch()` — `FileExistsError` when `exist_ok=False`
   and the path exists; never truncates; creates with `open("x")` (falls
   back to `"w"` when `x` is unsupported); `chmod(mode)` only when `mode` is
-  passed (unmasked); sets an existing file's access and modification times
+  passed (unmasked), and a class that cannot chmod (`NotImplementedError`)
+  raises it and removes the file it created, so a mode asked for is never
+  dropped; an existing file is left as it is, mode included, as `pathlib`
+  does; sets an existing file's access and modification times
   to now through `_utime()`, and leaves them as they are where the class
   cannot set one (`NotImplementedError`). `LocalPath` uses pathlib's
   `touch()`.

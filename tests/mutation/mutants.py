@@ -1072,6 +1072,23 @@ mutant(
 # --- the core's two documented-behaviour guards -------------------------------
 
 mutant(
+    "touch-drops-a-mode-the-backend-cannot-apply",
+    "path/_path.py",
+    "                # The caller asked for a mode this backend cannot apply: leave\n"
+    "                # no file that has other permissions than the ones asked for.\n"
+    "                try:\n"
+    "                    self.unlink()\n"
+    "                except (OSError, NotImplementedError):\n"
+    "                    pass\n"
+    "                raise\n",
+    "                pass\n",
+    (
+        "tests/test_io_parity.py::test_generic_touch_with_a_mode_the_backend_cannot_apply_raises",
+        "tests/test_io_parity.py::test_generic_touch_with_a_mode_the_backend_cannot_apply_leaves_no_file",
+    ),
+    "touch(mode=...) on a backend without chmod() returns as if the mode had been applied",
+)
+mutant(
     "pathname-is-an-os-pathlike-without-fspath",
     "path/_pure.py",
     "class Pathname(_ty.Generic[_P]):",

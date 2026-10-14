@@ -288,6 +288,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `NotImplementedError` from `os.fspath()`, ask `isinstance(path, os.PathLike)`
   instead of assuming it, and define `__fspath__` on a class of your own that has
   a local name.
+- **`touch(mode=...)` raises where the mode cannot be applied (takes effect in
+  0.10.0).** `MemPath("/f").touch(mode=0o600)`, and `touch()` with a mode on any
+  class without `chmod()`, created the file and returned `None`, dropping the
+  mode without a word. It now raises `NotImplementedError` and removes the file it
+  created. An existing file is left as it is, its mode included, as `pathlib`
+  does. What to do: call `touch()` without `mode` on such a class, and `chmod()`
+  where the class has one.
 
 ## [0.9.14] - 2026-10-12
 

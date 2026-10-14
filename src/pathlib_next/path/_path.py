@@ -552,9 +552,12 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
         file's mtime:
 
         - `mode` is applied with `chmod()` only when passed explicitly, and
-          then verbatim: a remote server's umask is unknowable. The default
-          (`None`) leaves a new file with the permissions the backend gives
-          it, instead of chmod'ing it to a world-writable 0o666.
+          then verbatim: a remote server's umask is unknowable. A backend
+          that cannot chmod raises `NotImplementedError` and the file it
+          created is removed again, so a mode that was asked for is never
+          silently dropped. The default (`None`) leaves a new file with the
+          permissions the backend gives it, instead of chmod'ing it to a
+          world-writable 0o666.
         - An existing file's access and modification times are set to the
           current time through `_utime()`; a backend that cannot set a time
           leaves the file as it is, since rewriting the content to bump it
@@ -595,7 +598,13 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
             try:
                 self.chmod(mode)
             except NotImplementedError:
-                pass
+                # The caller asked for a mode this backend cannot apply: leave
+                # no file that has other permissions than the ones asked for.
+                try:
+                    self.unlink()
+                except (OSError, NotImplementedError):
+                    pass
+                raise
 
     @_stubs.notimplemented
     def _mkdir(self, mode: int): ...

@@ -50,6 +50,25 @@ def test_generic_touch_applies_an_explicit_mode_to_a_new_file():
     assert _chmod_calls(root) == [0o600]
 
 
+def test_generic_touch_with_a_mode_the_backend_cannot_apply_raises():
+    root = MemPath("/")
+    with pytest.raises(NotImplementedError):
+        (root / "flag").touch(mode=0o600)
+
+
+def test_generic_touch_with_a_mode_the_backend_cannot_apply_leaves_no_file():
+    root = MemPath("/")
+    with pytest.raises(NotImplementedError):
+        (root / "flag").touch(mode=0o600, exist_ok=False)
+    assert not (root / "flag").exists()
+
+
+def test_generic_touch_without_a_mode_needs_no_chmod():
+    root = MemPath("/")
+    (root / "flag").touch()
+    assert (root / "flag").exists()
+
+
 def test_generic_touch_does_not_chmod_an_existing_file():
     root = _ChmodRecordingMemPath("/")
     f = root / "flag"
