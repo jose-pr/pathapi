@@ -4,444 +4,162 @@
   "suite": "default",
   "source": "ci",
   "note": null,
-  "created_utc": "2026-10-12T09:06:10+00:00",
+  "created_utc": "2026-10-14T12:48:47+00:00",
   "package": {
     "name": "pathlib-next",
-    "version": "0.9.14"
+    "version": "0.10.0"
   },
   "git": {
-    "commit": "901cfa24620263836ca73c59b2aa5f7f84888e49",
+    "commit": "2f2113583f390355ccfffbb617fda267250261d1",
     "dirty": false
   },
   "python": "CPython 3.14.7",
   "interpreter": "3.14-darwin-universal2",
   "processor": "Darwin-arm64",
   "cpu_count": 3,
-  "env": {
-    "PATHLIB_NEXT_BENCH_SFTP_RECURSIVE": "0"
-  },
+  "env": {},
   "metrics": {
-    "http: HttpPath glob('**/*.html') 20 files": {
-      "group": "http",
-      "min_ms": 13.983362,
-      "median_ms": 14.027858,
-      "max_ms": 15.810258,
-      "samples": 3,
-      "calls_per_sample": 10
-    },
-    "http: HttpPath walk() 20 files": {
-      "group": "http",
-      "min_ms": 12.047408,
-      "median_ms": 13.128688,
-      "max_ms": 15.461138,
-      "samples": 3,
-      "calls_per_sample": 10
-    },
-    "http: listing parse, Apache <pre>, 1000 entries": {
-      "group": "http",
-      "min_ms": 21.662419,
-      "median_ms": 23.632852,
-      "max_ms": 25.279754,
-      "samples": 3,
-      "calls_per_sample": 20
-    },
-    "http: listing parse, nginx <table>, 1000 entries": {
-      "group": "http",
-      "min_ms": 41.262815,
-      "median_ms": 44.356656,
-      "max_ms": 55.201235,
-      "samples": 3,
-      "calls_per_sample": 20
-    },
     "local: LocalPath construct path (10k)": {
       "group": "local",
-      "min_ms": 0.000469,
-      "median_ms": 0.000641,
-      "max_ms": 0.000924,
+      "min_ms": 0.000386,
+      "median_ms": 0.000393,
+      "max_ms": 0.000451,
       "samples": 3,
       "calls_per_sample": 10000
     },
     "local: LocalPath glob('**/*.txt') 240 files": {
       "group": "local",
-      "min_ms": 3.367458,
-      "median_ms": 4.579708,
-      "max_ms": 4.735542,
+      "min_ms": 3.086417,
+      "median_ms": 3.123,
+      "max_ms": 3.606083,
       "samples": 3,
       "calls_per_sample": 1
     },
     "local: LocalPath iterdir() 8 entries": {
       "group": "local",
-      "min_ms": 0.0225,
-      "median_ms": 0.024875,
-      "max_ms": 0.038209,
+      "min_ms": 0.024292,
+      "median_ms": 0.027166,
+      "max_ms": 0.032083,
       "samples": 5,
       "calls_per_sample": 1
     },
     "local: LocalPath join path (10k)": {
       "group": "local",
-      "min_ms": 0.001596,
-      "median_ms": 0.002022,
-      "max_ms": 0.002108,
+      "min_ms": 0.001294,
+      "median_ms": 0.001314,
+      "max_ms": 0.001348,
       "samples": 3,
       "calls_per_sample": 10000
     },
     "local: LocalPath read_bytes() 64 KiB": {
       "group": "local",
-      "min_ms": 0.016917,
-      "median_ms": 0.02025,
-      "max_ms": 0.0285,
+      "min_ms": 0.015542,
+      "median_ms": 0.017166,
+      "max_ms": 0.022666,
       "samples": 5,
       "calls_per_sample": 1
     },
     "local: LocalPath stat() (timeit)": {
       "group": "local",
-      "min_ms": 0.003083,
-      "median_ms": 0.006543,
-      "max_ms": 0.035816,
+      "min_ms": 0.002199,
+      "median_ms": 0.002255,
+      "max_ms": 0.002302,
       "samples": 5,
       "calls_per_sample": 2000
     },
     "local: LocalPath stat() file (2k)": {
       "group": "local",
-      "min_ms": 0.002919,
-      "median_ms": 0.004379,
-      "max_ms": 0.005446,
+      "min_ms": 0.002699,
+      "median_ms": 0.002854,
+      "max_ms": 0.002978,
       "samples": 3,
       "calls_per_sample": 2000
     },
     "local: pathlib.Path construct path (10k)": {
       "group": "local",
-      "min_ms": 0.000523,
-      "median_ms": 0.000578,
-      "max_ms": 0.000837,
+      "min_ms": 0.000397,
+      "median_ms": 0.000405,
+      "max_ms": 0.000454,
       "samples": 3,
       "calls_per_sample": 10000
     },
     "local: pathlib.Path glob('**/*.txt') 240 files": {
       "group": "local",
-      "min_ms": 2.340459,
-      "median_ms": 2.399042,
-      "max_ms": 2.812875,
+      "min_ms": 1.853292,
+      "median_ms": 1.873792,
+      "max_ms": 1.878666,
       "samples": 3,
       "calls_per_sample": 1
     },
     "local: pathlib.Path iterdir() 8 entries": {
       "group": "local",
-      "min_ms": 0.021416,
-      "median_ms": 0.022,
-      "max_ms": 0.026458,
+      "min_ms": 0.0225,
+      "median_ms": 0.0285,
+      "max_ms": 0.113334,
       "samples": 5,
       "calls_per_sample": 1
     },
     "local: pathlib.Path join path (10k)": {
       "group": "local",
-      "min_ms": 0.002139,
-      "median_ms": 0.002197,
-      "max_ms": 0.00235,
+      "min_ms": 0.001397,
+      "median_ms": 0.001517,
+      "max_ms": 0.001721,
       "samples": 3,
       "calls_per_sample": 10000
     },
     "local: pathlib.Path read_bytes() 64 KiB": {
       "group": "local",
-      "min_ms": 0.01575,
-      "median_ms": 0.015833,
-      "max_ms": 0.020667,
+      "min_ms": 0.014708,
+      "median_ms": 0.015667,
+      "max_ms": 0.018167,
       "samples": 5,
       "calls_per_sample": 1
     },
     "local: pathlib.Path stat() (timeit)": {
       "group": "local",
-      "min_ms": 0.002454,
-      "median_ms": 0.003252,
-      "max_ms": 0.016951,
+      "min_ms": 0.002165,
+      "median_ms": 0.0022,
+      "max_ms": 0.002299,
       "samples": 5,
       "calls_per_sample": 2000
     },
     "local: pathlib.Path stat() file (2k)": {
       "group": "local",
-      "min_ms": 0.004016,
-      "median_ms": 0.00446,
-      "max_ms": 0.004837,
+      "min_ms": 0.002494,
+      "median_ms": 0.002698,
+      "max_ms": 0.002935,
       "samples": 3,
       "calls_per_sample": 2000
     },
     "mem: MemPath glob('**/*.txt') 1k files": {
       "group": "mem",
-      "min_ms": 9.592204,
-      "median_ms": 9.929296,
-      "max_ms": 10.728683,
+      "min_ms": 5.344452,
+      "median_ms": 5.409902,
+      "max_ms": 5.612979,
       "samples": 3,
       "calls_per_sample": 20
     },
-    "sftp: asyncssh cold connect + stat()": {
-      "group": "sftp",
-      "min_ms": 11.450875,
-      "median_ms": 15.032125,
-      "max_ms": 18.517083,
-      "samples": 3,
-      "calls_per_sample": 1
-    },
-    "sftp: asyncssh copy() single 256 KiB file": {
-      "group": "sftp",
-      "min_ms": 22.594416,
-      "median_ms": 22.98875,
-      "max_ms": 23.54525,
-      "samples": 3,
-      "calls_per_sample": 1
-    },
-    "sftp: asyncssh glob('**/*.txt') 80 files": {
-      "group": "sftp",
-      "min_ms": 114.862292,
-      "median_ms": 118.417646,
-      "max_ms": 121.973,
-      "samples": 2,
-      "calls_per_sample": 1
-    },
-    "sftp: asyncssh iterdir() 72 entries": {
-      "group": "sftp",
-      "min_ms": 7.918333,
-      "median_ms": 9.87975,
-      "max_ms": 14.087791,
-      "samples": 3,
-      "calls_per_sample": 1
-    },
-    "sftp: asyncssh mkdir() leaf dir": {
-      "group": "sftp",
-      "min_ms": 0.825958,
-      "median_ms": 1.258875,
-      "max_ms": 1.665417,
-      "samples": 3,
-      "calls_per_sample": 1
-    },
-    "sftp: asyncssh read_bytes() 64-file batch": {
-      "group": "sftp",
-      "min_ms": 217.419542,
-      "median_ms": 284.89675,
-      "max_ms": 352.373959,
-      "samples": 2,
-      "calls_per_sample": 1
-    },
-    "sftp: asyncssh read_bytes() small file": {
-      "group": "sftp",
-      "min_ms": 2.453083,
-      "median_ms": 3.217459,
-      "max_ms": 11.637292,
-      "samples": 5,
-      "calls_per_sample": 1
-    },
-    "sftp: asyncssh rename() file": {
-      "group": "sftp",
-      "min_ms": 0.8075,
-      "median_ms": 1.078667,
-      "max_ms": 1.876875,
-      "samples": 3,
-      "calls_per_sample": 1
-    },
-    "sftp: asyncssh rm(recursive=True) 9-file tree": {
-      "group": "sftp",
-      "min_ms": 39.46225,
-      "median_ms": 39.46225,
-      "max_ms": 39.46225,
-      "samples": 1,
-      "calls_per_sample": 1
-    },
-    "sftp: asyncssh stat() 64-file batch": {
-      "group": "sftp",
-      "min_ms": 59.359667,
-      "median_ms": 73.958334,
-      "max_ms": 88.557,
-      "samples": 2,
-      "calls_per_sample": 1
-    },
-    "sftp: asyncssh unlink() file": {
-      "group": "sftp",
-      "min_ms": 1.728292,
-      "median_ms": 2.243167,
-      "max_ms": 2.664292,
-      "samples": 3,
-      "calls_per_sample": 1
-    },
-    "sftp: asyncssh walk() 80 files": {
-      "group": "sftp",
-      "min_ms": 76.345916,
-      "median_ms": 85.134937,
-      "max_ms": 93.923958,
-      "samples": 2,
-      "calls_per_sample": 1
-    },
-    "sftp: asyncssh warm stat()": {
-      "group": "sftp",
-      "min_ms": 1.220125,
-      "median_ms": 1.383792,
-      "max_ms": 2.839875,
-      "samples": 5,
-      "calls_per_sample": 1
-    },
-    "sftp: asyncssh write_bytes() 256 KiB": {
-      "group": "sftp",
-      "min_ms": 7.76775,
-      "median_ms": 10.049833,
-      "max_ms": 10.268,
-      "samples": 3,
-      "calls_per_sample": 1
-    },
-    "sftp: paramiko cold connect + stat()": {
-      "group": "sftp",
-      "min_ms": 9.251166,
-      "median_ms": 10.637417,
-      "max_ms": 12.420584,
-      "samples": 3,
-      "calls_per_sample": 1
-    },
-    "sftp: paramiko copy() single 256 KiB file": {
-      "group": "sftp",
-      "min_ms": 24.611833,
-      "median_ms": 25.575917,
-      "max_ms": 25.761,
-      "samples": 3,
-      "calls_per_sample": 1
-    },
-    "sftp: paramiko glob('**/*.txt') 80 files": {
-      "group": "sftp",
-      "min_ms": 56.604834,
-      "median_ms": 68.786583,
-      "max_ms": 80.968333,
-      "samples": 2,
-      "calls_per_sample": 1
-    },
-    "sftp: paramiko iterdir() 72 entries": {
-      "group": "sftp",
-      "min_ms": 4.057583,
-      "median_ms": 5.5435,
-      "max_ms": 5.860125,
-      "samples": 3,
-      "calls_per_sample": 1
-    },
-    "sftp: paramiko mkdir() leaf dir": {
-      "group": "sftp",
-      "min_ms": 0.483667,
-      "median_ms": 0.953958,
-      "max_ms": 0.990334,
-      "samples": 3,
-      "calls_per_sample": 1
-    },
-    "sftp: paramiko read_bytes() 64-file batch": {
-      "group": "sftp",
-      "min_ms": 115.20425,
-      "median_ms": 151.50427,
-      "max_ms": 187.804291,
-      "samples": 2,
-      "calls_per_sample": 1
-    },
-    "sftp: paramiko read_bytes() small file": {
-      "group": "sftp",
-      "min_ms": 1.288042,
-      "median_ms": 1.877583,
-      "max_ms": 3.882083,
-      "samples": 5,
-      "calls_per_sample": 1
-    },
-    "sftp: paramiko rename() file": {
-      "group": "sftp",
-      "min_ms": 0.936708,
-      "median_ms": 1.566875,
-      "max_ms": 1.913958,
-      "samples": 3,
-      "calls_per_sample": 1
-    },
-    "sftp: paramiko rm(recursive=True) 9-file tree": {
-      "group": "sftp",
-      "min_ms": 19.95525,
-      "median_ms": 19.95525,
-      "max_ms": 19.95525,
-      "samples": 1,
-      "calls_per_sample": 1
-    },
-    "sftp: paramiko stat() 64-file batch": {
-      "group": "sftp",
-      "min_ms": 33.716625,
-      "median_ms": 38.921208,
-      "max_ms": 44.125792,
-      "samples": 2,
-      "calls_per_sample": 1
-    },
-    "sftp: paramiko unlink() file": {
-      "group": "sftp",
-      "min_ms": 0.4905,
-      "median_ms": 0.938458,
-      "max_ms": 1.356583,
-      "samples": 3,
-      "calls_per_sample": 1
-    },
-    "sftp: paramiko walk() 80 files": {
-      "group": "sftp",
-      "min_ms": 36.339042,
-      "median_ms": 65.380896,
-      "max_ms": 94.42275,
-      "samples": 2,
-      "calls_per_sample": 1
-    },
-    "sftp: paramiko warm stat()": {
-      "group": "sftp",
-      "min_ms": 0.38475,
-      "median_ms": 0.554542,
-      "max_ms": 1.240125,
-      "samples": 5,
-      "calls_per_sample": 1
-    },
-    "sftp: paramiko write_bytes() 256 KiB": {
-      "group": "sftp",
-      "min_ms": 9.612167,
-      "median_ms": 11.414166,
-      "max_ms": 13.358125,
-      "samples": 3,
-      "calls_per_sample": 1
-    },
-    "uri: Uri() construct, same literal": {
-      "group": "uri",
-      "min_ms": 0.001595,
-      "median_ms": 0.001707,
-      "max_ms": 0.00235,
+    "mem: path join": {
+      "group": "mem",
+      "min_ms": 0.002463,
+      "median_ms": 0.002495,
+      "max_ms": 0.003407,
       "samples": 5,
       "calls_per_sample": 10000
     },
-    "uri: parse+compose, unique URIs": {
-      "group": "uri",
-      "min_ms": 0.025865,
-      "median_ms": 0.028618,
-      "max_ms": 0.03156,
-      "samples": 5,
-      "calls_per_sample": 5000
-    },
-    "uri: parse, unique URIs, forced": {
-      "group": "uri",
-      "min_ms": 0.010892,
-      "median_ms": 0.012784,
-      "max_ms": 0.016001,
-      "samples": 5,
-      "calls_per_sample": 5000
-    },
-    "uri: path join": {
-      "group": "uri",
-      "min_ms": 0.003346,
-      "median_ms": 0.00369,
-      "max_ms": 0.004879,
+    "mem: segments + name access": {
+      "group": "mem",
+      "min_ms": 5.8e-05,
+      "median_ms": 5.9e-05,
+      "max_ms": 6e-05,
       "samples": 5,
       "calls_per_sample": 10000
     },
-    "uri: segments + name access": {
-      "group": "uri",
-      "min_ms": 8.1e-05,
-      "median_ms": 9.3e-05,
-      "max_ms": 0.000117,
-      "samples": 5,
-      "calls_per_sample": 10000
-    },
-    "uri: suffix + stem access": {
-      "group": "uri",
-      "min_ms": 4.6e-05,
-      "median_ms": 4.9e-05,
-      "max_ms": 6.6e-05,
+    "mem: suffix + stem access": {
+      "group": "mem",
+      "min_ms": 0.000283,
+      "median_ms": 0.000286,
+      "max_ms": 0.000295,
       "samples": 5,
       "calls_per_sample": 10000
     }
