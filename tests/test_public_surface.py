@@ -188,7 +188,7 @@ def _core_modules():
     found = set()
     for path in PACKAGE.rglob("*.py"):
         parts = path.relative_to(PACKAGE).with_suffix("").parts
-        if "__pycache__" in parts:
+        if "__pycache__" in parts or parts[:3] == ("http", "testing", "suite"):
             continue
         if parts[-1] == "__init__":
             parts = parts[:-1]
@@ -414,6 +414,8 @@ def test_every_module_postpones_the_evaluation_of_annotations():
     without = sorted(
         str(path.relative_to(PACKAGE))
         for path in PACKAGE.rglob("*.py")
+        # The transport suite's own test files, copied into a wheel.
+        if path.relative_to(PACKAGE).parts[:3] != ("http", "testing", "suite")
         if "from __future__ import annotations" not in path.read_text(encoding="utf-8")
     )
     assert without == []

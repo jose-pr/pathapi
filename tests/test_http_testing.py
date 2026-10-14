@@ -133,6 +133,8 @@ def test_the_built_wheel_carries_the_suite_and_the_package_around_it(tmp_path):
 
 
 def test_a_checkout_runs_the_suite_from_its_transport_directory():
+    if REPO / "src" not in pathlib.Path(http_testing.__file__).resolve().parents:
+        pytest.skip("the package is installed, not a checkout")
     assert http_testing.suite_directory() == SUITE
 
 
