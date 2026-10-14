@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+`pathlib-next` 0.10.0 is the core alone: the path classes, `pathlib_next.http`,
+`FTPPath` and the archive paths, with no dependency, no extra and no console
+script. The URI layer, every scheme that needs a library, and the `uripath`
+command are distributions of their own that depend on it. Under *Changed*, the
+migration comes in this order: the table of names, then every change of
+behaviour with what to do about it.
+
 ### Added
 - **`pathlib_next.http`: HTTP requests on the standard library, with a
   transport you can replace, and no URI.** `import pathlib_next.http` needs no
@@ -43,32 +50,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   files ship in the wheel. It is testing support and not part of the stable
   API: its contents, including test names, fixtures and helper signatures, may
   change in any release, and `pathlib_next.http` never imports it.
-- **`http:`, `https:`, `dav:`, `davs:`, `github:`, `gitlab:` and `git:` run on
-  the standard library, through a transport you can replace.** Nothing else
-  needs installing: `pip install "pathlib-next[uri]"` is enough, and
-  `import pathlib_next.uri.schemes.http` imports no third-party library. A
-  transport is any object with `send(method, url, *, headers, body=None,
-  timeout, stream=False)` that returns an `HTTPResponse` and a `close()`.
-  Three names are new in `pathlib_next.uri.schemes.http`:
-  `HTTPTransport(*, ssl_context=None, verify=True, proxies=None)`, the
-  built-in transport on `http.client`; `RequestsTransport(session=None,
-  **requests_args)`, which sends with a `requests.Session`; and
-  `HTTPResponse` (`status`, `reason`, `headers`, `url`, `read()`,
-  `iter_bytes()`, `close()`). `path.with_transport(transport, headers=None,
-  timeout=(10, 60), write_method="PUT", append_mode="rewrite")` installs a
-  backend over any transport, and `HttpBackend` and `RepoBackend` take
-  `transport=`. `HTTPTransport` verifies `https:` against `ssl_context`, else
-  the system trust store; `verify=False` is the one way to turn that off. It
-  keeps one idle connection per thread and server (at most 8; one the server
-  closed is replaced before anything is sent on it, and only a repeatable
-  request is sent again after a connection drops mid-request), decodes `gzip`
-  and `deflate` bodies in bounded steps, and takes `proxies=` as an object
-  indexed with the request URL that returns a proxy, an order of proxies or
-  `None`, with `KeyError` for no opinion (a proxy resolver of that shape
-  works as it is, and none is imported). Without `proxies=` it reads `HTTP_PROXY`,
-  `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY`. `PATHLIB_NEXT_HTTP_TRANSPORT`
-  (`builtin` or `requests`) names the transport a backend builds when it is
-  not given one.
 - **`pathlib_next.ftp`: `FTPPath` and `FTPBackend`, an FTP tree that needs no
   URI and no extra.** `FTPPath("/pub/x", host="h", user="u", tls=True)` builds
   the path's own `FTPBackend`; `FTPPath("/pub/x", backend=backend)` shares one
@@ -79,10 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   thread, is a context manager, and `close()` ends every connection it holds.
   `str()` is the remote path, `repr()` names the endpoint and never shows a
   password, and two paths are one tree when they share a backend or name the
-  same host, port, account and security. `ftp:` and `ftps:` paths now run on
-  this class: their behavior is unchanged, and an error still names the URI.
-  `pathlib_next.FTPPath` is imported on first use, so `import pathlib_next`
-  still loads neither `ftplib` nor `ssl`.
+  same host, port, account and security. `pathlib_next.FTPPath` is imported on
+  first use, so `import pathlib_next` still loads neither `ftplib` nor `ssl`.
 - **`pathlib_next.archive`: `ZipPath`, `TarPath` and `ArchivePath`, the members
   of an archive file that is any `Path`, with no URI and no extra.**
   `ZipPath("d/x", archive="a.zip")` takes the archive as a `Path`, or a `str`
@@ -95,19 +74,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `rm(recursive=True)`, `batch()`); every other archive is read-only, in
   memory or on any other `Path`. `str()` is the member path, `repr()` names the
   archive, and `as_uri()` is `zip:<archive uri>!/<member>`.
-  `ArchivePath.backend_for()` gives the handle to pass as `archive=`. `zip:`,
-  `tar:` and `archive:` paths now run on these classes: their behavior is
-  unchanged, and an error still names the URI. `pathlib_next.ZipPath`,
-  `TarPath` and `ArchivePath` are imported on first use.
-- **`UriPath.schemes()` and `UriPath.scheme_class(name)` read the scheme
-  registry.** `schemes()` returns the registered names, sorted: every class
-  defined so far, every built-in scheme and every `pathlib_next.schemes` entry
-  point, whether or not its module is imported yet, and including a scheme whose
-  client library is not installed (it fails where it is used, naming the
-  extra). `scheme_class(name)` returns the class for a name (case-insensitive),
-  importing its module or loading its entry point first, and raises
-  `ValueError` naming the registered schemes when there is none. They answer
-  "why did `UriPath("x://...")` give a plain `UriPath`" without a dispatch.
+  `ArchivePath.backend_for()` gives the handle to pass as `archive=`.
+  `pathlib_next.ZipPath`, `TarPath` and `ArchivePath` are imported on first use.
 - **`pathlib_next.providers.TreePath`**, the base `FTPPath` and the archive
   paths are built on, for a path whose names are POSIX segments below the
   root of a tree a backend serves.
@@ -131,81 +99,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `discard()`; see the entry under Changed.
 
 ### Changed
-- **HTTP is sent by the standard library by default, not by `requests`
-  (takes effect in 0.10.0).** `http:`, `dav:`, `github:`, `gitlab:` and `git:`
-  no longer need the `http` extra, which now installs `requests` only for
-  `RequestsTransport`. To keep `requests` for a path, use
-  `path.with_session(requests.Session(), ...)`, or set
-  `PATHLIB_NEXT_HTTP_TRANSPORT=requests` for the process. What `requests` did
-  and the default transport does not, and what to do about it:
+- **Where every name went.** Change each import and each install as the table
+  says. There is no alias for an old name: the old import raises
+  `ModuleNotFoundError` or `ImportError`, and a name that is not in the table
+  was never public. The URI layer, the schemes and the command line are the
+  distributions `uripath`, `sftppath`, `objpath`, `repopath` and
+  `pathlib-next-requests`, which each document their own changes of behaviour;
+  the core's own moves come first.
 
-  | Was (from `requests`) | Now | Do |
-  | --- | --- | --- |
-  | `~/.netrc` credentials | not read | put the credentials in the URL, or send `headers={"Authorization": ...}`, or use `with_session()` |
-  | `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, the certifi bundle | the system trust store | `HTTPTransport(ssl_context=ssl.create_default_context(cafile=...))`, or `with_session(session, verify=...)` |
-  | SOCKS and `https:` proxies | `OSError(EPROTONOSUPPORT)` naming the scheme | `with_session()` |
-  | proxies from `requests` settings | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` through `urllib.request`, and a CIDR block in `NO_PROXY` for an IP-literal host | `HTTPTransport(proxies=...)` |
-  | `proxies={}` still read the proxy environment | `proxies={}` sends everything direct, and an empty answer from a provider is direct too | leave `proxies` unset to read the environment |
-  | `cert=` (a client certificate) | not available | `HTTPTransport(ssl_context=ctx)` with `ctx.load_cert_chain(...)`, or `with_session(session, cert=...)` |
-  | `br` and `zstd` bodies, when their libraries were installed | `gzip` and `deflate` only are asked for and decoded | send `Accept-Encoding` yourself and decode, or `with_session()` |
-  | `session.auth` objects (digest, NTLM), mounted adapters, cookies | not available | `with_session(session)` |
-  | `requests_args` of `with_session()` | unchanged there; `headers` and `timeout` belong to the backend | `with_transport(transport, headers=, timeout=)` |
-  | `User-Agent: python-requests/x` | `User-Agent: pathlib-next` | pass `headers={"User-Agent": ...}` |
-  | a TLS failure was a `ConnectionError` | it is an `ssl.SSLError` (an `OSError`) | catch `ssl.SSLError` |
-  | `Authorization` kept on an `http:` to `https:` redirect of the same host | dropped, as for any change of scheme, host or port | none |
-
-  A redirect of a `GET`, `HEAD` or `OPTIONS` is followed by the backend (up to
-  30), whichever transport sends: `Authorization`, and only it, is dropped
-  when the scheme, host or port changes, in the requests `stat()`, `is_dir()`,
-  `unlink()` and an append make after a redirect as well. Other headers set
-  with `with_transport(headers=...)` (an API-key header, a cookie) are not
-  dropped: they go to the new host too, even from `https:` to `http:`, so keep
-  a secret in `Authorization`, or point the path at the final URL. A
-  `Location` that is not a usable `http:` or `https:` URL is a refused
-  redirect (`OSError(EIO)`), and a reason phrase or `Location` from a server
-  is escaped and cut before it is part of an error message. Two things about
-  `proxies=` are written down: an exception from the provider other than
-  `KeyError` reaches the caller as it is, and a proxy that cannot be reached
-  is the error unless the provider's order goes on to `None`, which connects
-  directly.
-- **A reply the library reads whole is held to the limit a listing has.** Under
-  `requests` the reply to a write, a `DELETE`, a `PROPFIND` or a git API call
-  was read to its end whatever its size, and a gzip reply of 130 KiB on the
-  wire held 256 MiB. Such a reply is now at most `MAX_LISTING_BYTES` (8 MiB after
-  decoding, however small it is on the wire) when its content is needed (a
-  `PROPFIND`'s, a git API's JSON, `HttpBackend.request(stream=False)`'s), and
-  more is `OSError(EFBIG)` naming the path. The body of a reply nobody looks at
-  (a write's, a `DELETE`'s, an error's) is read up to that many bytes and
-  dropped. The content of a file is not limited. Raise the constant for a
-  server whose answers are legitimately larger.
-- **`HttpBackend` is a class, not a named tuple, and `RepoBackend` and
-  `BaseRepoBackend` return an `HTTPResponse` (takes effect in 0.10.0).**
-  `HttpBackend(session, requests_args, write_method, append_mode)` becomes
-  `HttpBackend(transport=None, *, headers=None, timeout=(10, 60),
-  write_method="PUT", append_mode="rewrite")`; its `session` and
-  `requests_args` fields are gone (it has `transport`, `headers`, `timeout`,
-  `write_method` and `append_mode`), and it no longer compares or unpacks as a
-  tuple. `HttpBackend.request()` and `BaseRepoBackend.request()` return an
-  `HTTPResponse`, not a `requests.Response`: `status` for `status_code`,
-  `read()` for `content`, `json.loads(response.read())` for `json()`; a
-  `BaseRepoBackend` of your own must return one, and `request()` of
-  `HttpBackend` takes `data=`, `headers=`, `stream=`, `allow_redirects=` and
-  `timeout=` as keywords only. `RepoBackend(token, session, api_base,
-  **requests_args)` keeps `session=` as the requests form and gains
-  `transport=`, `headers=` and `timeout=`; its `session` and `requests_args`
-  attributes are gone.
-- **A request whose header or URL has a line break or another control
-  character is a `ValueError`, raised before anything is sent (takes effect
-  in 0.10.0).** A `requests` header error used to surface as `OSError(EIO)`.
-  A path still accepts a URL with `user:password@` (it is sent as an
-  `Authorization: Basic` header); a transport itself refuses one.
-- **The `pathlib_next.utils` package is gone, and the modules that replace it
-  are named for what they hold (takes effect in 0.10.0).** There is no alias:
-  the old import raises `ModuleNotFoundError`. Change each import as the table
-  says; a name that is not in the table was never public. Code that builds a
-  class on `Path` takes its helpers from `pathlib_next.providers`.
-
-  | Old import | New import |
+  | Was | Is now |
   | --- | --- |
   | `pathlib_next.utils.sync` (`PathSyncer`, `SyncEvent`, `PathAndStat`) | `pathlib_next.sync` |
   | `pathlib_next.utils.glob` (`glob`, `select`, `full_match`, `parse_pattern`, ...) | `pathlib_next.glob` |
@@ -225,76 +127,111 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   | `pathlib_next.utils._commit.CommitOnClose` (also `_CommitOnClose`) | `pathlib_next.providers.CommitOnClose` |
   | `pathlib_next.path.check_follow`, `contains`, `copy_error_predicate` (also `_check_follow`, `_contains`) | `pathlib_next.providers.check_follow`, `contains`, `copy_error_predicate` |
   | `pathlib_next.utils.sizeof_fmt`, `pathlib_next.utils.parsedate` | removed: no replacement is public |
+  | the package `pathlib_next.uri` | the distribution `uripath`, import name `uripath` |
+  | `pathlib_next.Uri`, `pathlib_next.UriPath` (and `pathlib_next.uri.Uri`, `UriPath`, `UriLike`) | `uripath.URI`, `uripath.URIPath`, `uripath.URILike` |
+  | `Path`, `Pathname`, `FileStat` imported from `pathlib_next.uri` | the same names in `pathlib_next` |
+  | `pathlib_next.uri.source.Source` | `uripath.Source` (also `uripath.source.Source`) |
+  | `pathlib_next.uri.source.compose_uri`, `compose_host`, `percent_encode`, `is_drive`, `SAFE_PATH`, `ERRORS` | the same names in `uripath.source` |
+  | `pathlib_next.uri.same_authority` | `uripath.source.same_authority` |
+  | `pathlib_next.uri.DerivedBackend` | `uripath.schemes.DerivedBackend` |
+  | `pathlib_next.uri.query.Query`; `Query(text)`, `Query.decode()` | `uripath.Query`, no longer a `str`; `Query.parse(text)`, `Query.to_pairs()` |
+  | `Source.from_str(text, strict)`; `Source.as_str(sanitize=True)`, `as_str(sanitize=False)` | `Source.parse(text, *, strict=True)`; `str(source)`, `source.reveal()` |
+  | `pathlib_next.uri.schemes.file.FileUri`, `schemes.data.DataUri` | `uripath.schemes.FileURIPath`, `DataURIPath` |
+  | `schemes.archive.ZipUri`, `TarUri`, `ArchiveUri`, `ArchiveZipUri`, `ArchiveTarUri` | `uripath.schemes.ZipURIPath`, `TarURIPath`, `ArchiveURIPath`, `ArchiveZipURIPath`, `ArchiveTarURIPath` |
+  | `schemes.ftp.FtpPath` | `uripath.schemes.FTPURIPath` for `ftp:`; `pathlib_next.FTPPath` for a path with no URI |
+  | `schemes.ftp.FtpBackend`, `BaseFtpBackend` | `uripath.schemes.FTPURIBackend`, `BaseFTPURIBackend` (`pathlib_next.ftp.FTPBackend` belongs to one host) |
+  | `schemes.ftp.DEFAULT_TIMEOUT`, `IDLE_PROBE_SECONDS`; `schemes.archive.MAX_LINKS`, `LinkTarget` | `pathlib_next.ftp` and `pathlib_next.archive`, which define them |
+  | `schemes.archive._base.MEMBER_SPOOL_BYTES` | `uripath.schemes.MEMBER_SPOOL_BYTES` (`pathlib_next.archive.MEMBER_SPOOL_BYTES` for `ZipPath`) |
+  | `schemes.http.HttpPath`, `HttpBackend`, `HttpWriteStream`, `HttpAppendStream` | `uripath.schemes.HTTPURIPath`, `HTTPBackend`, `HTTPWriteStream`, `HTTPAppendStream` |
+  | `schemes.http.HTTPTransport`, `HTTPResponse` | `pathlib_next.http.HTTPTransport`, `HTTPResponse` |
+  | `schemes.http.MAX_LISTING_BYTES` | `pathlib_next.http.MAX_REPLY_BYTES` (assign it there) |
+  | `schemes.http.RequestsTransport` | `pathlib_next_requests.RequestsTransport`, from the distribution `pathlib-next-requests` |
+  | `schemes.dav.DavPath` | `uripath.schemes.DAVURIPath` |
+  | `schemes.sftp.SftpPath` | `sftppath.SFTPPath` for a path built from keywords; `sftppath.uri.SFTPURIPath` for `sftp:` |
+  | `schemes.sftp.SftpBackend`, `AsyncsshSftpBackend`, `BaseSftpBackend`, `CheckFileSftpBackend` | `sftppath.SFTPBackend`, `AsyncSSHBackend`, `BaseSFTPBackend`, `CheckFileSFTPBackend` |
+  | `schemes.s3.S3Path`, `S3Backend`, `BaseS3Backend` | `objpath.S3Path`, `S3Backend`, `BaseS3Backend`; `objpath.uri.S3URIPath` for `s3:` |
+  | `schemes.gs.GsPath`, `GsBackend`, `BaseGsBackend` | `objpath.GSPath`, `GSBackend`, `BaseGSBackend`; `objpath.uri.GSURIPath` for `gs:` |
+  | `schemes.az.AzPath`, `AzBackend`, `BaseAzBackend` | `objpath.AZPath`, `AZBackend`, `BaseAZBackend`; `objpath.uri.AZURIPath` for `az:` |
+  | `schemes.github.GitHubPath`, `schemes.gitlab.GitLabPath` | `repopath.GitHubPath`, `GitLabPath` for paths with no URI; `repopath.uri.GitHubURIPath`, `GitLabURIPath` for `github:`, `gitlab:` |
+  | `schemes.git.GitPath` (`git:`); `GitHubGitPath`, `GitLabGitPath` (`git+github:`, `git+gitlab:`) | `repopath.RepoPath`, `repopath.uri.RepoURIPath` (`repo:`); `github:` and `gitlab:` replace `git+github:` and `git+gitlab:`; `git:` itself is gone |
+  | `schemes.github.RepoBackend`; `schemes._gitrepo.BaseRepoBackend`; `InsecureTransportWarning` | `repopath.RepoBackend`, `BaseRepoBackend`, `InsecureTransportWarning` |
+  | `pathlib_next.tools.uripath` (`main(argv, *, stdin, stdout, stderr)`, `build_parser()`) | `uripath.cli.main(argv=None)`; there is no parser to build |
+  | the script `uripath = pathlib_next.tools.uripath:main` | `uripath = uripath.cli:main`, which needs `uripath[cli]`; `python -m uripath` runs it too |
+  | the entry-point group `pathlib_next.schemes` | the group `uripath.schemes` |
+  | the environment variable `PATHLIB_NEXT_SFTP_BACKEND` | `SFTPPATH_BACKEND`, read by `sftppath`; the old name is not read |
+  | the extra `pathlib-next[uri]` | install `uripath` |
+  | `pathlib-next[http]` | nothing for `pathlib_next.http`; `uripath` for `http:` and `dav:` paths; `pathlib-next-requests` for a `requests.Session` or `PATHLIB_NEXT_HTTP_TRANSPORT=requests` |
+  | `pathlib-next[sftp]` | `sftppath[paramiko]` |
+  | `pathlib-next[sftp-async]` | `sftppath[asyncssh]` |
+  | `pathlib-next[s3]`, `[gs]`, `[az]` | `objpath[s3]`, `objpath[gs]`, `objpath[az]` |
+  | `github:` and `gitlab:` through `pathlib-next[uri]` or `[http]` | `repopath[uri]`; `repopath` alone for `GitHubPath` and `GitLabPath` with no URI |
+  | `git://github.com/o/r/f`, `git+github://host/o/r/f`, `git+gitlab://host/o/r/f` | `repo://github.com/o/r/f`, `github://host/o/r/f`, `gitlab://host/o/r/f` |
+  | the `uripath` command, installed with `pathlib-next[uri]` | `uripath[cli]` |
+  | `sftp:`, `s3:`, `gs:` or `az:` paths through `UriPath` with the matching extra | add the `uri` extra to the provider (`sftppath[uri]`, `objpath[uri]`, `repopath[uri]`), or install `uripath` beside it |
 
   `pathlib_next.path`, `pathlib_next.glob`, `pathlib_next.sync` and
   `pathlib_next.testing` are now packages whose private modules hold the code;
   they export the same names, and `pathlib_next.path.Path` is still
   `pathlib_next.Path`. A module or name that starts with an underscore is not
-  part of the API.
-- **A scheme name belongs to one class: a second claim raises, and an entry
-  point can no longer take a built-in scheme.** Defining a `UriPath` subclass
-  that lists a name another class held used to replace it silently, so the
-  class defined last won, and so did a subclass that kept its parent's class
-  name and listed nothing. A distribution's `pathlib_next.schemes` entry point
-  named `sftp` or `file` was loaded ahead of the built-in class and took it.
-  Now defining a class that lists a name another class holds, or a built-in
-  name (even before its module is imported), raises `ValueError` at the
-  `class` statement, naming the holder; none of that class's names is
-  registered. A built-in name resolves from the built-in module before any
-  entry point, so an entry point for it does not displace it. A
-  subclass registers only the names in its own `__SCHEMES`. Running the same
-  `class` statement again (`importlib.reload()` of a module, a function body
-  called twice, a notebook cell) is the same class, not a second claim: the
-  newer class takes the name. To replace a class on purpose, write
-  `class MyHttp(UriPath, replace=True)`; otherwise give the scheme a name
-  nobody holds, or remove the duplicate definition.
-- **A write stream that commits on close is not committed when its `with`
-  block raised.** `FTPPath`, the members of a zip (`ZipPath`, `ArchivePath`),
-  `http:`/`https:`, `dav:`/`davs:`, `s3:`, `gs:` and `az:` hold what is written
-  and send it when the file is closed. A `with path.open("wb") as f:` block
-  that wrote part of a file and then raised used to close the stream on the way
-  out, so the part replaced the complete remote file. Now a block that ends in
-  an exception (any `BaseException`, `KeyboardInterrupt` included) discards what
-  was written: the target keeps its previous content, or is not created, and
-  nothing is sent (no `STOR`, `PUT` or upload; a `ZipPath` inside `batch()` does
-  not stage the member, and the block's other changes still commit). The same
-  holds in text mode, where the text the wrapper still held is dropped, and for
-  `write_bytes()`, `write_text()`, `copy()` and `PathSyncer`, which open their
-  target in a `with` block. A block that ends normally, and a stream closed with
-  `close()` outside a `with` block, commit as before, and an error raised by the
-  commit still propagates and is not retried. `LocalPath`, `MemPath` and `sftp:`
-  write through as `pathlib` does and are unchanged: a failed block leaves what
-  was written. **If you relied on the partial upload**, close the stream
-  yourself instead of raising through the block (`f.close()` commits what was
-  written). A path of your own whose `_open()` returns a stream that commits on
-  close gets the same behaviour by returning `providers.CommitOnClose`, or by
-  giving its stream class `providers.DiscardOnError` as its first base and a
-  `discard()` that drops what was written; a stream that has `discard()` and
-  not the mixin is discarded in text mode only. A failed `open()` of a text
-  file (an unknown `encoding=`) no longer creates an empty file on such a
-  backend.
-- **A path class that does not define `__fspath__` is not an `os.PathLike`
-  (takes effect in 0.10.0).** Every `Pathname` (`MemPath`, `FTPPath`, `ZipPath`,
-  `TarPath`, `ArchivePath` and any class built on `Path`) was registered with
-  `os.PathLike`, so `isinstance(path, os.PathLike)` was true while
-  `os.fspath(path)`, `open(path)` and `pathlib.Path(path)` raised
-  `NotImplementedError: Method not implemented: __fspath__`. Now only a class
-  that defines `__fspath__` is one (`LocalPath`, `PosixPathname`,
-  `WindowsPathname`, and a class of your own that defines it):
-  `isinstance(MemPath("/a"), os.PathLike)` is false and `os.fspath(MemPath("/a"))`
-  is a `TypeError`, as for any object. `FsPathLike` stays a protocol for
-  annotations, is no longer a base of `Pathname` and is no longer registered
-  with `os.PathLike`. What to do: catch `TypeError` where you caught
-  `NotImplementedError` from `os.fspath()`, ask `isinstance(path, os.PathLike)`
-  instead of assuming it, and define `__fspath__` on a class of your own that has
-  a local name.
-- **`touch(mode=...)` raises where the mode cannot be applied (takes effect in
-  0.10.0).** `MemPath("/f").touch(mode=0o600)`, and `touch()` with a mode on any
-  class without `chmod()`, created the file and returned `None`, dropping the
-  mode without a word. It now raises `NotImplementedError` and removes the file it
+  part of the API. Code that builds a class on `Path` takes its helpers from
+  `pathlib_next.providers`.
+- **A write stream that commits on close is not committed when its `with` block
+  raised.** `FTPPath` and the members of a zip (`ZipPath`, `ArchivePath`) hold
+  what is written and send it when the file is closed. A `with path.open("wb")
+  as f:` block that wrote part of a file and then raised used to close the
+  stream on the way out, so the part replaced the complete remote file. Now a
+  block that ends in an exception (any `BaseException`, `KeyboardInterrupt`
+  included) discards what was written: the target keeps its previous content, or
+  is not created, and nothing is sent (no `STOR` or rewrite; a `ZipPath` inside
+  `batch()` does not stage the member, and the block's other changes still
+  commit). The same holds in text mode, where the text the wrapper still held is
+  dropped, and for `write_bytes()`, `write_text()`, `copy()` and `PathSyncer`,
+  which open their target in a `with` block. A block that ends normally, and a
+  stream closed with `close()` outside a `with` block, commit as before, and an
+  error raised by the commit still propagates and is not retried. `LocalPath`
+  and `MemPath` write through as `pathlib` does and are unchanged: a failed
+  block leaves what was written. **If you relied on the partial upload**, close
+  the stream yourself instead of raising through the block (`f.close()` commits
+  what was written). A path of your own whose `_open()` returns a stream that
+  commits on close gets the same behaviour by returning
+  `providers.CommitOnClose`, or by giving its stream class
+  `providers.DiscardOnError` as its first base and a `discard()` that drops what
+  was written; a stream that has `discard()` and not the mixin is discarded in
+  text mode only. A failed `open()` of a text file (an unknown `encoding=`) no
+  longer creates an empty file on such a backend.
+- **A path class that does not define `__fspath__` is not an `os.PathLike`.**
+  Every `Pathname` (`MemPath`, `FTPPath`, `ZipPath`, `TarPath`, `ArchivePath`
+  and any class built on `Path`) was registered with `os.PathLike`, so
+  `isinstance(path, os.PathLike)` was true while `os.fspath(path)`, `open(path)`
+  and `pathlib.Path(path)` raised `NotImplementedError: Method not implemented:
+  __fspath__`. Now only a class that defines `__fspath__` is one (`LocalPath`,
+  `PosixPathname`, `WindowsPathname`, and a class of your own that defines it):
+  `isinstance(MemPath("/a"), os.PathLike)` is false and
+  `os.fspath(MemPath("/a"))` is a `TypeError`, as for any object. `FsPathLike`
+  stays a protocol for annotations, is no longer a base of `Pathname` and is no
+  longer registered with `os.PathLike`. What to do: catch `TypeError` where you
+  caught `NotImplementedError` from `os.fspath()`, ask `isinstance(path,
+  os.PathLike)` instead of assuming it, and define `__fspath__` on a class of
+  your own that has a local name.
+- **`touch(mode=...)` raises where the mode cannot be applied.**
+  `MemPath("/f").touch(mode=0o600)`, and `touch()` with a mode on any class
+  without `chmod()`, created the file and returned `None`, dropping the mode
+  without a word. It now raises `NotImplementedError` and removes the file it
   created. An existing file is left as it is, its mode included, as `pathlib`
   does. What to do: call `touch()` without `mode` on such a class, and `chmod()`
   where the class has one.
+
+### Removed
+- **The URI layer, its schemes and the `uripath` command.** `pathlib_next.uri`
+  (`Uri`, `UriPath`, `Source`, `Query`, every scheme) and `pathlib_next.tools`
+  are gone, `pathlib_next` no longer exports `Uri` or `UriPath`, and
+  `import pathlib_next` never looks for `uritools` or `netimps`. The package
+  declares no extra but `dev` and `docs`: the extras `uri`, `http`, `sftp`,
+  `sftp-async`, `s3`, `gs` and `az`, the entry-point group
+  `pathlib_next.schemes` and the `uripath` script are removed. A project that
+  imported one of those names, installed one of those extras or ran the command
+  installs the distribution the table names. Two distributions defining one
+  script would collide, which is why the command is not kept here.
 
 ## [0.9.14] - 2026-10-12
 
