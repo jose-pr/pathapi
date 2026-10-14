@@ -21,9 +21,22 @@ def primitive(method):
 
 
 def notimplemented(method):
+    """Mark a method as the stub of a primitive. Used bare (`@notimplemented`)
+    or with the reason a backend gives (`@notimplemented("why")`); calling the
+    stub raises `NotImplementedError` with the reason, or with the method's
+    name."""
+    if isinstance(method, str):
+        reason = method
+        return lambda function: _stub(function, reason)
+    return _stub(method, None)
+
+
+def _stub(method, reason):
     @_functools.wraps(method)
     def _notimplemented(*args, **kwargs):
-        raise NotImplementedError(f"Method not implemented: {method.__name__}")
+        raise NotImplementedError(
+            reason or f"Method not implemented: {method.__name__}"
+        )
 
     setattr(_notimplemented, STUB_ATTR, True)
     return _notimplemented

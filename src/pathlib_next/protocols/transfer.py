@@ -333,7 +333,7 @@ class Copy(Identity, Create, Symlink, Readlink, BinaryOpen, _ty.Protocol):
         # unreadable source must leave an existing target intact and must not
         # leave a new empty one behind.
         with src.open("rb") as input:
-            if target_exists:
+            if target_exists and supports(target, Remove):
                 target.unlink(missing_ok=True)
             created = False
             try:
@@ -361,7 +361,7 @@ class Copy(Identity, Create, Symlink, Readlink, BinaryOpen, _ty.Protocol):
             except BaseException:
                 # A half-written target is not a copy of anything; do not
                 # leave it looking like one.
-                if created:
+                if created and supports(target, Remove):
                     try:
                         target.unlink(missing_ok=True)
                     except Exception:
@@ -491,6 +491,9 @@ class Move(Copy, Remove, _ty.Protocol):
             raise FileNotFoundError(
                 _errno.ENOENT, "No such file or directory", str(src)
             )
+        if not supports(src, Remove) and not (native and supports(src, Move)):
+            # Copied and then not removed, a move would leave two files.
+            raise NotImplementedError(f"move() of {src!r}: it cannot be removed")
         # The same entry under another spelling (a case-only rename on a
         # case-insensitive filesystem, or `x.move(x)`) is renamed in place:
         # removing the "existing" target would delete the source itself.

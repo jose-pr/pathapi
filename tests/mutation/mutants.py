@@ -193,7 +193,7 @@ mutant(
 mutant(
     "copy-leaves-a-half-written-target",
     "protocols/transfer.py",
-    "                if created:\n",
+    "                if created and supports(target, Remove):\n",
     "                if False:\n",
     "tests/test_destructive_safety.py::test_copy_failing_mid_stream_removes_partial_target",
     "copy(): half-written target left behind on failure",
@@ -1095,4 +1095,20 @@ mutant(
     "class Pathname(FsPathLike, _ty.Generic[_P]):",
     "tests/test_pathname.py::test_a_path_without_fspath_is_not_an_os_pathlike",
     "every Pathname is an os.PathLike whose __fspath__ raises NotImplementedError",
+)
+mutant(
+    "move-from-a-source-that-cannot-be-removed",
+    "protocols/transfer.py",
+    "        if not supports(src, Remove) and not (native and supports(src, Move)):\n",
+    "        if False:\n",
+    "tests/test_consumer_needs.py::test_move_from_a_class_without_remove_raises_before_the_target_exists",
+    "move() copies a file it cannot then remove, leaving two",
+)
+mutant(
+    "copy-removes-a-target-that-cannot-be-removed",
+    "protocols/transfer.py",
+    "            if target_exists and supports(target, Remove):\n",
+    "            if target_exists:\n",
+    "tests/test_consumer_needs.py::test_copy_over_an_existing_file_of_a_class_without_remove_replaces_it",
+    "copy() over an existing file of a class without Remove raises instead of replacing it",
 )

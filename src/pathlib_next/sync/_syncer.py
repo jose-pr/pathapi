@@ -10,7 +10,7 @@ import typing as _ty
 
 from .. import _errorpolicy, _names
 from ..path import Path
-from ..protocols import Copy, Utime
+from ..protocols import Copy, Move, Utime
 from ..protocols._bundles import Readable
 from ..protocols import supports as _supports
 from ..protocols._removal import _listing, _write_batch_of
@@ -25,7 +25,6 @@ from ._compare import (
 from ._events import PathAndStat, SyncEvent
 from ._links import (
     _as_entry,
-    _implements,
     _link_is_directory,
     _link_text,
     _same_link,
@@ -714,7 +713,7 @@ class PathSyncer(object):
             if not synced:
 
                 def copy():
-                    if target.is_file() and _implements(target.path, "rename"):
+                    if target.is_file() and _supports(target.path, Move):
                         # Write the new content beside the target and rename
                         # it over: a failed or interrupted transfer leaves
                         # the previous version in place.
@@ -751,7 +750,7 @@ class PathSyncer(object):
                         source.path.copy(target.path)
                     self._copy_mtime(source, target.path)
 
-                if target.is_file() and _implements(target.path, "rename"):
+                if target.is_file() and _supports(target.path, Move):
                     self._sweep(
                         source.path.parent,
                         target.path.parent,

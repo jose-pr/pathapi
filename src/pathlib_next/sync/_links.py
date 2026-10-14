@@ -8,20 +8,16 @@ import pathlib as _pathlib
 import stat as _stat
 
 from ..path import Path
+from ..protocols import Symlink, supports
 from .._filestat import FileStat
 from ._events import PathAndStat
 
 
-def _implements(path: Path, name: str) -> bool:
-    """Whether `path`'s class overrides the base `Path` stub `name` (a
-    `@notimplemented` method). Decided on the class, before anything is
-    touched; a backend that implements the primitive can still fail at
-    runtime."""
-    return getattr(type(path), name, None) is not getattr(Path, name, None)
-
-
 def _supports_symlinks(path: Path) -> bool:
-    return _implements(path, "_symlink_to") or _implements(path, "symlink_to")
+    """Whether `path`'s class makes links. Decided on the class, before
+    anything is touched; a backend that implements the primitive can still
+    fail at runtime."""
+    return supports(path, Symlink)
 
 
 def _link_text(path: Path) -> str:

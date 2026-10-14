@@ -6,9 +6,18 @@ import pickle
 import stat as _stat
 import pytest
 
-from ..protocols import supports
+from ..protocols import Create, Listing, Move, Remove, Utime, supports
 
 from ._fixtures import DIRECTORY_ERRORS, _rel
+
+#: The protocol each switch defaults to asking `supports()` about.
+_SWITCH_PROTOCOLS = {
+    "supports_listing": Listing,
+    "supports_mkdir": Create,
+    "supports_delete": Remove,
+    "supports_utime": Utime,
+    "supports_rename": Move,
+}
 
 
 class PurePathContract:
@@ -56,14 +65,27 @@ class ReadPathContract(PurePathContract):
     `supports_pickle`.
     """
 
-    supports_listing = True
+    supports_listing = None
     supports_empty_directories = True
     distinguishes_file_types = True
     supports_pickle = True
 
-    def _require(self, capability):
-        if not getattr(self, capability):
+    def _require(self, capability, root=None):
+        value = getattr(self, capability)
+        if value is None:
+            # Not set: the class under test says, by the protocol the switch stands for.
+            protocol = _SWITCH_PROTOCOLS.get(capability)
+            if root is not None and protocol is not None:
+                self._support(root, protocol)
+        elif not value:
             pytest.skip(f"{type(self).__name__}.{capability} is False")
+
+    def _has(self, capability, root):
+        """Whether a switch is on: as set, else as the class under test supports it."""
+        value = getattr(self, capability)
+        if value is None:
+            return supports(root, _SWITCH_PROTOCOLS[capability])
+        return bool(value)
 
     def _support(self, root, *protocols):
         """Skip when the class under test does not implement a protocol the
@@ -124,19 +146,19 @@ class ReadPathContract(PurePathContract):
             assert fh.read() == b"hidden"
 
     def test_iterdir_lists_children(self, root):
-        self._require("supports_listing")
+        self._require("supports_listing", root)
         names = {p.name for p in root.iterdir()}
         assert names == {"a.txt", "b.py", ".hidden.txt", "sub", "empty_dir"}
         if self.supports_empty_directories:
             assert list((root / "empty_dir").iterdir()) == []
 
     def test_iterdir_missing_raises_file_not_found(self, root):
-        self._require("supports_listing")
+        self._require("supports_listing", root)
         with pytest.raises(FileNotFoundError):
             list((root / "nonexistent").iterdir())
 
     def test_iterdir_file_raises_not_a_directory(self, root):
-        self._require("supports_listing")
+        self._require("supports_listing", root)
         self._require("distinguishes_file_types")
         with pytest.raises(NotADirectoryError):
             list((root / "a.txt").iterdir())
@@ -159,7 +181,7 @@ class ReadPathContract(PurePathContract):
         # `_scandir()` carries the metadata `walk()`, `rm()` and `PathSyncer` trust without
         # a `stat()` per entry; `None` means unknown, never a different answer, and a
         # stat with `size_known` False answers the type alone.
-        self._require("supports_listing")
+        self._require("supports_listing", root)
         listed = dict(root._scandir())
         assert set(listed) == {"a.txt", "b.py", ".hidden.txt", "sub", "empty_dir"}
         for name, entry in listed.items():
@@ -203,7 +225,7 @@ class ReadPathContract(PurePathContract):
             assert fh.read() == b""
 
     def test_glob(self, root):
-        self._require("supports_listing")
+        self._require("supports_listing", root)
         assert {_rel(root, p) for p in root.glob("*.py")} == {"b.py"}
         # pathlib matches hidden names with "*".
         assert {_rel(root, p) for p in root.glob("*")} == {
@@ -223,19 +245,19 @@ class ReadPathContract(PurePathContract):
         }
 
     def test_glob_recursive(self, root):
-        self._require("supports_listing")
+        self._require("supports_listing", root)
         expected = {"b.py", "sub/c.py", "sub/nested/d.py"}
         assert {_rel(root, p) for p in root.glob("**/*.py")} == expected
         assert {_rel(root, p) for p in root.rglob("*.py")} == expected
 
     def test_glob_missing_or_file_parent_selects_nothing(self, root):
-        self._require("supports_listing")
+        self._require("supports_listing", root)
         assert list((root / "nonexistent").glob("*")) == []
         assert list((root / "a.txt").glob("*")) == []
         assert list(root.glob("*.nonexistent")) == []
 
     def test_walk(self, root):
-        self._require("supports_listing")
+        self._require("supports_listing", root)
         expected = {
             ".": (["empty_dir", "sub"], [".hidden.txt", "a.txt", "b.py"]),
             "sub": (["nested"], ["c.py"]),
