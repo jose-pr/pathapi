@@ -11,18 +11,20 @@ import pytest
 from pathlib_next import LocalPath, MemPath, Path, Pathname
 from pathlib_next import _stubs
 from pathlib_next.ftp import FTPPath
-from pathlib_next.archive import ZipPath
+from pathlib_next.archive import TarPath, ZipPath
 from pathlib_next.protocols import (
     BinaryOpen,
     Chmod,
     Copy,
     Create,
+    Hardlink,
     Identity,
     Listing,
     Move,
     NativeChecksum,
     Owner,
     Remove,
+    Resolve,
     Stat,
     Symlink,
     Utime,
@@ -98,6 +100,7 @@ def test_local_path_supports_what_pathlib_provides():
     # `_open` and `_mkdir` are not defined at all.
     assert supports(LocalPath, Stat, Chmod, BinaryOpen, Create, Listing, Remove)
     assert supports(LocalPath, Symlink, Move, Identity, Copy, Utime)
+    assert supports(LocalPath, Hardlink, Resolve)
     # `_chown` is defined on every platform, so this holds on Windows too,
     # where pathlib's own `owner()` raises.
     assert supports(LocalPath, Owner)
@@ -118,17 +121,20 @@ def test_a_primitive_replaced_by_an_operation_of_another_library_counts():
 
 
 def test_capabilities_of_the_providers_of_the_core():
-    everywhere = {Stat, BinaryOpen, Create, Listing, Remove, Identity, Copy}
+    everywhere = {Stat, BinaryOpen, Create, Listing, Remove, Identity, Copy, Resolve}
     assert capabilities(LocalPath) == everywhere | {
         Chmod,
         Owner,
         Utime,
         Symlink,
+        Hardlink,
         Move,
     }
     assert capabilities(MemPath) == everywhere | {Utime}
     assert capabilities(FTPPath) == everywhere | {Chmod, Utime, Move}
-    assert capabilities(ZipPath) == everywhere | {Move}
+    # An archive reads its links and cannot make one.
+    assert capabilities(ZipPath) == everywhere | {Move, Symlink}
+    assert capabilities(TarPath) == everywhere | {Move, Symlink}
 
 
 def test_capabilities_of_an_instance_equal_those_of_its_class():
@@ -241,3 +247,12 @@ def test_local_path_owner_and_group_are_pathlibs(tmp_path):
                 ours()
         else:
             assert ours() == expected
+
+
+def test_a_memory_path_cannot_name_its_owner_or_group():
+    here = MemPath("/f")
+    here.write_text("x")
+    with pytest.raises(NotImplementedError):
+        here.owner()
+    with pytest.raises(NotImplementedError):
+        here.group()

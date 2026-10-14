@@ -5,18 +5,29 @@ from __future__ import annotations
 import typing as _ty
 
 from .. import _stubs
+from .fs import Stat
 from .tree import Remove
 
-__all__ = ["Symlink"]
+__all__ = ["Hardlink", "Symlink"]
 
 
 class Symlink(Remove, _ty.Protocol):
-    """Creating a symbolic link: `_symlink_to()` is the primitive;
-    `symlink_to()` normalizes its target and honours `force=`."""
+    """Symbolic links: `readlink()` is the primitive that says a backend has
+    links at all, `_symlink_to()` creates one and `symlink_to()` normalizes
+    its target and honours `force=`. A read-only backend (an archive)
+    implements `readlink()` and leaves `_symlink_to()` a stub."""
 
     __slots__ = ()
 
-    __primitives__ = ("_symlink_to",)
+    __primitives__ = ("readlink",)
+
+    @_stubs.primitive
+    def readlink(self) -> _ty.Self:
+        """The path this symbolic link points to, as a path of this class whose
+        `str()` and `as_posix()` are the link text, unresolved (a stub:
+        `NotImplementedError`). `OSError(EINVAL)` where the path is not a
+        link."""
+        return _stubs._unimplemented("readlink")
 
     @_stubs.primitive
     def _symlink_to(
@@ -90,3 +101,26 @@ class Symlink(Remove, _ty.Protocol):
                 if not self.is_dir():
                     raise error
         return self._symlink_to(target, target_is_directory)
+
+
+class Hardlink(Stat, _ty.Protocol):
+    """Making a path a second name for an existing file: `_hardlink_to()` is
+    the primitive; `hardlink_to()` turns a `str` target into a path of this
+    backend."""
+
+    __slots__ = ()
+
+    __primitives__ = (("_hardlink_to", "hardlink_to"),)
+
+    @_stubs.primitive
+    def _hardlink_to(self, target: _ty.Self) -> None:
+        """Backend primitive: make this path a hard link to `target`, a path
+        of this class (a stub: `NotImplementedError`)."""
+        return _stubs._unimplemented("_hardlink_to")
+
+    def hardlink_to(self, target: "_ty.Self | str") -> None:
+        """Make this path a hard link to `target` (pathlib 3.10 parity). A
+        `str` is a path on this backend."""
+        if isinstance(target, str):
+            target = self.with_segments(target)
+        return self._hardlink_to(target)

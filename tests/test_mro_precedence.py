@@ -438,3 +438,14 @@ def test_local_path_keeps_stdlibs_owner_and_group(name):
     local = _impl_module(pathlib_next.LocalPath, name)
     assert local == "pathlib" or local.startswith("pathlib.")
     assert _impl_module(DownstreamMemPath, name) == "pathlib_next.protocols.fs"
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["readlink", "absolute", "resolve"]
+    + (["hardlink_to"] if hasattr(pathlib.Path, "hardlink_to") else []),
+)
+def test_local_path_keeps_stdlibs_links_and_resolution(name):
+    local = _impl_module(pathlib_next.LocalPath, name)
+    assert local == "pathlib" or local.startswith("pathlib.")
+    assert _impl_module(DownstreamMemPath, name).startswith("pathlib_next.protocols")

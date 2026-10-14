@@ -98,6 +98,9 @@ class TreePath(Path):
             return self._rebuild("/")
         return self._rebuild("/".join(segments[:-1]))
 
+    def _cwd(self):
+        return self._rebuild("/")
+
     def with_segments(self, *segments: str):
         return self._rebuild("/".join(segments))
 

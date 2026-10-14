@@ -310,6 +310,11 @@ class LocalPath(
         # is reached explicitly. target_is_directory is meaningful here (Windows, via os.symlink).
         return _path.Path.symlink_to(self, target, target_is_directory)
 
+    def _hardlink_to(self, target) -> None:
+        # pathlib.Path.hardlink_to() is 3.10+; `link_to()` before it takes the
+        # arguments the other way round.
+        return _os.link(target, self)
+
     def stat(self, *, follow_symlinks=True):
         # pathlib.Path.stat() (next in MRO via WindowsPath/PosixPath) only
         # accepts follow_symlinks= on 3.10+; below that, lstat() is the

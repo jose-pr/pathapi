@@ -5,7 +5,8 @@ from .io import BinaryOpen
 from .checksum import NativeChecksum
 from .pure import Named
 from .tree import Listing, Remove
-from .links import Symlink
+from .links import Hardlink, Symlink
+from .resolve import Resolve
 from .transfer import Copy, Identity, Move
 from ._support import capabilities, supports
 
@@ -15,6 +16,7 @@ __all__ = [
     "Copy",
     "Create",
     "FileStatLike",
+    "Hardlink",
     "Identity",
     "Listing",
     "Move",
@@ -22,6 +24,7 @@ __all__ = [
     "NativeChecksum",
     "Owner",
     "Remove",
+    "Resolve",
     "Stat",
     "Symlink",
     "Utime",

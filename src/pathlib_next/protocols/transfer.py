@@ -22,6 +22,7 @@ from ._relation import (
     contains,
 )
 from ._removal import _write_batch_of
+from ._support import supports
 from ._transfer import (
     _copy_mode,
     _handing,
@@ -418,10 +419,9 @@ class Copy(Identity, Create, Symlink, BinaryOpen, _ty.Protocol):
         `target` with the same (unresolved) target text. Raises
         NotImplementedError when this backend cannot read links or the
         target's cannot create them -- never falls back to copying content."""
-        readlink = getattr(self, "readlink", None)
-        if not callable(readlink):
+        if not supports(self, Symlink):
             raise NotImplementedError(f"copy(follow_symlinks=False) of {self!r}")
-        link = readlink()
+        link = self.readlink()
         if type(link) is not type(target):
             # Another backend: hand over the literal target text.
             text = getattr(link, "path", None)
@@ -648,6 +648,6 @@ def _holds_links(src: Path, target: Path) -> bool:
     """Whether a symlink of `src` can be recreated at `target`: `src` reads
     links and the class of `target` implements `_symlink_to()`."""
     return (
-        callable(getattr(src, "readlink", None))
+        supports(src, Symlink)
         and getattr(type(target), "_symlink_to", None) is not Symlink._symlink_to
     )

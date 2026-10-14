@@ -271,6 +271,9 @@ class MemPath(Path):
                 raise ValueError(f"'..' segment in {str(other)!r} cannot be walked")
         raise ValueError(f"{str(self)!r} and {str(other)!r} have different anchors")
 
+    def _cwd(self):
+        return self.with_segments("/")
+
     def with_segments(self, *segments: str):
         if all(isinstance(segment, str) for segment in segments):
             # The `Pathname` protocol's spelling: segments joined with "/",

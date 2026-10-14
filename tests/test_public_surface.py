@@ -82,6 +82,7 @@ EXPORTS = {
         "Copy",
         "Create",
         "FileStatLike",
+        "Hardlink",
         "Identity",
         "Listing",
         "Move",
@@ -89,6 +90,7 @@ EXPORTS = {
         "NativeChecksum",
         "Owner",
         "Remove",
+        "Resolve",
         "Stat",
         "Symlink",
         "Utime",
@@ -107,7 +109,8 @@ EXPORTS = {
     "pathlib_next.protocols.checksum": {"NativeChecksum"},
     "pathlib_next.protocols.pure": {"Named"},
     "pathlib_next.protocols.tree": {"Listing", "Remove"},
-    "pathlib_next.protocols.links": {"Symlink"},
+    "pathlib_next.protocols.links": {"Hardlink", "Symlink"},
+    "pathlib_next.protocols.resolve": {"Resolve"},
     "pathlib_next.protocols.transfer": {"Copy", "Identity", "Move"},
     "pathlib_next.providers": {
         "CommitOnClose",
@@ -197,6 +200,7 @@ CORE_PUBLIC = {
     "pathlib_next.protocols.io",
     "pathlib_next.protocols.links",
     "pathlib_next.protocols.pure",
+    "pathlib_next.protocols.resolve",
     "pathlib_next.protocols.transfer",
     "pathlib_next.protocols.tree",
     "pathlib_next.providers",
@@ -357,6 +361,7 @@ def _protocol_stubs():
         "protocols/checksum.py",
         "protocols/tree.py",
         "protocols/links.py",
+        "protocols/resolve.py",
         "protocols/transfer.py",
     ):
         tree = ast.parse((PACKAGE / relative).read_text(encoding="utf-8"))

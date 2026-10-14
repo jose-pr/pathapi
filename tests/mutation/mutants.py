@@ -84,7 +84,7 @@ mutant(
 mutant(
     "copy-link-without-readlink",
     "protocols/transfer.py",
-    "        if not callable(readlink):\n            raise NotImplementedError(",
+    "        if not supports(self, Symlink):\n            raise NotImplementedError(",
     "        if False:\n            raise NotImplementedError(",
     "tests/test_copy_move_fidelity.py::test_a_link_of_a_backend_that_cannot_read_links_is_not_copied_as_content",
     "copy(follow_symlinks=False) of a link of a backend that cannot read links goes on",
