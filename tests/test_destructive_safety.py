@@ -298,16 +298,25 @@ def _as_another_class(kind, path):
         return pathlib.Path(path)
 
     # A path class that is not a `pathlib.Path` and names a local file through
-    # `filepath`, as a path for `file:` URIs does.
+    # `filepath`, as a path for `file:` URIs does; with `__fspath__` too, it is
+    # an `os.PathLike` that `os.rename()` accepts.
     class HoldsLocalFile(MemPath):
         @property
         def filepath(self):
             return pathlib.Path(path)
 
-    return HoldsLocalFile("/elsewhere")
+    class HoldsLocalFileAndSpellsIt(HoldsLocalFile):
+        def __fspath__(self):
+            return os.fspath(path)
+
+    return (
+        HoldsLocalFileAndSpellsIt if kind == "filepath-pathlike" else HoldsLocalFile
+    )("/elsewhere")
 
 
-@pytest.mark.parametrize("kind", ["subclass", "stdlib", "filepath"])
+@pytest.mark.parametrize(
+    "kind", ["subclass", "stdlib", "filepath", "filepath-pathlike"]
+)
 def test_move_onto_the_same_file_under_another_class_keeps_it(tmp_path, kind):
     path = LocalPath(tmp_path / "f.txt")
     path.write_text("PRECIOUS")
@@ -315,7 +324,7 @@ def test_move_onto_the_same_file_under_another_class_keeps_it(tmp_path, kind):
     assert path.read_text() == "PRECIOUS"
 
 
-@pytest.mark.parametrize("kind", ["subclass", "filepath"])
+@pytest.mark.parametrize("kind", ["subclass", "filepath", "filepath-pathlike"])
 def test_move_directory_onto_the_same_directory_under_another_class_keeps_it(
     tmp_path, kind
 ):
@@ -324,7 +333,7 @@ def test_move_directory_onto_the_same_directory_under_another_class_keeps_it(
     _both_trees_survive(dst)
 
 
-@pytest.mark.parametrize("kind", ["subclass", "filepath"])
+@pytest.mark.parametrize("kind", ["subclass", "filepath", "filepath-pathlike"])
 def test_copy_onto_the_same_file_under_another_class_raises_and_keeps_it(
     tmp_path, kind
 ):

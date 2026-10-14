@@ -75,16 +75,15 @@ else:
 
 
 class FsPathLike(_ty.Protocol):
-    """Anything implementing `__fspath__` -- registered with `os.PathLike`
-    so `os.fspath()` and friends accept it."""
+    """Anything implementing `__fspath__`, for annotations. A class qualifies
+    by defining `__fspath__` itself, and `os.PathLike` recognises it the same
+    way; this protocol is not registered with `os.PathLike`, so a class that
+    does not define one is rejected by `os.fspath()` with `TypeError`."""
 
     __slots__ = ()
 
     def __fspath__(self) -> str:
         return _stubs._unimplemented("__fspath__")
-
-
-_os.PathLike.register(FsPathLike)
 
 
 class _PathnameParents(_ty.Sequence[PN]):
@@ -129,7 +128,7 @@ class _PathnameParents(_ty.Sequence[PN]):
         return "<{}.parents>".format(type(self._path).__name__)
 
 
-class Pathname(FsPathLike, _ty.Generic[_P]):
+class Pathname(_ty.Generic[_P]):
     """Base class for manipulating paths without I/O."""
 
     __slots__ = ()

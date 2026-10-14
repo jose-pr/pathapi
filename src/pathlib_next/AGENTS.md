@@ -50,7 +50,7 @@ with an underscore and is private.
 
 The package ships `py.typed`: `Path(...)`, `LocalPath(...)`, `MemPath(...)` and
 `FileStat(...)` pass mypy and pyright at their defaults. A protocol stub (`stat`,
-`chmod`, `_chown`, `_open`, `checksum`, `__fspath__`) is an ordinary method that
+`chmod`, `_chown`, `_open`, `checksum`) is an ordinary method that
 raises `NotImplementedError`, and a type checker reads `Pathname`'s abstract
 members as ordinary methods too, because the bare `Path(...)` builds a
 `LocalPath`: a subclass that leaves one out is refused when it is instantiated,
@@ -105,7 +105,7 @@ on `FileNotFoundError`), `settime(value)`, `setmode(value, isdir=None)`,
 ### `Pathname`
 
 ```python
-class Pathname(FsPathLike):
+class Pathname:
     # abstract
     segments: Sequence[str]
     parts
@@ -494,7 +494,13 @@ class FsPathLike(Protocol):
     def __fspath__(self) -> str: ...
 ```
 
-`Protocol` with `__fspath__()`.
+`Protocol` with `__fspath__()`, for annotations. A class qualifies by defining
+`__fspath__` itself, which is also how `os.PathLike` recognises it:
+`LocalPath`, `PosixPathname` and `WindowsPathname` do (from `pathlib.PurePath`),
+and `Pathname`, `MemPath`, `FTPPath` and the archive paths do not, so
+`isinstance(path, os.PathLike)` is False for them and `os.fspath(path)` is a
+`TypeError`. A class of your own that has a local name defines `__fspath__`
+and is then an `os.PathLike`.
 **`PathLike`** = `str | Path`; **`PurePathLike`** = `str | Pathname`.
 
 ### For path implementers (`pathlib_next.path`, `pathlib_next.providers`, `pathlib_next.archive`)
@@ -505,7 +511,7 @@ helpers are imported from `pathlib_next.providers`, except `detect_format`,
 which is in `pathlib_next.archive`.
 
 ```python
-class Pathname(FsPathLike):
+class Pathname:
     def _anchor_segments(self) -> tuple[str, ...]: ...
 
 class Path(Pathname, Chmod, Stat, BinaryOpen):

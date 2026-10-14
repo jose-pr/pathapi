@@ -273,6 +273,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   not the mixin is discarded in text mode only. A failed `open()` of a text
   file (an unknown `encoding=`) no longer creates an empty file on such a
   backend.
+- **A path class that does not define `__fspath__` is not an `os.PathLike`
+  (takes effect in 0.10.0).** Every `Pathname` (`MemPath`, `FTPPath`, `ZipPath`,
+  `TarPath`, `ArchivePath` and any class built on `Path`) was registered with
+  `os.PathLike`, so `isinstance(path, os.PathLike)` was true while
+  `os.fspath(path)`, `open(path)` and `pathlib.Path(path)` raised
+  `NotImplementedError: Method not implemented: __fspath__`. Now only a class
+  that defines `__fspath__` is one (`LocalPath`, `PosixPathname`,
+  `WindowsPathname`, and a class of your own that defines it):
+  `isinstance(MemPath("/a"), os.PathLike)` is false and `os.fspath(MemPath("/a"))`
+  is a `TypeError`, as for any object. `FsPathLike` stays a protocol for
+  annotations, is no longer a base of `Pathname` and is no longer registered
+  with `os.PathLike`. What to do: catch `TypeError` where you caught
+  `NotImplementedError` from `os.fspath()`, ask `isinstance(path, os.PathLike)`
+  instead of assuming it, and define `__fspath__` on a class of your own that has
+  a local name.
 
 ## [0.9.14] - 2026-10-12
 

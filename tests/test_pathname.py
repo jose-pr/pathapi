@@ -371,3 +371,38 @@ def test_localpath_keeps_stdlib_ordering():
         for name in ("__lt__", "__le__", "__gt__", "__ge__"):
             assert getattr(cls, name) is getattr(pathlib.PurePath, name)
     assert LocalPath("a") < LocalPath("b")
+
+
+# --- os.PathLike: only a class that implements __fspath__ ------------------------
+
+
+def test_a_path_without_fspath_is_not_an_os_pathlike():
+    import os
+
+    assert not isinstance(MemPath("/a"), os.PathLike)
+    assert not hasattr(MemPath("/a"), "__fspath__")
+    with pytest.raises(TypeError):
+        os.fspath(MemPath("/a"))
+
+
+def test_a_local_path_is_an_os_pathlike():
+    import os
+
+    from pathlib_next.fspath import LocalPath
+
+    for cls in (LocalPath, PosixPathname):
+        path = cls("/a/b")
+        assert isinstance(path, os.PathLike)
+        assert os.fspath(path) == str(path)
+
+
+def test_a_subclass_that_implements_fspath_is_an_os_pathlike():
+    import os
+
+    class Mirrored(MemPath):
+        def __fspath__(self):
+            return "/mirror" + self.as_posix()
+
+    assert isinstance(Mirrored("/a"), os.PathLike)
+    assert os.fspath(Mirrored("/a")) == "/mirror/a"
+    assert not isinstance(MemPath("/a"), os.PathLike)

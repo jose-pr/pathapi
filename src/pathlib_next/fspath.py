@@ -243,9 +243,13 @@ class LocalPath(
     def _rename_compatible(self, target) -> bool:
         if isinstance(target, _path.PurePath):
             return True
-        # A URI path for a local file: the local path is its `filepath`.
+        # A class for a local file under another spelling (a `file:` URI): the
+        # local path is its `filepath`, and `os.rename()` takes it through
+        # `__fspath__`.
         try:
-            return isinstance(getattr(target, "filepath", None), _path.PurePath)
+            return isinstance(target, _os.PathLike) and isinstance(
+                getattr(target, "filepath", None), _path.PurePath
+            )
         except Exception:
             return False
 

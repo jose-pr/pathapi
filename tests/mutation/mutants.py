@@ -1068,3 +1068,14 @@ mutant(
     "tests/transport/test_transport_body.py::test_a_length_larger_than_a_body_whose_size_is_known_is_refused",
     "a Content-Length larger than a file or list is sent and the upload stalls",
 )
+
+# --- the core's two documented-behaviour guards -------------------------------
+
+mutant(
+    "pathname-is-an-os-pathlike-without-fspath",
+    "path/_pure.py",
+    "class Pathname(_ty.Generic[_P]):",
+    "class Pathname(FsPathLike, _ty.Generic[_P]):",
+    "tests/test_pathname.py::test_a_path_without_fspath_is_not_an_os_pathlike",
+    "every Pathname is an os.PathLike whose __fspath__ raises NotImplementedError",
+)
