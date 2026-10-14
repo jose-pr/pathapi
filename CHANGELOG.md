@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `Listing`, `Stat` and `BinaryOpen` with no `Path`: `glob`, `checksum.md5`
   and `PathSyncer` take it as a source.
 - **`Chmod` is split, and so is every pair of a reader and a writer.** `Chown`
-  (`chown()`), `Owner` (`owner()`, `group()`), `Utime` (`_utime()`), `Readlink` and
+  (`chown()`), `Owned` (`owner()`, `group()`), `Utime` (`_utime()`), `Readlink` and
   `Symlink` are protocols of their own, so `supports(path, Chmod)` asks for `chmod()`
   alone and an archive supports `Readlink` and not `Symlink`. `Chmod` still inherits
   `Chown` and `Utime`, so `chown`, `_chown` and `_utime` stay reachable from it.

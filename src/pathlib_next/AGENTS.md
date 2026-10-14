@@ -168,7 +168,7 @@ has a root; a class whose rooted paths are not all absolute overrides it).
 ```python
 class Path(
     Pathname, Move, Copy, Identity, Create, Symlink, Remove, Listing, Resolve,
-    Readlink, Hardlink, Owner, Stat, Chmod, Chown, Utime, BinaryOpen,
+    Readlink, Hardlink, Owned, Stat, Chmod, Chown, Utime, BinaryOpen,
 ):
     info
     def is_hidden(self): ...
@@ -534,7 +534,7 @@ class Pathname:
     def _anchor_segments(self) -> tuple[str, ...]: ...
 
 class Path(Pathname, Move, Copy, Identity, Create, Symlink, Remove, Listing,
-           Resolve, Readlink, Hardlink, Owner, Stat, Chmod, Chown, Utime, BinaryOpen):
+           Resolve, Readlink, Hardlink, Owned, Stat, Chmod, Chown, Utime, BinaryOpen):
     def _scandir(self) -> Iterator[Tuple[str, Optional[FileStat]]]: ...
     def _same_filesystem(self, other) -> bool: ...
     def _coerce_target(self, target) -> Path: ...
@@ -1455,7 +1455,7 @@ copy and not the stream copy.
 | `FileStatLike` | `fs` | `st_mode`, `st_size`, `st_mtime` | | none |
 | `Stat` | `fs` | `stat()` | `lstat()`, `exists()`, `is_dir()`, `is_file()`, `is_symlink()`, `is_block_device()`, `is_char_device()`, `is_fifo()`, `is_socket()`, `info`, `is_junction()`, `is_mount()`, `is_dir_binding()` | none |
 | `Chmod` | `fs` | `chmod()` | `lchmod()` | `Chown`, `Utime` |
-| `Owner` | `fs` | `_user_name()`, `_group_name()` | `owner()`, `group()` | `Stat` |
+| `Owned` | `fs` | `_user_name()`, `_group_name()` | `owner()`, `group()` | `Stat` |
 | `Chown` | `fs` | `_chown()` | `chown()` | none |
 | `Utime` | `fs` | `_utime()` | | none |
 | `Create` | `fs` | `_mkdir()` | `mkdir()`, `touch()` | `Stat`, `Chmod`, `Utime` |
@@ -1473,7 +1473,7 @@ copy and not the stream copy.
 
 One protocol per primitive that a backend can have without the others: an
 archive reads links and makes none (`Readlink` and not `Symlink`), a server may
-set times and not modes, and `Owner` reads names where `Chown` writes ids.
+set times and not modes, and `Owned` reads names where `Chown` writes ids.
 `BinaryOpen` is one protocol: a single `_open(mode)` serves reading and writing,
 and a mode the backend cannot honour raises `NotImplementedError` per call.
 `Create` also calls `open()` and `unlink()` in `touch()`. All names are
@@ -1494,7 +1494,7 @@ catching `NotImplementedError`. A primitive also counts as implemented when
 another library defines the operation it feeds: `pathlib`'s `mkdir` for
 `_mkdir`, `open` for `_open`, `absolute` for `_cwd`, `hardlink_to` for
 `_hardlink_to`, `chown` for `_chown`, `symlink_to` for `_symlink_to`, `owner`
-for `_user_name` and `group` for `_group_name`; so `LocalPath` supports `Owner`
+for `_user_name` and `group` for `_group_name`; so `LocalPath` supports `Owned`
 where `pathlib` defines `owner()` and `group()`, which includes Windows, where
 they exist and raise `NotImplementedError` when called. A protocol with no primitives
 (`Identity`, `Copy`) is supported by a class that has it as a base. A class
@@ -1578,10 +1578,10 @@ inherits `Chown` and `Utime` for compatibility, because `chown()`, `_chown()`
 and `_utime()` were documented with it: a class that lists `Chmod` has them,
 and a new class lists the protocol it means.
 
-### `fs.Owner`
+### `fs.Owned`
 
 ```python
-class Owner(Stat, Protocol):
+class Owned(Stat, Protocol):
     def owner(self, *, follow_symlinks=True) -> str: ...
     def group(self, *, follow_symlinks=True) -> str: ...
     def _user_name(self, uid) -> str: ...

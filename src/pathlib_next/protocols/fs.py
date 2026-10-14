@@ -10,7 +10,7 @@ from .. import _permissions, _stubs
 from ._errors import _os_error
 from ._info import _PathInfo
 
-__all__ = ["Chmod", "Chown", "Create", "FileStatLike", "Owner", "Stat", "Utime"]
+__all__ = ["Chmod", "Chown", "Create", "FileStatLike", "Owned", "Stat", "Utime"]
 
 
 class FileStatLike(_ty.Protocol):
@@ -173,7 +173,7 @@ class Stat(_ty.Protocol):
         return False
 
 
-class Owner(Stat, _ty.Protocol):
+class Owned(Stat, _ty.Protocol):
     """Reading who owns a path. `owner()` and `group()` map the `st_uid` and
     `st_gid` of `stat()` through the primitives `_user_name()` and
     `_group_name()`; a class that has `owner()` and `group()` from somewhere

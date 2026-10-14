@@ -111,7 +111,7 @@ these for free from `pathlib.Path` via MRO -- this list only describes what
 
 - `resolve()`, `absolute()`, `readlink()`, `hardlink_to()`, `owner()`, `group()`
   exist on every `Path`, each a protocol (`Resolve`, `Readlink`, `Hardlink`,
-  `Owner`), and need a primitive the backend supplies; until it does the method
+  `Owned`), and need a primitive the backend supplies; until it does the method
   raises `NotImplementedError`, and `protocols.supports()` says whether it did.
   `absolute()` needs `_cwd()` (`MemPath` and the tree paths answer with their
   root, which a relative path is joined to), `resolve()` follows links through

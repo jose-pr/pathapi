@@ -23,7 +23,7 @@ from pathlib_next.protocols import (
     Listing,
     Move,
     NativeChecksum,
-    Owner,
+    Owned,
     Readlink,
     Remove,
     Resolve,
@@ -42,8 +42,8 @@ def test_the_default_of_each_primitive_is_marked_a_stub():
         Stat.stat,
         Chmod.chmod,
         Chown._chown,
-        Owner._user_name,
-        Owner._group_name,
+        Owned._user_name,
+        Owned._group_name,
         Utime._utime,
         BinaryOpen._open,
         NativeChecksum.checksum,
@@ -79,7 +79,7 @@ def test_a_class_that_implements_the_primitives_supports_the_protocol():
 
 def test_a_class_without_a_primitive_does_not_support_its_protocol():
     assert not supports(MemPath, Chmod)
-    assert not supports(MemPath, Owner)
+    assert not supports(MemPath, Owned)
     assert not supports(MemPath, NativeChecksum)
     assert not supports(MemPath, Stat, Chmod)
 
@@ -106,7 +106,7 @@ def test_local_path_supports_what_pathlib_provides():
     assert supports(LocalPath, Hardlink, Resolve)
     # pathlib defines `owner()` and `group()`; on Windows they exist and raise
     # `NotImplementedError`, and this holds there too.
-    assert supports(LocalPath, Owner)
+    assert supports(LocalPath, Owned)
     assert not supports(LocalPath, NativeChecksum)
 
 
@@ -128,7 +128,7 @@ def test_capabilities_of_the_providers_of_the_core():
     assert capabilities(LocalPath) == everywhere | {
         Chmod,
         Chown,
-        Owner,
+        Owned,
         Utime,
         Symlink,
         Readlink,
@@ -232,8 +232,8 @@ def test_owner_without_ids_in_stat_or_without_names_is_not_implemented():
 
     class NoNames(_Owned):
         __slots__ = ()
-        _user_name = Owner._user_name
-        _group_name = Owner._group_name
+        _user_name = Owned._user_name
+        _group_name = Owned._group_name
 
     with pytest.raises(NotImplementedError, match="_user_name"):
         NoNames("/f").owner()
@@ -264,7 +264,7 @@ def test_a_memory_path_cannot_name_its_owner_or_group():
 
 
 def test_owner_needs_both_names_or_pathlibs_own_readers():
-    assert supports(_Owned, Owner)
+    assert supports(_Owned, Owned)
 
     class OnlyUsers(MemPath):
         __slots__ = ()
@@ -272,8 +272,8 @@ def test_owner_needs_both_names_or_pathlibs_own_readers():
         def _user_name(self, uid):
             return "u"
 
-    assert not supports(OnlyUsers, Owner)
-    assert not supports(MemPath, Owner)
+    assert not supports(OnlyUsers, Owned)
+    assert not supports(MemPath, Owned)
     assert not supports(FTPPath, Chown) and supports(LocalPath, Chown)
 
 

@@ -16,7 +16,7 @@ Run the shared contract suite against your implementation -- see
 ## Compose a class from protocols
 
 `Path` is a class statement over the protocols of `pathlib_next.protocols`: `Stat`, `Chmod`,
-`Chown`, `Owner`, `Utime`, `Create`, `BinaryOpen`, `Listing`, `Remove`, `Readlink`, `Symlink`,
+`Chown`, `Owned`, `Utime`, `Create`, `BinaryOpen`, `Listing`, `Remove`, `Readlink`, `Symlink`,
 `Hardlink`, `Resolve`, `Identity`, `Copy` and `Move`. There is one protocol for each primitive a
 backend can have without the others (an archive reads links and makes none), so `supports()` can
 say exactly what a class does. Each has a few primitives (stubs that raise `NotImplementedError`)
@@ -39,7 +39,7 @@ assert not supports(MemPath, Readlink)
 | --- | --- |
 | `Stat` | `stat()` |
 | `Chmod` | `chmod()` |
-| `Owner` | `_user_name()`, `_group_name()` (`owner()` and `group()` are derived) |
+| `Owned` | `_user_name()`, `_group_name()` (`owner()` and `group()` are derived) |
 | `Chown` | `_chown()` |
 | `Utime` | `_utime()` |
 | `Create` | `_mkdir()` |

@@ -18,7 +18,7 @@ from pathlib_next.protocols import (
     Identity,
     Listing,
     Move,
-    Owner,
+    Owned,
     Readlink,
     Remove,
     Resolve,
@@ -29,12 +29,12 @@ from pathlib_next.protocols import (
 
 OWNERS = {
     "info": Stat,
-    "owner": Owner,
-    "group": Owner,
+    "owner": Owned,
+    "group": Owned,
     "chown": Chown,
     "_chown": Chown,
-    "_user_name": Owner,
-    "_group_name": Owner,
+    "_user_name": Owned,
+    "_group_name": Owned,
     "_utime": Utime,
     "chmod": Chmod,
     "lchmod": Chmod,
@@ -111,7 +111,7 @@ def test_copy_resolves_before_binary_open_in_every_path_class():
 
 def test_the_bases_of_the_protocols_are_the_ones_their_bodies_call():
     bases = {
-        Owner: {Stat},
+        Owned: {Stat},
         Chown: set(),
         Chmod: {Chown, Utime},
         Create: {Stat, Chmod, Utime},
@@ -145,7 +145,7 @@ def test_path_mro_lists_the_protocols_in_the_order_of_its_class_statement():
         "Resolve",
         "Readlink",
         "Hardlink",
-        "Owner",
+        "Owned",
         "Stat",
         "Chmod",
         "Chown",
