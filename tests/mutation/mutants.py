@@ -1528,3 +1528,453 @@ mutant(
     f"{_BODY}::test_a_length_larger_than_a_body_whose_size_is_known_is_refused",
     "a Content-Length larger than a file or list is sent and the upload stalls",
 )
+
+
+# --- pathlib_next.http: the guards of the transport, the client and the helpers ---
+
+mutant(
+    "client-404-is-a-generic-oserror",
+    "http/_errors.py",
+    "        if status in (404, 410):\n            raise os_error(FileNotFoundError, subject) from None\n",
+    "        if status in (410,):\n            raise os_error(FileNotFoundError, subject) from None\n",
+    "tests/transport/test_client_errors.py::test_a_status_becomes_the_exception_pathlib_raises_for_its_meaning",
+    "HTTP 404 maps to generic OSError(EIO)",
+)
+mutant(
+    "client-connection-error-chains-the-request-error",
+    "http/_errors.py",
+    '        raise ConnectionError(\n            f"Connection error for {subject} ({type(e).__name__})"\n        ) from None\n',
+    '        raise ConnectionError(\n            f"Connection error for {subject} ({type(e).__name__})"\n        ) from e\n',
+    "tests/transport/test_client_errors.py::test_a_refused_connection_carries_no_cause",
+    "HTTP ConnectionError chains the requests exception (may carry proxy creds)",
+)
+mutant(
+    "client-request-url-keeps-the-password",
+    "http/_follow.py",
+    "    return url[:start] + hostport + url[end:], (auth if any(auth) else None)\n",
+    "    return url, (auth if any(auth) else None)\n",
+    (
+        "tests/transport/test_client_urls.py::test_userinfo_is_split_out_of_a_url_as_the_octets_it_stands_for",
+        "tests/transport/test_client_urls.py::test_the_url_left_after_the_split_carries_no_password",
+    ),
+    "HTTP requests keep user:password in the request URL",
+)
+mutant(
+    "client-403-is-a-generic-oserror",
+    "http/_errors.py",
+    "        elif status in (401, 403):\n",
+    "        elif status in (401,):\n",
+    "tests/transport/test_client_errors.py::test_a_status_becomes_the_exception_pathlib_raises_for_its_meaning",
+    "HTTP 403 maps to generic OSError(EIO)",
+)
+mutant(
+    "client-timeout-chains-the-request-error",
+    "http/_errors.py",
+    '        raise TimeoutError(f"Timeout for {subject} ({type(e).__name__})") from None\n',
+    '        raise TimeoutError(f"Timeout for {subject} ({type(e).__name__})") from e\n',
+    "tests/transport/test_client_errors.py::test_a_stalled_server_is_a_timeout_error_without_a_cause",
+    "HTTP TimeoutError chains the requests exception",
+)
+mutant(
+    "client-write-redirect-reads-as-success",
+    "http/_follow.py",
+    "    if not 300 <= resp.status < 400:\n        return resp\n    location = redirect_location(url, resp)",
+    "    if True:\n        return resp\n    location = redirect_location(url, resp)",
+    "tests/transport/test_client_write_redirects.py",
+    "a write answered by a redirect that is not followed reads as done",
+)
+mutant(
+    "client-write-follows-redirects-to-another-host",
+    "http/_follow.py",
+    '    elif origin(location) != origin(url):\n        reason = "it leaves the scheme, host and port of the request"\n',
+    '    elif False:\n        reason = "it leaves the scheme, host and port of the request"\n',
+    "tests/transport/test_client_write_redirects.py::test_307_to_another_scheme_host_or_port_is_not_followed",
+    "a write is sent again to the host a 307 names, with its body and credentials",
+)
+mutant(
+    "transport-provided-elsewhere-that-is-not-installed-does-not-raise",
+    "http/_transports.py",
+    "    if isinstance(name, str) and name in _PROVIDED:\n",
+    "    if False:\n",
+    "tests/transport/test_transport_registry.py::test_a_transport_provided_elsewhere_that_is_not_installed_names_the_distribution",
+    "get('requests') answers with a ValueError instead of naming pathlib-next-requests",
+)
+mutant(
+    "transport-entry-point-replaces-the-built-in-transport",
+    "http/_transports.py",
+    "    if name == _BUILTIN:\n",
+    "    if False:\n",
+    "tests/transport/test_transport_registry.py::test_an_entry_point_cannot_replace_the_built_in_transport",
+    "a distribution that declares an entry called builtin replaces the built-in transport",
+)
+mutant(
+    "prepare-request-keeps-the-fragment",
+    "http/_transports.py",
+    '    return PreparedRequest(method, url.split("#", 1)[0], sent, body, timeout, decode)\n',
+    "    return PreparedRequest(method, url, sent, body, timeout, decode)\n",
+    "tests/transport/test_transport_prepare.py::test_the_method_is_upper_case_and_the_fragment_is_dropped",
+    "a transport built on prepare_request() sends the fragment of a URL",
+)
+mutant(
+    "prepare-request-offers-no-content-coding",
+    "http/_transports.py",
+    '    if not _has_header(sent, "Accept-Encoding"):\n',
+    "    if False:\n",
+    "tests/transport/test_transport_prepare.py::test_gzip_and_deflate_are_asked_for_unless_the_caller_names_a_coding",
+    "a transport built on prepare_request() does not ask for gzip or deflate",
+)
+mutant(
+    "prepare-request-sends-bytes-without-a-length",
+    "http/_transports.py",
+    "        if isinstance(body, (bytes, bytearray, memoryview)):\n",
+    "        if False:\n",
+    "tests/transport/test_transport_prepare.py::test_a_body_of_known_length_is_sent_under_its_length",
+    "a bytes body is sent without the Content-Length the contract asks for",
+)
+mutant(
+    "prepare-request-does-not-say-a-put-has-no-body",
+    "http/_transports.py",
+    "        elif body is None and method in _EXPECTING_BODY:\n",
+    "        elif False:\n",
+    "tests/transport/test_transport_prepare.py::test_a_request_that_expects_a_body_and_has_none_says_so",
+    "a PUT without a body is sent with no Content-Length",
+)
+mutant(
+    "response-buffered-leaves-the-body-unread",
+    "http/_response.py",
+    "        return self._buffered()\n",
+    "        return self\n",
+    "tests/transport/test_transport_prepare.py::test_buffered_reads_the_body_closes_the_source_and_returns_the_response",
+    "send(stream=False) returns a response whose body is still on the connection",
+)
+mutant(
+    "client-authorization-kept-across-origins",
+    "http/_follow.py",
+    '        if origin(current) != home:\n            headers = drop_header(headers, "Authorization")\n',
+    '        if False:\n            headers = drop_header(headers, "Authorization")\n',
+    (
+        "tests/transport/test_client_redirects.py::test_authorization_is_dropped_by_a_redirect_to_another_port",
+        "tests/transport/test_client_redirects.py::test_authorization_follows_only_a_redirect_that_keeps_scheme_host_and_port",
+    ),
+    "a followed redirect to another scheme, host or port carries Authorization along",
+)
+mutant(
+    "client-redirect-limit-off-by-one",
+    "http/_follow.py",
+    "        if hops >= MAX_REDIRECTS:",
+    "        if hops > MAX_REDIRECTS:",
+    "tests/transport/test_client_redirects.py::test_a_redirect_loop_stops_after_thirty_redirects",
+    "a GET follows one redirect more than the limit",
+)
+mutant(
+    "transport-unrepeatable-request-resent",
+    "http/_builtin.py",
+    "                if reused and repeatable:\n                    connection, reused = None, False\n                    continue\n                raise dropped.error from None",
+    "                if reused:\n                    connection, reused = None, False\n                    continue\n                raise dropped.error from None",
+    (
+        "tests/transport/test_transport_pool.py::test_a_request_that_cannot_be_repeated_is_not_sent_again",
+        "tests/transport/test_transport_pool.py::test_a_body_that_cannot_be_sent_twice_is_not_sent_again",
+    ),
+    "a POST, or a PUT with a file body, is sent again on a new connection when the server dropped the old one",
+)
+mutant(
+    "transport-timeout-treated-as-a-dropped-connection",
+    "http/_builtin.py",
+    "            BrokenPipeError,\n            _ssl.SSLEOFError,",
+    "            OSError,\n            _ssl.SSLEOFError,",
+    "tests/transport/test_transport_pool.py::test_a_timeout_on_a_reused_connection_is_not_sent_again",
+    "a request that timed out on a reused connection is sent again",
+)
+mutant(
+    "transport-stale-connection-trusted-by-an-unrepeatable-request",
+    "http/_builtin.py",
+    "            and _now() - connection.released_at > REUSE_WINDOW",
+    "            and _now() - connection.released_at > REUSE_WINDOW + 1e9",
+    "tests/transport/test_transport_pool.py::test_a_request_that_cannot_be_repeated_does_not_trust_a_stale_connection",
+    "a POST uses an idle connection however long ago it last carried a reply",
+)
+mutant(
+    "transport-verification-off-by-default",
+    "http/_builtin.py",
+    '        verify: bool = True,\n        proxies: "_ty.Any" = None,',
+    '        verify: bool = False,\n        proxies: "_ty.Any" = None,',
+    "tests/transport/test_transport_tls.py::test_a_server_of_an_unknown_authority_is_refused_by_default",
+    "the built-in transport accepts any certificate unless told to verify",
+)
+mutant(
+    "transport-verify-false-beats-the-ssl-context",
+    "http/_builtin.py",
+    "        if self._ssl_context is not None:\n            return self._ssl_context",
+    "        if self._ssl_context is not None and self._verify:\n            return self._ssl_context",
+    "tests/transport/test_transport_tls.py::test_an_ssl_context_wins_over_verify_false",
+    "verify=False replaces an ssl_context the caller gave",
+)
+mutant(
+    "transport-proxy-credentials-in-a-repr",
+    "http/_proxies.py",
+    '        return f"ProxyAddress({self.host!r}, {self.port})"',
+    '        return f"ProxyAddress({self.host!r}, {self.port}, {self.authorization!r})"',
+    "tests/transport/test_transport_proxy.py::test_proxy_credentials_are_in_no_repr",
+    "a proxy's Proxy-Authorization value shows in its repr",
+)
+mutant(
+    "transport-proxy-credentials-in-a-message",
+    "http/_proxies.py",
+    '            f"the built-in HTTP transport has no {scheme!r} proxy support; "\n            + REQUESTS_HINT,',
+    '            f"the built-in HTTP transport has no {scheme!r} proxy support ({url}); "\n            + REQUESTS_HINT,',
+    "tests/transport/test_transport_proxy.py::test_a_proxy_scheme_that_is_not_http_is_refused_naming_the_other_transport",
+    "the error for an unsupported proxy scheme quotes the proxy URL with its credentials",
+)
+mutant(
+    "transport-header-line-break-accepted",
+    "http/_headers.py",
+    '_CONTROL = _re.compile(r"[\\x00-\\x08\\x0a-\\x1f\\x7f]")',
+    '_CONTROL = _re.compile(r"[\\x00-\\x08\\x0b-\\x1f\\x7f]")',
+    "tests/transport/test_transport_send.py::test_a_header_with_a_line_break_or_a_bad_name_is_refused_before_sending",
+    "a header value with a bare line feed is sent",
+)
+mutant(
+    "transport-url-line-break-accepted",
+    "http/_headers.py",
+    '_URL_CONTROL = _re.compile(r"[\\x00-\\x1f\\x7f]")',
+    '_URL_CONTROL = _re.compile(r"[\\x00-\\x08\\x0b-\\x1f\\x7f]")',
+    "tests/transport/test_transport_send.py::test_a_url_with_a_control_character_is_refused_before_sending",
+    "a URL with a line break or a tab reaches the request line",
+)
+mutant(
+    "transport-short-body-read-as-complete",
+    "http/_builtin.py",
+    "        if self._expected is not None and self._received < self._expected:",
+    "        if False:",
+    "tests/transport/test_transport_send.py::test_a_body_shorter_than_its_length_is_an_io_error_not_a_short_read",
+    "a body that ends before its Content-Length reads as a complete one",
+)
+mutant(
+    "transport-inflation-not-bounded",
+    "http/_response.py",
+    "_STEP = 256 * 1024",
+    "_STEP = 1 << 40",
+    "tests/transport/test_transport_send.py::test_a_small_body_that_inflates_enormously_is_read_in_bounded_steps",
+    "a gzip body is inflated whole into memory because a header says it is small",
+)
+mutant(
+    "transport-closed-stream-still-read",
+    "http/_response.py",
+    "        if self._closed and not self._kept:",
+    "        if False:",
+    "tests/transport/test_transport_send.py::test_reading_a_streamed_reply_after_closing_it_is_an_error",
+    "a closed streaming reply keeps handing out bytes",
+)
+mutant(
+    "transport-idle-connection-limit",
+    "http/_pool.py",
+    "MAX_IDLE_PER_THREAD = 8",
+    "MAX_IDLE_PER_THREAD = 100",
+    "tests/transport/test_transport_pool.py::test_a_thread_keeps_at_most_eight_idle_connections",
+    "a thread keeps more than eight idle connections",
+)
+mutant(
+    "client-default-transport-is-requests",
+    "http/_transports.py",
+    "    kind = _BUILTIN if value is None else value\n",
+    '    kind = "requests" if value is None else value\n',
+    "tests/transport/test_client_default.py::test_without_a_setting_the_built_in_transport_is_used",
+    "a backend without a transport builds a requests session",
+)
+mutant(
+    "transport-idle-connection-used-without-a-check",
+    "http/_builtin.py",
+    "        if connection is not None and _unusable(connection.http.sock):\n",
+    "        if False:\n",
+    (
+        "tests/transport/test_transport_pool.py::test_bytes_the_server_sends_after_a_reply_are_not_the_next_reply",
+        "tests/transport/test_transport_pool.py::test_an_idle_connection_the_server_closed_is_replaced_before_sending",
+    ),
+    "an idle connection the server closed, or sent extra bytes on, carries the next request",
+)
+mutant(
+    "transport-closed-connection-reopens-itself",
+    "http/_builtin.py",
+    "        http.auto_open = 0\n",
+    "        http.auto_open = 1\n",
+    (
+        "tests/transport/test_transport_pool.py::test_a_connection_closed_before_the_request_is_written_is_not_reopened",
+        "tests/transport/test_transport_pool.py::test_a_transport_closed_before_the_request_is_written_does_not_send_it",
+        "tests/transport/test_transport_pool.py::test_a_body_that_is_being_sent_when_the_transport_is_closed_is_not_finished_in_the_clear",
+    ),
+    "http.client reconnects a closed connection by itself, in plain TCP outside the TLS session and the proxy",
+)
+mutant(
+    "transport-interim-reply-taken-as-the-final-one",
+    "http/_builtin.py",
+    "            if status == _client.CONTINUE:\n                return version, status, reason  # `begin()` skips its headers\n",
+    "            if True:\n                return version, status, reason  # `begin()` skips its headers\n",
+    (
+        "tests/transport/test_transport_send.py::test_the_built_in_transport_skips_interim_replies_and_returns_the_final_one",
+        "tests/transport/test_transport_send.py::test_an_interim_reply_is_never_the_previous_answer_of_the_next_request",
+    ),
+    "a 103 Early Hints is the reply, and the real one is read as the answer to the next request",
+)
+mutant(
+    "transport-interim-replies-not-counted",
+    "http/_builtin.py",
+    "            if self._interim > MAX_INTERIM_REPLIES:\n",
+    "            if False:\n",
+    (
+        "tests/transport/test_transport_send.py::test_a_bounded_number_of_interim_replies_is_skipped",
+        "tests/transport/test_transport_send.py::test_an_endless_stream_of_100_continue_is_given_up_not_waited_out",
+    ),
+    "a server that answers with endless interim replies is waited on without limit",
+)
+mutant(
+    "transport-no-proxy-cidr-ignored",
+    "http/_proxies.py",
+    '        if _in_no_proxy_network(host, chosen.get("no", "")):\n',
+    "        if False:\n",
+    "tests/transport/test_transport_proxy.py::test_a_cidr_block_in_no_proxy_sends_an_ip_literal_host_direct",
+    "a request to a host inside a NO_PROXY block goes to the proxy, which sees its Authorization",
+)
+mutant(
+    "client-peer-text-not-escaped",
+    "http/_headers.py",
+    '        char if char.isprintable() else char.encode("unicode_escape").decode("ascii")\n',
+    "        char\n",
+    "tests/transport/test_client_peer_text.py::test_peer_text_escapes_what_a_terminal_would_act_on",
+    "text from the peer keeps its control characters in an error message",
+)
+mutant(
+    "client-reason-phrase-unescaped",
+    "http/_errors.py",
+    '        reason = peer_text(response.reason or "")\n',
+    '        reason = response.reason or ""\n',
+    (
+        "tests/transport/test_client_peer_text.py::test_a_reason_phrase_is_shown_escaped",
+        "tests/transport/test_client_peer_text.py::test_a_long_reason_phrase_is_cut",
+        "tests/transport/test_client_errors.py::test_a_reply_status_error_text_has_the_reason_escaped",
+    ),
+    "an HTTP error's reason phrase reaches the message as the server sent it",
+)
+mutant(
+    "client-refused-redirect-location-unbounded",
+    "http/_follow.py",
+    '    where = peer_text(shown(location), 200) if location else "(none)"\n',
+    '    where = shown(location) if location else "(none)"\n',
+    "tests/transport/test_client_peer_text.py::test_a_redirect_that_is_refused_is_shown_cut_and_with_an_escaped_reason",
+    "a refused redirect's message holds the whole Location",
+)
+mutant(
+    "client-redirect-reask-forgets-the-origin",
+    "http/_client.py",
+    "            method, location, sent, None, None, stream, timeout, first=url\n",
+    "            method, location, sent, None, None, stream, timeout, first=None\n",
+    "tests/transport/test_client_redirect_origin.py::test_a_request_asked_again_at_another_origin_does_not_carry_authorization",
+    "stat() and what is built on it re-ask the redirect target as if it were the first origin, with Authorization",
+)
+mutant(
+    "client-redirect-reask-sends-the-client-headers-again",
+    "http/_follow.py",
+    "        if origin(current) != home:\n",
+    "        if origin(current) != origin(url):\n",
+    "tests/transport/test_client_redirect_origin.py::test_a_request_asked_again_at_another_origin_does_not_carry_authorization",
+    "a re-request compares the redirect target with itself instead of with the origin it was asked for",
+)
+mutant(
+    "client-unusable-location-reaches-the-transport",
+    "http/_follow.py",
+    "        check_url(absolute)\n        return absolute\n",
+    "        return absolute\n",
+    "tests/transport/test_client_redirects.py::test_a_location_the_url_check_refuses_is_oserror_never_valueerror",
+    "a Location the URL check refuses is sent on, and its ValueError reaches the caller",
+)
+mutant(
+    "client-redirect-without-a-usable-location-is-the-reply",
+    "http/_follow.py",
+    '        if location is None:\n            _discard(resp)\n            raise refused_redirect(method, current, resp, None, "no usable Location")\n        if hops >= MAX_REDIRECTS:',
+    "        if location is None:\n            return resp\n        if hops >= MAX_REDIRECTS:",
+    "tests/transport/test_client_redirects.py::test_a_location_that_is_not_an_http_url_is_a_refused_redirect",
+    "a redirect with an unusable Location reads as the answer itself",
+)
+mutant(
+    "client-reply-limit-not-applied",
+    "http/_response.py",
+    "            if limit is not None and len(data) > limit:\n",
+    "            if False:\n",
+    (
+        "tests/transport/test_client_reply_limits.py::test_a_reply_over_the_limit_is_efbig_counted_in_decoded_bytes",
+        "tests/transport/test_client_reply_limits.py::test_the_client_reads_a_reply_whole_only_up_to_the_limit",
+    ),
+    "a reply read whole is held in memory however long it decodes to",
+)
+mutant(
+    "client-dropped-reply-read-without-a-bound",
+    "http/_status.py",
+    "            remaining -= len(chunk)\n",
+    "            pass\n",
+    "tests/transport/test_client_reply_limits.py::test_a_dropped_reply_over_the_limit_does_not_keep_its_connection",
+    "the body of a reply nobody looks at is read to its end, however long",
+)
+mutant(
+    "client-json-reply-read-unbounded",
+    "http/_status.py",
+    "    return _json.loads(read_limited(resp, what, limit))",
+    "    return _json.loads(resp.read())",
+    "tests/transport/test_client_reply_limits.py::test_a_json_reply_over_the_limit_is_efbig",
+    "a git API's JSON reply is read whole whatever its size",
+)
+mutant(
+    "client-buffers-without-a-cap",
+    "http/_client.py",
+    "            resp._buffered(limit, too_large(_follow.shown(url), limit))\n",
+    "            resp._buffered()\n",
+    "tests/transport/test_client_reply_limits.py::test_the_client_reads_a_reply_whole_only_up_to_the_limit",
+    "request(stream=False) reads a reply to its end whatever its size",
+)
+mutant(
+    "transport-exchange-runs-under-the-connect-timeout",
+    "http/_builtin.py",
+    "                sock.settimeout(read_timeout)\n",
+    "                sock.settimeout(connect_timeout)\n",
+    "tests/transport/test_transport_send.py::test_a_server_that_never_answers_is_a_timeout_after_the_read_timeout",
+    "the wait for a reply is bounded by the connect half of the timeout",
+)
+mutant(
+    "transport-body-length-ignores-the-position",
+    "http/_body.py",
+    "        return max(0, end - here)\n",
+    "        return max(0, end)\n",
+    (
+        "tests/transport/test_transport_body.py::test_a_bytes_io_part_way_sends_what_is_left_under_that_length",
+        "tests/transport/test_transport_body.py::test_an_open_file_part_way_sends_what_is_left_under_that_length",
+    ),
+    "a file read from the middle is sent under the length of the whole file",
+)
+mutant(
+    "transport-body-sent-past-its-length",
+    "http/_body.py",
+    "        want = self._left if amount is None or amount < 0 else min(amount, self._left)\n",
+    "        want = self._left if amount is None or amount < 0 else amount\n",
+    (
+        "tests/transport/test_transport_body.py::test_a_file_that_grew_after_it_was_measured_sends_only_the_length_it_stated",
+        "tests/transport/test_transport_body.py::test_a_length_the_caller_set_cuts_a_longer_body_at_that_length",
+    ),
+    "a body longer than its Content-Length sends the rest into the next request",
+)
+mutant(
+    "transport-body-short-of-its-length-is-not-an-error",
+    "http/_body.py",
+    "        if not chunk:\n            raise OSError(\n",
+    "        if False:\n            raise OSError(\n",
+    (
+        "tests/transport/test_transport_body.py::test_a_file_that_ends_before_the_length_it_stated_is_an_error",
+        "tests/transport/test_transport_body.py::test_a_generator_that_ends_before_the_length_the_caller_set_is_an_error",
+    ),
+    "a body that ends before its Content-Length leaves the server waiting for the rest",
+)
+mutant(
+    "transport-length-larger-than-the-body-is-sent",
+    "http/_body.py",
+    "        if known is not None and declared > known:\n",
+    "        if False:\n",
+    "tests/transport/test_transport_body.py::test_a_length_larger_than_a_body_whose_size_is_known_is_refused",
+    "a Content-Length larger than a file or list is sent and the upload stalls",
+)

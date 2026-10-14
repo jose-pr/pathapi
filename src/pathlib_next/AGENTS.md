@@ -26,7 +26,7 @@ keep the core and the URI layer under separate headings.
 
 | Extra | Installs | Needed for |
 | --- | --- | --- |
-| *(none)* | — | `Path`, `LocalPath`, `MemPath`, `FTPPath`, `ZipPath`, `TarPath`, `ArchivePath`, `sync`, `glob`, `checksum`, `providers`, `testing`, `uripath` on local paths |
+| *(none)* | — | `Path`, `LocalPath`, `MemPath`, `FTPPath`, `ZipPath`, `TarPath`, `ArchivePath`, `sync`, `glob`, `checksum`, `providers`, `http`, `testing`, `uripath` on local paths |
 | `uri` | `uritools`, `netimps>=0.4.0,<0.5` | `pathlib_next.uri` and the URI schemes that need no client library: `file:`, `data:`, `ftp(s):`, archives, and `http(s):`, `dav(s):`, `github:`, `gitlab:`, `git:` (HTTP runs on the standard library) |
 | `http` | `requests` + `uri` | `RequestsTransport` (`with_session()`, `PATHLIB_NEXT_HTTP_TRANSPORT=requests`): `~/.netrc`, certifi, SOCKS, digest/NTLM, cookies |
 | `sftp` | `paramiko` + `uri` | `sftp:` (paramiko backend) |
@@ -45,6 +45,8 @@ exceptions `PathError` and `NonRelativePatternError`, and the modules `glob`
 (`pathlib_next.glob`) and `sync` (`pathlib_next.sync`). `FTPPath`, `ZipPath`,
 `TarPath` and `ArchivePath` are exported too, imported on first use so that
 `import pathlib_next` loads neither `ftplib` nor `ssl` nor any archive code.
+`pathlib_next.http` (HTTP requests) is not exported there: import it when
+it is needed, since it loads `http.client` and `ssl`.
 `MemPath` is defined in `pathlib_next.mempath`, which also holds
 `MemPathBackend` and `MemFile`; `pathlib_next.testing` is never imported
 implicitly.
@@ -52,7 +54,7 @@ implicitly.
 Every public module declares `__all__` with exactly the names this file
 documents for it: the root, `path`, `fspath`, `mempath`, `protocols` (and its
 `fs`, `io`, `checksum`), `testing`, `sync`, `glob`, `checksum`, `archive`,
-`ftp`, `providers` and `exceptions`. So `from pathlib_next import *` publishes
+`ftp`, `http`, `providers` and `exceptions`. So `from pathlib_next import *` publishes
 the root's names and nothing else (`P` and `PN` are not among them; they stay
 importable from `pathlib_next.path`). Every other module of the core starts
 with an underscore and is private.
@@ -1123,6 +1125,316 @@ members with a part Windows would rewrite or send to a device
 copies, other links — to nothing, to a directory, or in a loop — skipped
 with `UserWarning`).
 
+## HTTP requests (`pathlib_next.http`)
+
+Standard library only (`http.client`, `ssl`); needs no extra and no URI.
+`import pathlib_next.http` loads `http.client` and `ssl`; `import pathlib_next`
+does not. The package sends a request through a **transport**, follows
+redirects under one rule for credentials, and maps a failed request to the
+`OSError` types `pathlib` raises. The `http:` and `dav:` paths of another
+distribution are built on it.
+
+```python
+class HTTPClient:
+    headers: dict
+    timeout: float | tuple | None
+    user_agent: str
+    def __init__(
+        self, transport=None, *, headers=None, timeout=(10, 60), user_agent=None,
+    ): ...
+    transport
+    def request(
+        self, method, url, *, data=None, headers=None, stream=False,
+        allow_redirects=None, timeout=..., auth=None,
+    ): ...
+    def redirect(
+        self, method, url, resp, *, headers=None, stream=False, timeout=...,
+        auth=None,
+    ): ...
+    def close(self): ...
+
+DEFAULT_TIMEOUT = (10, 60)
+MAX_REPLY_BYTES = 8388608
+```
+
+- **`HTTPClient(transport=None, *, headers=None, timeout=(10, 60),
+  user_agent=None)`** holds a transport and what every request is sent with.
+  `transport` is any object with `send()` (the contract below); without one the
+  client builds the transport that `PATHLIB_NEXT_HTTP_TRANSPORT` names (the
+  built-in `HTTPTransport` by default) on first use, and `close()` or leaving
+  its `with` block closes a transport it built, never one it was given. A
+  transport without a `send()` method is `TypeError`. `headers` are sent with
+  every request, the call's headers merged over them by name (case-blind, a
+  value of `None` removes the name) over `User-Agent: <user_agent>` (default
+  `pathlib-next/<version>`) and `Accept: */*`. Every request gets
+  `timeout=(10, 60)` seconds (`connect`, `read`) unless the client or the call
+  gives one; `timeout=None` waits without limit. `repr()` shows no header.
+- **`request(method, url, *, data=None, headers=None, stream=False,
+  allow_redirects=None, timeout, auth=None)`** returns the final
+  `HTTPResponse`. `data` is `bytes`, `str` (UTF-8), a binary file or an
+  iterable of `bytes`; one that is not `bytes` cannot be sent twice, so it is
+  not sent again after a redirect or a dropped connection. `auth` is a
+  `(user, password)` pair sent as `Authorization: Basic`, or a `str` sent as the
+  `Authorization` value (`"Bearer <token>"`), to the origin of `url` unless a
+  header names an `Authorization`. A `url` that carries credentials,
+  a URL or header value with a control character (CR and LF included) and
+  another scheme than `http:` or `https:` are `ValueError`, before anything is
+  sent. A failure of the connection is `TimeoutError`, `ConnectionError`,
+  `ssl.SSLError` or `OSError(EIO)` as the transport raises them. A status of
+  400 or more is **not** an error here: it is the reply (`raise_for_status()`).
+  With `stream=False` the body has been read when `request()` returns, and one
+  that decodes to more than `MAX_REPLY_BYTES` is `OSError(EFBIG)`; with
+  `stream=True` the caller reads the body and closes the response.
+- **Redirects.** `GET`, `HEAD` and `OPTIONS` follow up to 30 redirects (a `303`
+  becomes a `GET`); `allow_redirects=False` returns the first answer. A redirect
+  whose `Location` is missing or that cannot be requested (another scheme, a
+  port out of range, a host that is not a name) is `OSError(EIO)` naming the
+  status, never `ValueError`. A redirect that changes the scheme, host or port
+  drops `Authorization` for that hop and every later one (a return to the first
+  origin does not bring it back), also from `https:` to `http:`, and nothing
+  else: every header other than `Authorization` goes to the new host as well,
+  so keep a secret in `Authorization`. Every other method (`PUT`, `POST`,
+  `PATCH`, `DELETE`, `PROPFIND`, ...) is sent without following: a 307 or 308
+  (for `PROPFIND` also a 301, 302 or 303) to the same scheme, host and port is
+  sent once more with the same method, headers and body, and any other 3xx, a
+  redirect to another origin or a second redirect is `OSError(EIO)` naming the
+  status and the `Location` (userinfo, query and fragment removed). A body
+  that is not `bytes` cannot be sent again, so it raises too.
+- **`redirect(method, url, resp, *, headers=None, stream=False, timeout,
+  auth=None)`** sends `method` to where `resp`, the answer to a request for
+  `url` made with `allow_redirects=False`, redirects to, and follows what that
+  redirects to in turn. `Authorization` is left off whenever the target is
+  another scheme, host or port than `url`'s. No usable `Location` is
+  `OSError(EIO)`.
+
+```python
+class HTTPTransport:
+    def __init__(self, *, ssl_context=None, verify=True, proxies=None): ...
+    def send(
+        self, method, url, *, headers, body=None, timeout, stream=False,
+    ): ...
+    def close(self): ...
+
+class HTTPResponse:
+    status: int
+    reason: str
+    headers: Headers
+    url: str
+    def __init__(
+        self, status, reason, headers, url, body=b"", *, decode=True,
+    ): ...
+    def read(self, size=-1): ...
+    def iter_bytes(self, chunk_size=65536): ...
+    def buffered(self): ...
+    def close(self): ...
+
+class Headers:
+    def get_all(self, name): ...
+```
+
+- **The transport contract.** Any object with `send(method, url, *, headers,
+  body=None, timeout, stream=False) -> HTTPResponse` and `close()` is a
+  transport (a context manager is optional). `send()` makes exactly one
+  request: it follows no redirect, adds no credentials and retries nothing
+  but what is stated below. `body` is `None`, `bytes`, a binary file or an
+  iterable of `bytes` (never `str`: `TypeError`). A body is sent under a
+  `Content-Length` when its length is known without reading it: `bytes`, a
+  list or tuple of `bytes`, a file that is seekable (the bytes from `tell()`
+  to its end, the position restored) and a regular file (its size less
+  `tell()`). Any other body (an iterator, a generator, a pipe or another
+  stream that cannot report its size) is sent `Transfer-Encoding: chunked`. A
+  `Content-Length` in `headers` is trusted: that many bytes are sent and
+  nothing is chunked, a longer body is cut there, a count that is not a number
+  or is larger than a body whose length is known is `ValueError` before
+  anything is sent, and a body that runs out first is `OSError(EIO)` with its
+  connection closed. No body is sent past its length (a file that grew after it
+  was measured is cut there). A file or iterator is never rewound and never
+  sent twice. `timeout` is seconds, a `(connect, read)` pair or `None` (no
+  limit); the read half bounds each wait on the server, not the whole reply.
+  With `stream=False` the body has been read when `send()` returns; with
+  `stream=True` it is read from the response, which the caller closes (an
+  unread rest of a body closes its connection). A transport raises only
+  `TimeoutError`, `ConnectionError`, `ssl.SSLError`, `ValueError` (before
+  anything is sent, for a header or URL with a control character, a URL with
+  credentials, or another scheme) or else `OSError(EIO)`; no third-party
+  exception and no URL or header value is in its text. A reply below 200 is
+  never the one `send()` returns: `HTTPTransport` skips interim (1xx) replies,
+  at most 8, and past that is `OSError(EIO)` with its connection closed.
+- **`HTTPResponse`**: `status`, `reason`, `headers` (read-only, names compare
+  without case, a name sent twice reads as `"a, b"` and `headers.get_all()`
+  lists them; `repr()` shows names only), `url` (the URL requested, without
+  fragment; an empty path is `/`), `read(size=-1)`, `iter_bytes(chunk_size)`,
+  `buffered()` (reads the rest of the body into memory, closes the connection
+  and returns the response, which stays readable: what `send(stream=False)`
+  returns), `close()` and a context manager. A `gzip` or `deflate` body is
+  decoded, in steps of at most 256 KiB of output per step, unless the request
+  set an `Accept-Encoding` naming a coding of its own (`identity` counts as
+  none); `headers` stay as received, so `Content-Length` counts the encoded
+  bytes. A body that ends before the length the server stated, a chunked body
+  cut short, and a coded body that is not valid are `OSError(EIO)`, never a
+  shorter read. A transport builds one from `bytes` or from an object with
+  `read(amount)` and `close()`; a fake transport in a test does the same.
+- **`HTTPTransport(ssl_context=None, verify=True, proxies=None)`** is standard
+  library only. `https:` is verified against `ssl_context`, else against
+  `ssl.create_default_context()` (the system trust store, not certifi);
+  `verify=False` is the one way to turn verification off (each transport built
+  with it logs a warning under the `pathlib_next.http` logger), and `ssl_context`
+  wins over it. Each thread keeps one idle connection per server (at most 8,
+  closed when the thread ends or on `close()`), reused for its next request
+  unless the server has closed it or sent bytes on it since (checked before
+  anything is sent). A request that fails before any byte of a reply on a
+  reused connection that the server had closed is sent once more on a new
+  connection **only** if it is `GET`, `HEAD`, `OPTIONS`, `PUT`, `DELETE` or
+  `PROPFIND` and its body is `None` or in memory; any other request uses an
+  idle connection only if it carried a reply within the last second. A timeout
+  is never retried. `stream=False` holds the whole body in memory; read a body
+  that may be large with `stream=True`.
+- **Proxies.** `proxies=None` reads the environment (`HTTP_PROXY`,
+  `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`, through `urllib.request`, which
+  matches names and suffixes in `NO_PROXY`; a CIDR block there, such as
+  `10.0.0.0/8` or `fd00::/8`, also sends an IP-literal host direct, and a host
+  name is never resolved to be matched against one). Otherwise `proxies` is
+  indexed with the request URL (no fragment): it returns `None` (direct), one
+  proxy, or an iterable of them to try in order when a connection cannot be
+  made (`None` in the order is a direct attempt, and an empty iterable is
+  direct as well); `KeyError` means direct and the environment is not read;
+  `{}` sends everything direct (unlike other clients, which still read the
+  environment); an exception of the provider other than `KeyError` reaches the
+  caller as it is. A proxy is a `str` URL or any object with a `url`
+  attribute, so a proxy resolver from another library works as it is, with none
+  imported here:
+
+  ```
+  class Resolver:  # tries the first proxy, then connects directly
+      def __getitem__(self, url):
+          return ["http://user:secret@proxy.example:3128", None]
+
+  transport = HTTPTransport(proxies=Resolver())
+  ```
+
+  A plain `dict` may use the keys the `requests` library does (`"http"`,
+  `"https"`, `"all"`, `"scheme://host"`). Only `http://` proxies work:
+  absolute-form requests for `http:` and `CONNECT` for `https:`, with
+  `Proxy-Authorization: Basic` from the proxy URL's userinfo (sent to the proxy
+  only); any other scheme (`socks5`, `https`) is `OSError(EPROTONOSUPPORT)`
+  naming the scheme and `pathlib-next-requests`. A proxy that refuses `CONNECT`
+  is a `ConnectionError` and the next proxy is not tried. Proxy credentials are
+  in no message, `repr()` or traceback.
+
+### Replies and errors (`pathlib_next.http`)
+
+```python
+class HTTPStatusError(Exception):
+    response: HTTPResponse
+    def __init__(self, response): ...
+
+def raise_for_status(resp): ...
+def read_limited(resp, what, limit=None): ...
+def json_body(resp, what, limit=None): ...
+def drop_body(resp, limit=None): ...
+def translate_errors(subject, *, conflict=FileExistsError): ...
+def os_error(error_class, subject): ...
+def server_size(text): ...
+def peer_text(text, limit=120): ...
+def split_userinfo(url): ...
+def is_redirect(resp): ...
+```
+
+- `raise_for_status(resp)` raises `HTTPStatusError` (holding `response`) for a
+  status of 400 or more.
+- `read_limited(resp, what, limit=None)` is the whole decoded body of `resp`,
+  which may be at most `limit` bytes (default `MAX_REPLY_BYTES`, 8 MiB after
+  decoding, however small it is on the wire; assign
+  `pathlib_next.http.MAX_REPLY_BYTES` to allow more, it is read each time):
+  more is `OSError(EFBIG)` naming `what`, and the connection is closed.
+  `json_body()` is that, parsed (`ValueError` when it is not JSON).
+- `drop_body(resp, limit=None)` gives up the body of a reply nobody looks at: it
+  is read up to `limit` bytes so the connection can serve the next request, and
+  `resp` is closed, which closes the connection when the body was longer.
+- `translate_errors(subject, *, conflict=FileExistsError)` is a context manager
+  that maps what a request raised to what `pathlib` raises for `subject` (a path
+  or URL, shown through `str()`): an `HTTPStatusError` of 404 or 410 becomes
+  `FileNotFoundError`, 401 or 403 `PermissionError`, 405 or 501 `PermissionError`
+  naming the status, 409 `conflict` (a write passes `FileNotFoundError`: RFC 4918
+  uses 409 for a missing parent collection), any other status `OSError(EIO)`
+  naming it (`HTTP Error 502 Bad Gateway for <subject>`). A `TimeoutError` or
+  `ConnectionError` is raised again with a message holding `subject` and the
+  exception's type name. The cause is never chained, so a URL, a header or a
+  credential that the transport's error quoted is in no message or traceback.
+  `os_error(error_class, subject)` builds one such exception as `pathlib` does,
+  with `errno` and `filename` set.
+- `peer_text(text, limit=120)` is text that came from the other end (a reason
+  phrase, a `Location`, a header value) as an error message may show it:
+  control, line-separator and bidirectional characters escaped, cut to `limit`.
+  `server_size(text)` is a byte count a server stated as an `int`, or `None` when
+  it is not a plain non-negative decimal number. `split_userinfo(url)` is
+  `(url_without_userinfo, (user, password) | None)`, each part the octets its
+  percent-escapes stand for (`str` when ASCII, else `bytes`); `is_redirect(resp)`
+  says whether a reply is a 301, 302, 303, 307 or 308 that names a `Location`.
+
+### For transport implementers (`pathlib_next.http`)
+
+```python
+TRANSPORT_GROUP = "pathlib_next.http_transports"
+TRANSPORT_ENV = "PATHLIB_NEXT_HTTP_TRANSPORT"
+def transport_names() -> tuple[str, ...]: ...
+def get_transport(name: str) -> type: ...
+def default_transport(): ...
+
+class PreparedRequest(NamedTuple):
+    method: str
+    url: str
+    headers: dict[str, str]
+    body: Any
+    timeout: tuple[float | None, float | None]
+    decode: bool
+
+def prepare_request(
+    method, url, *, headers, body=None, timeout,
+) -> PreparedRequest: ...
+```
+
+A distribution provides an HTTP transport by declaring an entry point in the
+group `pathlib_next.http_transports`: the name is the transport's (`requests`)
+and the value names a class that is built with no arguments (`pyproject.toml`:
+`[project.entry-points."pathlib_next.http_transports"]`, `requests =
+"pathlib_next_requests:RequestsTransport"`). The class implements "The transport
+contract" above: `send()` and `close()`.
+
+- `transport_names()` — the transport names, sorted: `builtin`, every entry of
+  the group of an installed distribution, and `requests` whether or not its
+  distribution is installed. Nothing is imported to list them.
+- `get_transport(name)` — the class called `name`; the name is case-sensitive.
+  `builtin` is always `HTTPTransport`: an entry called `builtin` in the group is
+  ignored. A transport that another distribution provides and that is not
+  installed raises `ImportError` naming it (`pip install pathlib-next-requests`
+  for `requests`); any other name is a `ValueError` listing `transport_names()`;
+  an entry that does not load a class is a `TypeError`.
+- `default_transport()` — a new transport of the kind
+  `PATHLIB_NEXT_HTTP_TRANSPORT` names, which is what a client given no transport
+  builds: `get_transport(name)()`. An empty, differently cased or unknown value
+  is a `ValueError` naming the choices.
+- `prepare_request(method, url, *, headers, body=None, timeout)` — the arguments
+  of `send()` as the contract reads them, so a transport that starts with it
+  refuses what the built-in transport refuses and frames a body the same way.
+  `method` is upper-cased and the fragment is dropped from `url`. `headers` come
+  back as a `dict` of text values with the `Content-Length` of a body whose
+  length is known (`0` for a `PATCH`, `POST` or `PUT` without one) and
+  `Accept-Encoding: gzip, deflate` unless the caller named an encoding. `body` is
+  `None`, `bytes`, an object that yields exactly the `Content-Length` bytes (a
+  file or a list of `bytes`, cut at the length it was measured at) or an
+  iterable of `bytes` to send chunked. `timeout` is the `(connect, read)` pair.
+  `decode` is what to pass as `HTTPResponse(..., decode=decode)`. It raises
+  `ValueError`, before anything is sent, for a method or header name that is not
+  a token, a header value or URL with a control character, a URL with
+  credentials or another scheme, a `Content-Length` that is not a count of bytes
+  or exceeds the body, and a timeout that is not a positive number, `None` or a
+  pair of them; and `TypeError` for a `str` body. No message quotes the URL or a
+  header value.
+
+The suite that holds a transport to these promises ships with the package:
+"Testing support" under "Testing helpers".
+
 ## Protocols (`pathlib_next.protocols`)
 
 ### `fs.FileStatLike`
@@ -1604,6 +1916,48 @@ class TestMyPath(PathContract):
     def root(self, tmp_path):
         return populate_fixture_tree(MyPath(tmp_path))
 ```
+
+### Testing support: the HTTP transport suite (`pathlib_next.http.testing`, needs `pytest`)
+
+This is testing support, not part of the stable API: it is importable and
+documented here, but its contents, including test names, fixtures and helper
+signatures, may change in any release. `pathlib_next.http` never imports it and
+the root does not export it.
+
+```python
+# pathlib_next.http.testing
+def suite_directory() -> pathlib.Path: ...
+def run(arguments=None) -> int: ...
+```
+
+A distribution that provides a transport holds it to the promises of the
+built-in one by running the tests `pathlib_next` runs over its own, with the
+distribution and `pytest` installed:
+
+```
+python -m pathlib_next.http.testing --http-transports requests -q
+```
+
+Everything after `python -m pathlib_next.http.testing` goes to pytest.
+`--http-transports` takes names that `transport_names()` lists, separated by
+commas (default `builtin`): each test that depends on the transport runs once
+per name, with `PATHLIB_NEXT_HTTP_TRANSPORT` set to it, so the clients the
+test builds use `get_transport(name)()`. The tests are `HTTPClient` over
+loopback servers (redirects and the rule for `Authorization`, replies cut short
+or too large, errors, headers) and the transport contract against servers
+scripted at the byte level (what the server received is what is asserted). The
+modules also hold tests that do not depend on the transport; they pass whatever
+the name. Every connection stays on the loopback interface, a test that tries
+another host fails, and the proxy and certificate settings of the environment
+are removed for the run. The TLS tests need `cryptography` and skip without it.
+Importing `pathlib_next.http.testing` loads `pathlib_next.http` but not `pytest`.
+
+- `run(arguments=None)` runs the suite with pytest and returns the exit status;
+  it raises `ImportError` without pytest.
+- `suite_directory()` is the directory that holds the test modules,
+  `MODULES` (their file names) and `HELPERS` (the files they import):
+  `pathlib_next/http/testing/suite` in an installed package, `tests/transport`
+  in a source checkout; `FileNotFoundError` when neither is there.
 
 ## URIs (`pathlib_next.uri`, `uri` extra)
 
@@ -3041,9 +3395,20 @@ Windows too, where a closed pipe reports `EINVAL`).
 
 ## Environment variables
 
-The core reads none. The URI layer reads two.
+The core reads one (`PATHLIB_NEXT_HTTP_TRANSPORT`). The URI layer reads it too, and one more.
 
-### `PATHLIB_NEXT_HTTP_TRANSPORT` (URI layer)
+### `PATHLIB_NEXT_HTTP_TRANSPORT` (`pathlib_next.http`, URI layer)
+
+For `pathlib_next.http`: `builtin` (the default when unset), or the name of a
+transport an installed distribution declares in the group
+`pathlib_next.http_transports` (`requests`, from `pathlib-next-requests`): the
+transport an `HTTPClient` builds when it was given none. `requests` without
+that distribution raises `ImportError` naming it; the value is case-sensitive,
+and an empty or unrecognised one raises `ValueError` naming the choices
+(`transport_names()`). It is read when a client first needs its transport,
+once per client, so a change reaches clients that need theirs afterwards.
+
+For the URI layer:
 
 `builtin` (the default when unset) or `requests`: the transport that
 `http(s):`, `dav(s):`, `github:`, `gitlab:` and `git:` build for a backend that

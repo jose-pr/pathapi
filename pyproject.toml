@@ -107,6 +107,12 @@ git = "pathlib_next.uri.schemes.git:GitPath"
 "git+github" = "pathlib_next.uri.schemes.git:GitHubGitPath"
 "git+gitlab" = "pathlib_next.uri.schemes.git:GitLabGitPath"
 
+# The HTTP transports `pathlib_next.http` can send through. The value is a class
+# that is built with no arguments; `pathlib_next.http.transport_names()` lists
+# it without importing it.
+[project.entry-points."pathlib_next.http_transports"]
+builtin = "pathlib_next.http:HTTPTransport"
+
 [project.urls]
 Homepage = "https://github.com/jose-pr/pathlib-next/"
 Documentation = "https://jose-pr.github.io/pathlib-next/"
@@ -120,6 +126,20 @@ Issues = "https://github.com/jose-pr/pathlib-next/issues"
 # orientation for a checkout and is not part of the wheel.
 [tool.hatch.build.targets.wheel.force-include]
 "README.md" = "pathlib_next/README.md"
+# The transport suite (`python -m pathlib_next.http.testing`) runs from the installed package.
+"tests/transport/test_client_default.py" = "pathlib_next/http/testing/suite/test_client_default.py"
+"tests/transport/test_client_errors.py" = "pathlib_next/http/testing/suite/test_client_errors.py"
+"tests/transport/test_client_peer_text.py" = "pathlib_next/http/testing/suite/test_client_peer_text.py"
+"tests/transport/test_client_redirect_origin.py" = "pathlib_next/http/testing/suite/test_client_redirect_origin.py"
+"tests/transport/test_client_redirects.py" = "pathlib_next/http/testing/suite/test_client_redirects.py"
+"tests/transport/test_client_reply_limits.py" = "pathlib_next/http/testing/suite/test_client_reply_limits.py"
+"tests/transport/test_client_write_redirects.py" = "pathlib_next/http/testing/suite/test_client_write_redirects.py"
+"tests/transport/test_transport_body.py" = "pathlib_next/http/testing/suite/test_transport_body.py"
+"tests/transport/test_transport_send.py" = "pathlib_next/http/testing/suite/test_transport_send.py"
+"tests/transport/conftest.py" = "pathlib_next/http/testing/suite/conftest.py"
+"tests/transport/transport_fakes.py" = "pathlib_next/http/testing/suite/transport_fakes.py"
+"tests/transport/transport_guard.py" = "pathlib_next/http/testing/suite/transport_guard.py"
+"tests/transport/transport_wire.py" = "pathlib_next/http/testing/suite/transport_wire.py"
 
 # `*.local.*` files are per-machine overrides and `CLAUDE*` is agent config:
 # neither is ever packaged (both are also gitignored). `/.*` does not match

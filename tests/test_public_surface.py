@@ -119,6 +119,32 @@ EXPORTS = {
         "ReadPathContract",
         "populate_fixture_tree",
     },
+    "pathlib_next.http": {
+        "DEFAULT_TIMEOUT",
+        "HTTPClient",
+        "HTTPResponse",
+        "HTTPStatusError",
+        "HTTPTransport",
+        "Headers",
+        "MAX_REPLY_BYTES",
+        "PreparedRequest",
+        "TRANSPORT_ENV",
+        "TRANSPORT_GROUP",
+        "default_transport",
+        "drop_body",
+        "get_transport",
+        "is_redirect",
+        "json_body",
+        "os_error",
+        "peer_text",
+        "prepare_request",
+        "raise_for_status",
+        "read_limited",
+        "server_size",
+        "split_userinfo",
+        "translate_errors",
+        "transport_names",
+    },
     "pathlib_next.glob": {
         "RECURSIVE",
         "full_match",
@@ -145,6 +171,7 @@ CORE_PUBLIC = {
     "pathlib_next.fspath",
     "pathlib_next.ftp",
     "pathlib_next.glob",
+    "pathlib_next.http",
     "pathlib_next.mempath",
     "pathlib_next.path",
     "pathlib_next.protocols",
@@ -155,6 +182,11 @@ CORE_PUBLIC = {
     "pathlib_next.sync",
     "pathlib_next.testing",
 }
+
+
+# Importable and documented, but testing support: outside the compatibility
+# promise, never imported by the package it tests, and not exported by it.
+TESTING_SUPPORT = {"pathlib_next.http.testing"}
 
 
 def _core_modules():
@@ -171,7 +203,7 @@ def _core_modules():
 
 
 def test_every_public_module_of_the_core_declares_all_and_each_name_exists():
-    for module in sorted(CORE_PUBLIC):
+    for module in sorted(CORE_PUBLIC | TESTING_SUPPORT):
         imported = importlib.import_module(module)
         names = getattr(imported, "__all__", None)
         assert names is not None, f"{module} has no __all__"
@@ -186,7 +218,7 @@ def test_every_other_module_of_the_core_is_private():
         for module in _core_modules()
         if not any(part.startswith("_") for part in module.split("."))
     }
-    assert public == CORE_PUBLIC
+    assert public == CORE_PUBLIC | TESTING_SUPPORT
 
 
 def _uri_available():
