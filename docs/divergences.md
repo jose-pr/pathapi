@@ -103,22 +103,28 @@ eal.txt`) before the link is made; on POSIX the text is stored as given | A link
 ## Explicitly out of scope (not implemented on `Pathname`/`Path`)
 
 These `pathlib.Path` methods are **not** part of the generic `Pathname`/`Path`
-contract because they don't have a portable meaning across arbitrary
+contract, or only through a primitive a backend may leave out, because they don't have a portable meaning across arbitrary
 virtual and remote backends (a `MemPath` or an HTTP URL has no filesystem-relative
 cwd, no symlinks, no OS-level owner/group). `LocalPath` gets every one of
 these for free from `pathlib.Path` via MRO -- this list only describes what
 `MemPath`, `FTPPath` and the archive paths (and custom `Path` subclasses in general) don't get:
 
-- `resolve()`, `absolute()` -- no portable notion of "the current working
-  directory" or canonicalizing `..`/symlinks for an arbitrary backend.
-- `readlink()`, `hardlink_to()`, and a working `symlink_to()` -- no portable
-  symlink/hardlink concept for most backends. `symlink_to(target,
-  target_is_directory=False, *, force=False)` exists on every `Path`, but only
-  `LocalPath` and the classes of other distributions whose backend has links
-  implement its `_symlink_to()` primitive; other backends raise
+- `resolve()`, `absolute()`, `readlink()`, `hardlink_to()`, `owner()`, `group()`
+  exist on every `Path`, each a protocol (`Resolve`, `Symlink`, `Hardlink`,
+  `Owner`), and need a primitive the backend supplies; until it does the method
+  raises `NotImplementedError`, and `protocols.supports()` says whether it did.
+  `absolute()` needs `_cwd()` (`MemPath` and the tree paths answer with their
+  root, which a relative path is joined to), `resolve()` follows links through
+  `readlink()`, at most 40, and is lexical (`..` applied, nothing read) on a class
+  that cannot read links; a loop raises what `pathlib` raises on the running
+  interpreter. `readlink()` returns a path of the same class whose text is the
+  link's. `hardlink_to()` needs `_hardlink_to()`, `owner()`/`group()` need
+  `_user_name()`/`_group_name()` and a `stat()` carrying `st_uid`/`st_gid`.
+  `symlink_to(target, target_is_directory=False, *, force=False)` exists on every
+  `Path`, but only `LocalPath` and the classes of other distributions whose backend
+  has links implement its `_symlink_to()` primitive; other backends raise
   `NotImplementedError`. The archive paths implement `readlink()` for the link
-  members they hold.
-- `owner()`, `group()` -- no portable uid/gid-to-name mapping.
+  members they hold. `LocalPath` keeps `pathlib`'s own of each of these.
 - `expanduser()`, `Path.cwd()`, `Path.home()` -- inherently tied to the local
   OS/filesystem, meaningless for a URI or in-memory path.
 - `walk(..., follow_symlinks=True)` symlink-cycle protection -- `walk()`

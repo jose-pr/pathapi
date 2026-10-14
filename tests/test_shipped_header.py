@@ -303,8 +303,8 @@ def test_the_header_has_blocks_for_the_modules_it_documents():
             "move",
         ),
         (
-            "class Path(Pathname, Chmod, Stat, BinaryOpen):",
-            "class Path(Pathname, Elsewhere):",
+            "class Path(Pathname, Move, Copy, Identity,",
+            "class Path(Pathname, Elsewhere, Copy, Identity,",
             "Elsewhere is not a base",
         ),
         (
@@ -359,3 +359,11 @@ def test_the_module_sections_run_from_the_root_to_the_testing_helpers():
     titles = _headings(HEADER.read_text(encoding="utf-8"), 2)
     assert titles[0].startswith("Package root")
     assert titles[-4].startswith("Testing helpers")
+
+
+def test_every_protocol_the_package_exports_is_in_the_header():
+    from pathlib_next import protocols
+
+    text = HEADER.read_text(encoding="utf-8")
+    missing = [name for name in protocols.__all__ if f"`{name}`" not in text]
+    assert missing == []

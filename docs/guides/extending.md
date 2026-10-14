@@ -13,6 +13,45 @@ distributions that add SFTP, object stores, repository hosts and URIs.
 Run the shared contract suite against your implementation -- see
 [Testing your implementation](#testing-your-implementation) below.
 
+## Compose a class from protocols
+
+`Path` is a class statement over the protocols of `pathlib_next.protocols`: `Stat`, `Chmod`,
+`Owner`, `Utime`, `Create`, `BinaryOpen`, `Listing`, `Remove`, `Symlink`, `Hardlink`, `Resolve`,
+`Identity`, `Copy` and `Move`. Each has a few primitives (stubs that raise `NotImplementedError`)
+and derives the rest. A backend that only reads is `Pathname`, `Listing`, `Stat` and
+`BinaryOpen` with the primitives `stat()`, `iterdir()` and `_open()`, and no `Path`: `glob()`,
+`walk()`, `read_text()`, `checksum.md5()` and a `PathSyncer` source work on it. List a protocol
+before the ones it is built on (`Listing` before `Stat`).
+
+`supports()` and `capabilities()` tell what a class has, without a call that raises:
+
+```python
+from pathlib_next import MemPath
+from pathlib_next.protocols import Create, Symlink, supports
+
+assert supports(MemPath, Create)
+assert not supports(MemPath, Symlink)
+```
+
+| Protocol | Primitives |
+| --- | --- |
+| `Stat` | `stat()` |
+| `Chmod` | `chmod()` |
+| `Owner` | `_chown()`; `owner()`/`group()` also need `_user_name()`, `_group_name()` |
+| `Utime` | `_utime()` |
+| `Create` | `_mkdir()` |
+| `BinaryOpen` | `_open()` |
+| `Listing` | `iterdir()` |
+| `Remove` | `unlink()`, `rmdir()` |
+| `Symlink` | `readlink()`; `symlink_to()` also needs `_symlink_to()` |
+| `Hardlink` | `_hardlink_to()` |
+| `Resolve` | `_cwd()` |
+| `Move` | `rename()` (`move()` copies and removes without it) |
+| `Identity`, `Copy` | none |
+
+A class whose answer depends on its connection defines `_supports(protocol)`, returning
+`True`, `False`, or `None` to leave the answer to the class.
+
 ## Subclass `Path`
 
 Required on the pure-path side (abstract on `Pathname`):
@@ -49,7 +88,10 @@ deletes when `rename()` is missing) or raise `NotImplementedError`:
 | `unlink(missing_ok=False)`, `rmdir()` | pathlib's exceptions: `IsADirectoryError`, `NotADirectoryError`, `OSError(errno.ENOTEMPTY)`. |
 | `rename(target)` | return the new path. |
 | `chmod(mode, *, follow_symlinks=True)` | normalize with `providers.parse_mode(mode)` so octal strings work. |
-| `_symlink_to(target, target_is_directory=False)`, `readlink()` | `symlink_to(..., force=)` is derived; `target` is already a path object. |
+| `readlink()` | a path of this class whose text is the link text, unresolved; `OSError(EINVAL)` for a path that is not a link. `resolve()` is derived from it. |
+| `_symlink_to(target, target_is_directory=False)` | `symlink_to(..., force=)` is derived; `target` is already a path object. |
+| `_hardlink_to(target)`, `_cwd()` | `hardlink_to()` is derived; `_cwd()` is the directory a relative path is relative to, for `absolute()` and `resolve()`. |
+| `_user_name(uid)`, `_group_name(gid)` | names for the ids of `stat()`; `owner()` and `group()` are derived. |
 | `_chown(uid, gid, *, follow_symlinks=True)` | receives a canonical pair (`None` = unchanged); `chown()` is derived. |
 | `_utime(*, atime=None, mtime=None)` | set an existing entry's times, in seconds since the epoch (`None` = leave that one alone); whole seconds, or no access time, is fine. Raise `NotImplementedError` (the default) when the backend cannot set a time: `touch()` of an existing file then leaves it as it is, and `PathSyncer(preserve_mtime=True)` leaves the copy's own time. |
 

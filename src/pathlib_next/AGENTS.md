@@ -166,7 +166,10 @@ has a root; a class whose rooted paths are not all absolute overrides it).
 ### `Path`
 
 ```python
-class Path(Pathname, Chmod, Stat, BinaryOpen):
+class Path(
+    Pathname, Move, Copy, Identity, Create, Chmod, Owner, Resolve,
+    Symlink, Hardlink, Remove, Listing, Stat, Utime, BinaryOpen,
+):
     info
     def is_hidden(self): ...
     def is_junction(self) -> bool: ...
@@ -197,6 +200,12 @@ class Path(Pathname, Chmod, Stat, BinaryOpen):
     def symlink_to(
         self, target, target_is_directory=False, *, force=False,
     ) -> None: ...
+    def readlink(self) -> Self: ...
+    def hardlink_to(self, target) -> None: ...
+    def absolute(self) -> Self: ...
+    def resolve(self, strict=False) -> Self: ...
+    def owner(self, *, follow_symlinks=True) -> str: ...
+    def group(self, *, follow_symlinks=True) -> str: ...
     def copy(
         self, target, *, overwrite=False, follow_symlinks=True,
         preserve_metadata=True, recursive=False, ignore_error=None,
@@ -235,6 +244,13 @@ Base class for I/O paths.
   stays out of a junction there as on `LocalPath`. A method defined in the
   subclass itself, or in a mixin of your own, always wins.
 - `is_hidden()` — name starts with `"."`. `__iter__()` is `iterdir()`.
+- Every operation above is defined by a protocol (see "Protocols"): `Path` adds
+  only `is_hidden()`, `__new__` and `__init_subclass__`. `readlink()`,
+  `hardlink_to()`, `absolute()`, `resolve()`, `owner()` and `group()` are
+  defined on every `Path`, and raise `NotImplementedError` until a class supplies
+  `readlink()`, `_hardlink_to()`, `_cwd()`, `_user_name()` and `_group_name()`;
+  `supports(path, Symlink)` and the like say which it did. `LocalPath` keeps
+  pathlib's own.
 - `samefile()` — compares `(st_dev, st_ino)`; `NotImplementedError`
   when `stat()` lacks them (`LocalPath` uses pathlib's).
 - `_same_filesystem()` — override hook: whether `other`'s
@@ -517,7 +533,8 @@ which is in `pathlib_next.archive`.
 class Pathname:
     def _anchor_segments(self) -> tuple[str, ...]: ...
 
-class Path(Pathname, Chmod, Stat, BinaryOpen):
+class Path(Pathname, Move, Copy, Identity, Create, Chmod, Owner, Resolve,
+           Symlink, Hardlink, Remove, Listing, Stat, Utime, BinaryOpen):
     def _scandir(self) -> Iterator[Tuple[str, Optional[FileStat]]]: ...
     def _same_filesystem(self, other) -> bool: ...
     def _coerce_target(self, target) -> Path: ...
@@ -542,6 +559,15 @@ class CommitOnClose(DiscardOnError, BytesIO):
     def discard(self) -> None: ...
 ```
 
+- Primitives, by protocol ("Protocols" has the table): `stat`; `chmod`;
+  `_chown` (and `_user_name`, `_group_name` for `owner()`/`group()`); `_utime`;
+  `_mkdir`; `_open`; `iterdir`; `unlink`, `rmdir`; `readlink`, `_symlink_to`;
+  `_hardlink_to`; `_cwd`; `rename`; `checksum`. Implement what the backend can
+  and leave the rest: `pathlib_next.protocols.supports(path, Protocol)` then
+  tells a caller, without a call that raises, which protocols the class has.
+- `_supports(protocol)` — optional: return `True` or `False` for a protocol
+  whose answer depends on the connection (a server that lacks an extension),
+  `None` to leave it to the class. `supports()` asks it first for an instance.
 - `_anchor_segments()` — the leading `segments` that anchor the path instead
   of naming a directory (`("",)` for a rooted path, else `()`); `parents`
   stops there. Override it when the root is spelled differently (a class for
@@ -1414,6 +1440,81 @@ The suite that holds a transport to these promises ships with the package:
 
 ## Protocols (`pathlib_next.protocols`)
 
+`Path` is a class statement over these protocols. Each is a `typing.Protocol`
+with default bodies, subclassed explicitly as a mixin: a class lists the ones
+it implements, supplies the **primitives** (stubs that raise
+`NotImplementedError`) and gets the derived operations. A read-only backend is
+`class X(Pathname, Listing, Stat, BinaryOpen)` with no `Path`; list a protocol
+before the ones it is built on (`Listing` before `Stat`), as Python's MRO
+requires. `Path` lists `Copy` before `BinaryOpen`, so `Path.copy` is the path
+copy and not the stream copy.
+
+| Protocol | Module | Primitives | Derived | Bases |
+| --- | --- | --- | --- | --- |
+| `Named` | `pure` | none (structural only) | `name`, `segments`, `parent`, `with_segments()`, `joinpath()`, `/`, `as_posix()` | none |
+| `FileStatLike` | `fs` | `st_mode`, `st_size`, `st_mtime` | | none |
+| `Stat` | `fs` | `stat()` | `lstat()`, `exists()`, `is_dir()`, `is_file()`, `is_symlink()`, `is_block_device()`, `is_char_device()`, `is_fifo()`, `is_socket()`, `info`, `is_junction()`, `is_mount()`, `is_dir_binding()` | none |
+| `Chmod` | `fs` | `chmod()` | `lchmod()` | `Owner`, `Utime` |
+| `Owner` | `fs` | `_chown()` | `owner()`, `group()` (need `_user_name()`, `_group_name()`), `chown()` | `Stat` |
+| `Utime` | `fs` | `_utime()` | | none |
+| `Create` | `fs` | `_mkdir()` | `mkdir()`, `touch()` | `Chmod`, `Utime` |
+| `BinaryOpen` | `io` | `_open()` | `open()`, `read_bytes()`, `read_text()`, `write_bytes()`, `write_text()`, `copy()` | none |
+| `Listing` | `tree` | `iterdir()` | `_scandir()`, `glob()`, `rglob()`, `walk()`, iteration | `Stat` |
+| `Remove` | `tree` | `unlink()`, `rmdir()` | `rm()` | `Listing` |
+| `Symlink` | `links` | `readlink()` | `symlink_to()` (needs `_symlink_to()`), `_symlink_target()` | `Remove` |
+| `Hardlink` | `links` | `_hardlink_to()` | `hardlink_to()` | `Stat` |
+| `Resolve` | `resolve` | `_cwd()` | `absolute()`, `resolve()` | `Symlink` |
+| `Identity` | `transfer` | none | `samefile()`, `_same_filesystem()`, `_node_key()` | `Stat` |
+| `Copy` | `transfer` | none | `copy()`, `copy_into()`, `_copy_from()`, `_coerce_target()`, `_write_batch()` | `Identity`, `Create`, `Symlink`, `BinaryOpen` |
+| `Move` | `transfer` | `rename()` | `move()`, `move_into()`, `replace()` | `Copy`, `Remove` |
+| `NativeChecksum` | `checksum` | `checksum()` | `supported_checksums()` | none |
+
+`Create` also calls `open()` and `unlink()` in `touch()`; `Symlink` creates
+links through `_symlink_to()`, an optional stub of its own (an archive reads
+links and creates none, so it implements `readlink()` only). All names are
+imported from `pathlib_next.protocols`; the module column is where each one
+is defined.
+
+### `supports`, `capabilities`
+
+```python
+def supports(obj, *protocols) -> bool: ...
+def capabilities(obj) -> FrozenSet[type]: ...
+```
+
+`supports(obj_or_class, *protocols)` is true when every primitive of every
+protocol named is something other than its default stub; `capabilities()`
+lists the protocols for which that holds. Ask once instead of calling and
+catching `NotImplementedError`. A primitive also counts as implemented when
+another library defines the operation it feeds: `pathlib`'s `mkdir` for
+`_mkdir`, `open` for `_open`, `absolute` for `_cwd`, `hardlink_to` for
+`_hardlink_to`, and the class's own `chown` for `_chown`; so `LocalPath`
+supports `Owner` on Windows too (`_chown` is defined on every platform),
+though pathlib's own `owner()` raises there. A protocol with no primitives
+(`Identity`, `Copy`) is supported by a class that has it as a base. A class
+whose answer depends on its connection defines `_supports(protocol) -> bool |
+None`, asked first for an instance; `None` falls back to the answer from the
+class. The answer is advisory, like `supported_checksums()`: a primitive may
+still raise `NotImplementedError` for an argument it cannot handle.
+`TypeError` for no protocol and for something that is not a protocol of this
+package (`Named`, `FileStatLike` and the like have no primitives to ask).
+
+### `pure.Named`
+
+```python
+class Named(Protocol):
+    name
+    segments
+    parent
+    def with_segments(self, *segments): ...
+    def joinpath(self, *args): ...
+    def as_posix(self): ...
+```
+
+Structural only: `Pathname` and `pathlib.PurePath` satisfy it without naming
+it, and nothing subclasses it. It is the pure half that `glob`, `walk` and
+`sync` read.
+
 ### `fs.FileStatLike`
 
 ```python
@@ -1439,36 +1540,79 @@ class Stat(Protocol):
     def is_char_device(self): ...
     def is_fifo(self): ...
     def is_socket(self): ...
+    info
+    def is_junction(self) -> bool: ...
+    def is_mount(self) -> bool: ...
+    def is_dir_binding(self) -> bool: ...
 ```
 
 `stat()` (stub). Derives `lstat()`,
 `exists()`, `is_dir()`,
 `is_file()`, `is_symlink()`, `is_block_device()`,
 `is_char_device()`, `is_fifo()`, `is_socket()`; any `OSError`/`ValueError`
-from `stat()` reads as `False`.
+from `stat()` reads as `False`. `info`, `is_junction()`, `is_mount()` and
+`is_dir_binding()` are described under `Path`.
 
 ### `fs.Chmod`
 
 ```python
-class Chmod(Protocol):
+class Chmod(Owner, Utime, Protocol):
     def chmod(self, mode, *, follow_symlinks=True): ...
     def lchmod(self, mode): ...
-    def chown(self, uid=None, gid=None, *, follow_symlinks=True) -> None: ...
-    def _chown(self, uid, gid, *, follow_symlinks=True) -> None: ...
-    def _utime(self, *, atime=None, mtime=None) -> None: ...
 ```
 
 `chmod()` (stub; every
-implementation normalizes through `providers.parse_mode()`, so `"0755"` works),
-`lchmod()`, `_chown()` (stub, receives a
+implementation normalizes through `providers.parse_mode()`, so `"0755"` works)
+and `lchmod()`. `supports(x, Chmod)` asks for `chmod()` alone. `Chmod`
+inherits `Owner` and `Utime` for compatibility, because `chown()`, `_chown()`
+and `_utime()` were documented with it: a class that lists `Chmod` has them,
+and a new class lists the protocol it means.
+
+### `fs.Owner`
+
+```python
+class Owner(Stat, Protocol):
+    def owner(self, *, follow_symlinks=True) -> str: ...
+    def group(self, *, follow_symlinks=True) -> str: ...
+    def _user_name(self, uid) -> str: ...
+    def _group_name(self, gid) -> str: ...
+    def _chown(self, uid, gid, *, follow_symlinks=True) -> None: ...
+    def chown(self, uid=None, gid=None, *, follow_symlinks=True) -> None: ...
+```
+
+`owner()` and `group()` (the 3.13 signature) take `st_uid` and `st_gid` from
+`stat()` and map them through `_user_name(uid)` and `_group_name(gid)` (stubs);
+a stat without the field, or a class without the mapping, raises
+`NotImplementedError`. `LocalPath` keeps pathlib's. `_chown()` (stub, receives a
 canonical pair) / `chown()` —
 `None` or `-1` leaves a field unchanged, `int` is an id, `str` a name; an
-all-unchanged call returns without touching the backend. `_utime(*, atime=None,
+all-unchanged call returns without touching the backend.
+
+### `fs.Utime`
+
+```python
+class Utime(Protocol):
+    def _utime(self, *, atime=None, mtime=None) -> None: ...
+```
+
+`_utime(*, atime=None,
 mtime=None)` (stub) is the primitive for setting an existing entry's times, in
 seconds since the epoch (float): `None` leaves that time alone, a backend that
 keeps whole seconds or no access time sets what it can, and one that cannot set
 a time at all raises `NotImplementedError`. `touch()` of an existing file and
-`PathSyncer(preserve_mtime=True)` call it; there is no public `utime()`.
+`PathSyncer(preserve_mtime=True)` call it.
+
+### `fs.Create`
+
+```python
+class Create(Chmod, Utime, Protocol):
+    def touch(self, mode=None, exist_ok=True): ...
+    def _mkdir(self, mode): ...
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False): ...
+```
+
+`_mkdir(mode)` (stub) creates this one directory; `mkdir()` and `touch()` are
+described under `Path`.
 
 ### `io.BinaryOpen`
 
@@ -1499,6 +1643,147 @@ nothing there either. Binary mode returns the stream `_open()` gave it as it
 is. Derives
 `read_bytes()`, `read_text()`,
 `write_bytes(data)`, `write_text()`, `copy()` (`chunk_size` defaults to `shutil.COPY_BUFSIZE`; `progress(bytes_copied, total_size | None)`; an empty file reports once).
+This `copy()` streams into any target that has `open()`; `Copy.copy()` is the
+path copy, and a class that lists `Copy` before `BinaryOpen` has that one.
+
+### `tree.Listing`
+
+```python
+class Listing(Stat, Protocol):
+    def iterdir(self) -> Iterator[Self]: ...
+    def _scandir(self) -> Iterator[Tuple[str, Optional[FileStat]]]: ...
+    def glob(
+        self, pattern, *, case_sensitive=None, include_hidden=True,
+        recursive=None, dironly=None, recurse_symlinks=False, native=True,
+        on_error=None, bound_loops=False,
+    ): ...
+    def rglob(
+        self, pattern, *, case_sensitive=None, include_hidden=True,
+        recursive=True, dironly=None, recurse_symlinks=False, native=True,
+        on_error=None, bound_loops=False,
+    ): ...
+    def walk(self, top_down=True, on_error=None, follow_symlinks=False): ...
+```
+
+`iterdir()` (stub). `_scandir()`, `glob()`, `rglob()`, `walk()` and
+`__iter__()` derive from it and from `stat()`; their contracts are under
+`Path`.
+
+### `tree.Remove`
+
+```python
+class Remove(Listing, Protocol):
+    def unlink(self, missing_ok=False): ...
+    def rmdir(self): ...
+    def rm(
+        self, recursive=False, missing_ok=False, ignore_error=False, *,
+        follow_symlinks=False, follow_binds=False,
+    ): ...
+```
+
+`unlink()` and `rmdir()` (stubs); `rm()` derives from them and from
+`_scandir()` (see `Path`).
+
+### `links.Symlink`
+
+```python
+class Symlink(Remove, Protocol):
+    def readlink(self) -> Self: ...
+    def _symlink_to(self, target, target_is_directory=False) -> None: ...
+    def _symlink_target(self, target) -> Self: ...
+    def symlink_to(
+        self, target, target_is_directory=False, *, force=False,
+    ) -> None: ...
+```
+
+`readlink()` (stub) returns a path of this class whose `str()` and
+`as_posix()` are the link text, unresolved (`OSError(EINVAL)` where the path
+is not a link); it is the primitive `supports(x, Symlink)` asks for.
+`_symlink_to()` (stub) creates a link, and `symlink_to()` is described under
+`Path`.
+
+### `links.Hardlink`
+
+```python
+class Hardlink(Stat, Protocol):
+    def _hardlink_to(self, target) -> None: ...
+    def hardlink_to(self, target) -> None: ...
+```
+
+`_hardlink_to(target)` (stub) makes this path a hard link to `target`, a
+path of this class; `hardlink_to()` turns a `str` target into a path of the
+same backend first. `LocalPath` has pathlib's `hardlink_to()` and, before
+3.10, makes the link with `os.link`.
+
+### `resolve.Resolve`
+
+```python
+class Resolve(Symlink, Protocol):
+    def _cwd(self) -> Self: ...
+    def absolute(self) -> Self: ...
+    def resolve(self, strict=False) -> Self: ...
+```
+
+`_cwd()` (stub) is the directory a relative path is relative to; `MemPath`
+and the tree paths answer with their root. `absolute()` is the path itself
+when it is absolute, else `_cwd()` joined with it. `resolve(strict=False)`
+makes it absolute, applies `..` and replaces every link by its `readlink()`
+text, at most 40 of them (a rooted link text restarts at the root). It is
+lexical where the class cannot read links. `strict=True` raises
+`FileNotFoundError` for a missing component. A link loop raises what `pathlib`
+raises on the running interpreter: `RuntimeError` before 3.13, and from 3.13
+`OSError(ELOOP)` when `strict` (otherwise the looping link is kept).
+`LocalPath` keeps pathlib's.
+
+### `transfer.Identity`
+
+```python
+class Identity(Stat, Protocol):
+    def _same_filesystem(self, other) -> bool: ...
+    def _node_key(self) -> tuple[object, tuple[str, ...]] | None: ...
+    def samefile(self, other_path): ...
+```
+
+No primitives: the hooks are described under `Path`.
+
+### `transfer.Copy`
+
+```python
+class Copy(Identity, Create, Symlink, BinaryOpen, Protocol):
+    def copy(
+        self, target, *, overwrite=False, follow_symlinks=True,
+        preserve_metadata=True, recursive=False, ignore_error=None,
+        progress=None, on_error=None,
+    ): ...
+    def copy_into(
+        self, target_dir, *, overwrite=False, follow_symlinks=True,
+        preserve_metadata=True, recursive=False, ignore_error=None,
+        progress=None, on_error=None,
+    ) -> Path: ...
+    def _copy_from(
+        self, source, follow_symlinks=True, preserve_metadata=False,
+    ) -> None: ...
+    def _coerce_target(self, target) -> Path: ...
+    def _write_batch(self) -> ContextManager[object]: ...
+```
+
+No primitives: `copy()` is built from the protocols it lists. Contracts are
+under `Path`.
+
+### `transfer.Move`
+
+```python
+class Move(Copy, Remove, Protocol):
+    def rename(self, target): ...
+    def move(self, target, *, overwrite=False): ...
+    def move_into(self, target_dir, *, overwrite=False) -> Path: ...
+    def replace(self, target) -> Path: ...
+    def _rename_compatible(self, target) -> bool: ...
+```
+
+`rename()` (stub). `move()` falls back to a copy and a removal where it is
+missing, so `supports(x, Move)` says whether the backend renames natively, not
+whether `move()` works.
 
 ### `checksum.NativeChecksum`
 
@@ -1890,6 +2175,12 @@ that cannot set a time and leaves `_utime()` raising `NotImplementedError`),
 and `supports_question_mark_names` (names holding `?`; **False by default**,
 because a Windows file system cannot store one: set it `True` for a URI
 scheme or a remote store).
+
+- A test that needs a protocol the class under test lacks (`Create`, `Remove`,
+  `Utime`, `Move` for `rename()`) skips, and the skip reason names it
+  (`MyPath does not support Remove`), by `protocols.supports()` on `root`;
+  the capability attributes above still switch a test off for a class that
+  implements the protocol but cannot honour the test.
 
 - Both I/O contracts need `root` to be a **fresh, function-scoped** directory
   populated with `populate_fixture_tree()` (which uses `mkdir()` and

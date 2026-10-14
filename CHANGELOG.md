@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`supports()` and `capabilities()`: which protocols a path class implements.**
+  `pathlib_next.protocols.supports(obj_or_class, *protocols)` is true when every
+  primitive of every protocol named is something other than its default stub, and
+  `capabilities(obj_or_class)` lists the protocols that hold. Ask once instead of
+  calling and catching `NotImplementedError`. The answer is advisory: a primitive may
+  still refuse an argument. A class whose answer depends on its connection defines
+  `_supports(protocol) -> bool | None`.
+- **The operations of `Path` are protocols you can mix in.** `Create` (`mkdir`,
+  `touch`), `Listing` (`iterdir`, `glob`, `rglob`, `walk`), `Remove` (`unlink`, `rmdir`,
+  `rm`), `Symlink` (`readlink`, `symlink_to`), `Identity` (`samefile`), `Copy`, `Move`
+  and the pure-path description `Named` are in `pathlib_next.protocols`, and
+  `Path` is built from them. A read-only backend can be a class built from `Pathname`,
+  `Listing`, `Stat` and `BinaryOpen` with no `Path`: `glob`, `checksum.md5`
+  and `PathSyncer` take it as a source.
+- **`Chmod` is split.** `Owner` (`owner()`, `group()`, `chown()`) and `Utime`
+  (`_utime()`) are protocols of their own, so `supports(path, Chmod)` asks for
+  `chmod()` alone. `Chmod` still inherits both, so `chown`, `_chown` and `_utime` stay
+  reachable from it.
+- **`owner()`, `group()`, `readlink()`, `hardlink_to()`, `absolute()` and `resolve()`
+  on every `Path`.** A backend supplies `_user_name()` and `_group_name()`,
+  `readlink()`, `_hardlink_to()` and `_cwd()`; `resolve()` follows links through
+  `readlink()`, at most 40, and is lexical where a class has none. `LocalPath` keeps
+  pathlib's own.
+- `PathContract` skips a test whose protocol the class under test does not implement
+  and names the protocol in the reason.
+
+### Changed
+
+- Every `Path` now has a `readlink()`, which raises `NotImplementedError` where the class
+  cannot read links, so `hasattr(path, "readlink")` no longer tells the two apart. What
+  to do: ask `supports(path, Symlink)`.
+
 ## [0.10.0] - 2026-10-14
 
 `pathlib-next` 0.10.0 is the core alone: the path classes, `pathlib_next.http`,
