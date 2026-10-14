@@ -34,6 +34,7 @@ nav:
       - Core Path: api/path.md
       - Memory Path: api/mempath.md
       - FTP Path: api/ftp.md
+      - HTTP: api/http.md
       - Archive Paths: api/archive.md
       - Protocols: api/protocols.md
       - URI: api/uri.md

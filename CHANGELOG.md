@@ -8,6 +8,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **`pathlib_next.http`: HTTP requests on the standard library, with a
+  transport you can replace, and no URI.** `import pathlib_next.http` needs no
+  extra and no third-party library (it loads `http.client` and `ssl`;
+  `import pathlib_next` still loads neither). `HTTPClient(transport=None, *,
+  headers=None, timeout=(10, 60), user_agent=None)` sends `request(method,
+  url, *, data=None, headers=None, stream=False, allow_redirects=None,
+  timeout, auth=None)` through a transport and follows redirects: `GET`,
+  `HEAD` and `OPTIONS` up to 30, with `Authorization` dropped for good by a hop
+  to another scheme, host or port; every other method is sent again once after
+  a 307 or 308 to the same origin and is otherwise an `OSError(EIO)` naming the
+  status. A transport is any object with `send(method, url, *, headers,
+  body=None, timeout, stream=False)` that returns an `HTTPResponse`, and a
+  `close()`; `HTTPTransport(*, ssl_context=None, verify=True, proxies=None)` is
+  the built-in one on `http.client` (TLS verified by default, `proxies=` as an
+  object indexed with the request URL, one idle connection per thread and
+  server). The package also holds the helpers a path built on it needs:
+  `raise_for_status`, `translate_errors` (a failed request as the `OSError`
+  type `pathlib` raises), `read_limited`, `json_body` and `drop_body` (a reply
+  read whole is held to `MAX_REPLY_BYTES`, 8 MiB after decoding, and the
+  setting is assignable), `peer_text`, `split_userinfo`, `server_size` and
+  `is_redirect`. `PATHLIB_NEXT_HTTP_TRANSPORT` names the transport a client
+  builds when it is given none: `builtin`, or the name of one an installed
+  distribution declares in the entry-point group `pathlib_next.http_transports`
+  (`requests`, from the `pathlib-next-requests` distribution; `transport_names()`
+  lists them without importing any and `get_transport(name)` loads one).
+  `prepare_request()` makes the checks of the transport contract for a
+  transport of your own.
+- **`pathlib_next.http.testing`: the suite that holds a transport to the
+  promises of the built-in one.** With the distribution that provides the
+  transport and `pytest` installed, `python -m pathlib_next.http.testing
+  --http-transports requests -q` runs the tests that depend on the transport
+  against it, over loopback servers scripted at the byte level. The test
+  files ship in the wheel. It is testing support and not part of the stable
+  API: its contents, including test names, fixtures and helper signatures, may
+  change in any release, and `pathlib_next.http` never imports it.
 - **`http:`, `https:`, `dav:`, `davs:`, `github:`, `gitlab:` and `git:` run on
   the standard library, through a transport you can replace.** Nothing else
   needs installing: `pip install "pathlib-next[uri]"` is enough, and

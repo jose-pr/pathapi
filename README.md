@@ -48,6 +48,11 @@ certificate verification, authentication, limits) are in
   members of a zip or tar file as paths, on the standard library alone: no URI
   and no extra (the `ftp(s):`, `zip:`, `tar:` and `archive:` schemes run on
   them).
+- **`pathlib_next.http`**: `HTTPClient` and a transport contract for HTTP
+  requests on the standard library (redirects that never carry
+  `Authorization` to another origin, TLS verified by default, a `proxies=`
+  provider), with no URI and no extra; the `requests` library plugs in as a
+  transport through the `pathlib-next-requests` distribution.
 - **`PathSyncer`**: one-way, content-compared tree sync between any two
   implementations, with dry runs and event hooks.
 - **`uripath` command**: `read`, `write`, `cp`, `rm` and `sync` across any of
@@ -192,6 +197,7 @@ flag is described in the
 | `pathlib_next.mempath` | `MemPath` in-memory filesystem |
 | `pathlib_next.ftp` | `FTPPath`, `FTPBackend` (FTP and FTPS on `ftplib`) |
 | `pathlib_next.archive` | `ZipPath`, `TarPath`, `ArchivePath` (members of a zip or tar file), `make_archive`, `unpack_archive` |
+| `pathlib_next.http` | `HTTPClient`, `HTTPTransport`, `HTTPResponse` (HTTP requests on `http.client`) |
 | `pathlib_next.protocols` | `Stat`, `Chmod`, `BinaryOpen`, `NativeChecksum` |
 | `pathlib_next.sync` | `PathSyncer`, `SyncEvent`, `PathAndStat` |
 | `pathlib_next.glob` | the glob engine behind `Path.glob()` |
@@ -201,6 +207,7 @@ flag is described in the
 | `pathlib_next.uri` | `Uri`, `UriPath`, `Source`, `Query` |
 | `pathlib_next.uri.schemes` | Built-in schemes: `file`, `data`, `zip`/`tar`/`archive`, `ftp`, `http`, `dav`, `sftp`, `s3`, `gs`, `az`, `github`, `gitlab`, `git` |
 | `pathlib_next.testing` | pytest contracts for custom implementations |
+| `pathlib_next.http.testing` | testing support (not stable API): the pytest suite that holds an HTTP transport to the promises of the built-in one |
 | `pathlib_next.tools.uripath` | the `uripath` command |
 
 The full reference is on the [documentation site](https://jose-pr.github.io/pathlib-next/);
