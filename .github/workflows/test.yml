@@ -20,10 +20,6 @@ on:
         type: boolean
         required: false
         default: false
-      benchmark_recursive:
-        description: "Run the recursive SFTP benchmark cases"
-        required: false
-        default: "false"
   push:
     tags:
       - "ci-*"
@@ -72,80 +68,12 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install package with all extras
-        # Install every extra that has tests depending on it, or those tests
-        # silently skip (pytest.importorskip) instead of actually running.
-        # gs/az (google-cloud-storage, azure-storage-blob) are heavy SDKs and
-        # run in their own job below.
-        run: python -m pip install -e ".[dev,uri,http,sftp,sftp-async,s3]"
+      - name: Install the package and the test dependencies
+        # `dev` holds every package a test imports (pyftpdlib, cryptography,
+        # hypothesis), or those tests would skip instead of running.
+        run: python -m pip install -e ".[dev]"
       - name: Run tests
-        # -rs lists every skip with its reason, so a missing extra shows up.
-        run: python -m pytest -q -rs
-
-  # The declared floors, exercised: every runtime dependency and feature extra
-  # installed AT the lower bound pyproject.toml declares (`>=X.Y.0` -> `==X.Y.0`),
-  # on the oldest supported Python, gs and az included. The matrix above only
-  # ever gets the newest releases, so a floor that no longer works would
-  # otherwise go unnoticed.
-  floors:
-    name: Test at the declared dependency floors
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref || github.ref }}
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.9"
-      - name: Pin every declared dependency to its floor
-        shell: python
-        run: |
-          import re
-          import subprocess
-          import sys
-
-          subprocess.run([sys.executable, "-m", "pip", "install", "-q", "tomli"], check=True)
-          import tomli
-
-          project = tomli.load(open("pyproject.toml", "rb"))["project"]
-          specs = list(project.get("dependencies", []))
-          for extra, deps in project.get("optional-dependencies", {}).items():
-              if extra not in ("dev", "docs"):
-                  specs += deps
-          pins = []
-          for spec in specs:
-              m = re.match(r"^\s*([A-Za-z0-9._-]+)(\[[^\]]*\])?\s*[^;]*?>=\s*([^,;\s]+)", spec)
-              if m:
-                  pins.append("%s==%s" % (m.group(1), m.group(3)))
-          open("floors.txt", "w").write("\n".join(pins) + "\n")
-          print("\n".join(pins) or "(no floors declared)")
-      - name: Install at the floors
-        run: python -m pip install -c floors.txt -e ".[dev,uri,http,sftp,sftp-async,s3,gs,az]"
-      - name: Run tests
-        # The oldest admitted requests and urllib3 leave sockets for the
-        # garbage collector to close. The other jobs hold the suite to no
-        # ResourceWarning at current versions; this one checks behaviour.
-        run: python -m pytest -q -rs -W "ignore::ResourceWarning"
-
-  test-cloud-sdks:
-    name: Test with gs/az SDKs (py${{ matrix.python-version }}, ubuntu)
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.9", "3.14"]
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref || github.ref }}
-      - uses: actions/setup-python@v7
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install package with every extra, gs and az included
-        run: python -m pip install -e ".[dev,uri,http,sftp,sftp-async,s3,gs,az]"
-      - name: Run tests
-        # The GCS/Azure contract suites run against in-process fake servers
-        # (tests/conftest.py); no credentials are needed.
+        # -rs lists every skip with its reason, so a missing package shows up.
         run: python -m pytest -q -rs
 
   test-no-extras:
@@ -164,103 +92,15 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install package without extras
         # Exactly `pip install pathlib-next` plus the test runner and the FTP
-        # server the `FTPPath` tests talk to: no uritools, no netimps.
+        # server the `FTPPath` tests talk to: what a user who installs only the
+        # package has.
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e . pytest pyftpdlib
       - name: Run the test suite without extras
-        # tests/conftest.py leaves out modules that import the `uri` extra at
-        # module level; everything else must collect and pass or skip cleanly.
+        # Every test module must collect, and each test pass or skip cleanly,
+        # with no optional package installed.
         run: python -m pytest -q -rs
-      - name: uripath CLI reads a local file without extras
-        run: |
-          printf 'no extras\n' > local.txt
-          test "$(uripath read local.txt)" = "no extras"
-
-  uri-only:
-    name: Test URI-only (py${{ matrix.python-version }}, ubuntu)
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.9", "3.14"]
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref || github.ref }}
-      - uses: actions/setup-python@v7
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install package with only the uri extra
-        # Exactly `pip install pathlib-next[uri]` plus the test runner: the
-        # URI layer, but NO scheme client (no requests, paramiko, boto3...);
-        # HTTP runs on the standard library there.
-        # Every other job installs all extras, so a defect that only appears
-        # without a client library is invisible to them -- one lived from
-        # 0.9.3 to 0.9.8 behind a green matrix, because `UriPath("sftp://h/x")
-        # / "y"` built a backend and a pure-path join therefore needed
-        # paramiko installed.
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[uri]" pytest hypothesis
-      - name: Run the client-independent modules
-        # Not the whole suite: most scheme tests need their client (moto,
-        # wsgidav, paramiko) and are written to have it -- including
-        # test_uri_path.py, which builds http:/s3: paths freely. These are
-        # the modules that must pass with no client at all.
-        run: |
-          python -m pytest -q -rs \
-            tests/test_pure_parity.py \
-            tests/test_pathname.py \
-            tests/test_glob.py \
-            tests/test_glob_parity.py \
-            tests/test_providers.py \
-            tests/test_filestat.py \
-            tests/test_http_date.py \
-            tests/test_mempath.py
-      - name: Run the HTTP, WebDAV and git suites on the standard library
-        # `http:`, `dav:`, `github:`, `gitlab:` and `git:` need no client
-        # library. Every test that runs over both transports skips its
-        # `requests` leg here; the WebDAV server and the TLS tests skip
-        # without wsgidav and cryptography.
-        run: |
-          python -m pytest -q -rs \
-            tests/test_http.py \
-            tests/test_http_listing.py \
-            tests/test_http_writes.py \
-            tests/test_http_live.py \
-            tests/test_http_parser.py \
-            tests/test_http_credentials.py \
-            tests/test_httpdav_safety.py \
-            tests/test_webdav.py \
-            tests/test_gitrepo.py \
-            tests/test_git_replies.py \
-            tests/test_git_backend_sharing.py \
-            tests/test_github_stat.py \
-            tests/test_git_requests.py \
-            tests/test_listing_hints_http.py \
-            tests/test_transport_security.py \
-            tests/test_backend_scope.py \
-            tests/test_backend_family.py \
-            tests/test_http_transport.py \
-            tests/test_http_pool.py \
-            tests/test_http_proxy.py \
-            tests/test_http_tls.py \
-            tests/test_http_redirects.py \
-            tests/test_http_default.py
-      - name: A pure-path join needs no scheme client
-        # The specific shape the suite cannot assert from an all-extras
-        # environment: spelling a path must not import anything.
-        run: |
-          python - <<'PY'
-          import sys
-          from pathlib_next.uri import UriPath
-          joined = UriPath("sftp://host/mnt") / "child" / "a?b.txt"
-          assert joined.path == "/mnt/child/a?b.txt", joined.path
-          assert joined._backend is None
-          assert "paramiko" not in sys.modules and "asyncssh" not in sys.modules
-          print("pure-path join ok without a scheme client")
-          PY
 
   # The two typing checks of tests/test_public_surface.py (mypy and pyright on
   # a consumer script) skip unless a checker is importable, and no other job
@@ -282,7 +122,7 @@ jobs:
       - name: Install the package, pytest and the two checkers
         # basedpyright, not the PyPI `pyright`: that one downloads node at
         # run time. The test accepts either.
-        run: python -m pip install -e ".[uri]" pytest mypy basedpyright
+        run: python -m pip install -e . pytest mypy basedpyright
       - name: Run the typing checks
         run: |
           python -m pytest -q -rs tests/test_public_surface.py -k "mypy_accepts or pyright_accepts" | tee typing.log
@@ -309,10 +149,8 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install benchmark dependencies
-        run: python -m pip install -e ".[dev,uri,http,sftp,sftp-async]"
+        run: python -m pip install -e ".[dev]"
       - name: Run benchmark suite
-        env:
-          PATHLIB_NEXT_BENCH_SFTP_RECURSIVE: ${{ inputs.benchmark_recursive == 'true' && '1' || '0' }}
         shell: pwsh
         run: |
           python benchmarks/bench.py --save --name "ci-${{ matrix.os }}-py3.14" | Tee-Object -FilePath benchmark.txt

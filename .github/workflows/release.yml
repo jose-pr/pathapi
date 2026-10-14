@@ -3,9 +3,9 @@ name: Release
 # Runs when a version tag (e.g. v1.0.0, v1.0.0-rc.1) is pushed. Not wired to
 # push/PR events on branches -- this is a release gate, not general CI.
 #
-# Test gate and dependency-floor gate, build (checking that the tag names the
-# version built), an installed-wheel smoke test, a strict docs build gate, the
-# GitHub Release, then -- for final (non pre-release) tags
+# Test gate, build (checking that the tag names the version built), an
+# installed-wheel smoke test, a strict docs build gate, the GitHub Release,
+# then -- for final (non pre-release) tags
 # only -- the PyPI upload and a dispatch of docs.yml at this tag. The docs site
 # is only GATED here (docs-gate never deploys); docs.yml owns every Pages deploy.
 on:
@@ -30,27 +30,9 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install package with all extras
-        # Every extra that has tests, or those tests silently skip. gs/az run
-        # in test-cloud-sdks below.
-        run: python -m pip install -e ".[dev,uri,http,sftp,sftp-async,s3]"
-      - name: Run tests
-        run: python -m pytest -q -rs
-
-  test-cloud-sdks:
-    name: Test with gs/az SDKs (py${{ matrix.python-version }}, ubuntu)
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.9", "3.14"]
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install package with every extra, gs and az included
-        run: python -m pip install -e ".[dev,uri,http,sftp,sftp-async,s3,gs,az]"
+      - name: Install the package and the test dependencies
+        # `dev` holds every package a test imports, or those tests skip.
+        run: python -m pip install -e ".[dev]"
       - name: Run tests
         run: python -m pytest -q -rs
 
@@ -72,50 +54,6 @@ jobs:
           python -m pip install -e . pytest pyftpdlib
       - name: Run the test suite without extras
         run: python -m pytest -q -rs
-      - name: uripath CLI reads a local file without extras
-        run: |
-          printf 'no extras\n' > local.txt
-          test "$(uripath read local.txt)" = "no extras"
-
-  # The same job test.yml runs: a release must hold at the lowest version of every
-  # dependency the manifest claims to support.
-  floors:
-    name: Test at the declared dependency floors
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.9"
-      - name: Pin every declared dependency to its floor
-        shell: python
-        run: |
-          import re
-          import subprocess
-          import sys
-
-          subprocess.run([sys.executable, "-m", "pip", "install", "-q", "tomli"], check=True)
-          import tomli
-
-          project = tomli.load(open("pyproject.toml", "rb"))["project"]
-          specs = list(project.get("dependencies", []))
-          for extra, deps in project.get("optional-dependencies", {}).items():
-              if extra not in ("dev", "docs"):
-                  specs += deps
-          pins = []
-          for spec in specs:
-              m = re.match(r"^\s*([A-Za-z0-9._-]+)(\[[^\]]*\])?\s*[^;]*?>=\s*([^,;\s]+)", spec)
-              if m:
-                  pins.append("%s==%s" % (m.group(1), m.group(3)))
-          open("floors.txt", "w").write("\n".join(pins) + "\n")
-          print("\n".join(pins) or "(no floors declared)")
-      - name: Install at the floors
-        run: python -m pip install -c floors.txt -e ".[dev,uri,http,sftp,sftp-async,s3,gs,az]"
-      - name: Run tests
-        # The oldest admitted requests and urllib3 leave sockets for the
-        # garbage collector to close. The other jobs hold the suite to no
-        # ResourceWarning at current versions; this one checks behaviour.
-        run: python -m pytest -q -rs -W "ignore::ResourceWarning"
 
   # The two typing checks of tests/test_public_surface.py (mypy and pyright on
   # a consumer script) skip unless a checker is importable, and no other job
@@ -135,7 +73,7 @@ jobs:
       - name: Install the package, pytest and the two checkers
         # basedpyright, not the PyPI `pyright`: that one downloads node at
         # run time. The test accepts either.
-        run: python -m pip install -e ".[uri]" pytest mypy basedpyright
+        run: python -m pip install -e . pytest mypy basedpyright
       - name: Run the typing checks
         run: |
           python -m pytest -q -rs tests/test_public_surface.py -k "mypy_accepts or pyright_accepts" | tee typing.log
@@ -143,7 +81,7 @@ jobs:
 
   build:
     name: Build distribution
-    needs: [test, test-cloud-sdks, test-no-extras, floors, typing]
+    needs: [test, test-no-extras, typing]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -211,27 +149,29 @@ jobs:
         working-directory: ${{ runner.temp }}
         run: |
           "$RUNNER_TEMP/smoke/bin/python" - <<'PY'
-          from importlib.metadata import entry_points
+          from importlib.metadata import entry_points, requires
           from importlib.resources import files
 
           import pathlib_next
+          from pathlib_next import ArchivePath, FTPPath, TarPath, ZipPath
+          import pathlib_next.http
 
           root = files("pathlib_next")
           for name in ("py.typed", "AGENTS.md", "README.md"):
               assert (root / name).is_file(), "the wheel does not ship %s" % name
+          assert not (root / "uri").is_dir(), "the wheel ships the removed URI layer"
+          assert requires("pathlib-next") is None, "the wheel declares a dependency"
           found = entry_points()
           if hasattr(found, "select"):
-              schemes = list(found.select(group="pathlib_next.schemes"))
+              transports = list(found.select(group="pathlib_next.http_transports"))
+              scripts = list(found.select(group="console_scripts", name="uripath"))
           else:
-              schemes = list(found.get("pathlib_next.schemes", []))
-          assert len(schemes) == 22, "expected 22 scheme entry points, found %d" % len(schemes)
-          print("ok:", pathlib_next.__name__, len(schemes), "schemes")
+              transports = list(found.get("pathlib_next.http_transports", []))
+              scripts = [e for e in found.get("console_scripts", []) if e.name == "uripath"]
+          assert [e.name for e in transports] == ["builtin"], transports
+          assert scripts == [], "the wheel defines the uripath command"
+          print("ok:", pathlib_next.__name__, pathlib_next.__version__)
           PY
-      - name: The uripath console script reads a local file
-        working-directory: ${{ runner.temp }}
-        run: |
-          printf 'no extras\n' > local.txt
-          test "$("$RUNNER_TEMP/smoke/bin/uripath" read local.txt)" = "no extras"
 
   # Docs are DEPLOYED by docs.yml. This job only GATES the release on a strict
   # docs BUILD: a release must never ship if the docs site is broken, but the
@@ -247,7 +187,7 @@ jobs:
         with:
           python-version: "3.x"
       - name: Install package with docs tooling
-        run: python -m pip install -e ".[dev,docs,uri,http,sftp,sftp-async,s3]"
+        run: python -m pip install -e ".[dev,docs]"
       - name: Build docs (gate only)
         run: mkdocs build --strict
 
