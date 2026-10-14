@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-14
+
 `pathlib-next` 0.10.0 is the core alone: the path classes, `pathlib_next.http`,
 `FTPPath` and the archive paths, with no dependency, no extra and no console
 script. The URI layer, every scheme that needs a library, and the `uripath`
@@ -3456,7 +3458,8 @@ behaviour with what to do about it.
 - Sync error handling.
 - Generic Path Protocol based pathlib implementation for URI paths with file access support for sftp, http, file schemes.
 
-[Unreleased]: https://github.com/jose-pr/pathlib-next/compare/v0.9.14...HEAD
+[Unreleased]: https://github.com/jose-pr/pathlib-next/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/jose-pr/pathlib-next/compare/v0.9.14...v0.10.0
 [0.9.14]: https://github.com/jose-pr/pathlib-next/compare/v0.9.13...v0.9.14
 [0.9.13]: https://github.com/jose-pr/pathlib-next/compare/v0.9.12...v0.9.13
 [0.9.12]: https://github.com/jose-pr/pathlib-next/compare/v0.9.11...v0.9.12
