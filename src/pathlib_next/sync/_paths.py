@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ..path import Path
-from ..path._relation import _relation
+from ..protocols._relation import _relation
 
 
 def _is_junction(path: Path) -> bool:

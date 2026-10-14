@@ -21,7 +21,7 @@ from ._tree import TreePath
 from .path._pure import _name_stem as name_stem
 from .path._pure import _name_suffix as name_suffix
 from .path._pure import _name_suffixes as name_suffixes
-from .path._relation import contains
+from .protocols._relation import contains
 
 __all__ = [
     "CommitOnClose",

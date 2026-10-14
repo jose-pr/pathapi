@@ -14,8 +14,15 @@ from pathlib_next.archive import ZipPath
 from pathlib_next.protocols import (
     BinaryOpen,
     Chmod,
+    Copy,
+    Create,
+    Identity,
+    Listing,
+    Move,
     NativeChecksum,
+    Remove,
     Stat,
+    Symlink,
     capabilities,
     supports,
 )
@@ -67,16 +74,18 @@ def test_a_class_without_a_primitive_does_not_support_its_protocol():
     assert not supports(MemPath, Stat, Chmod)
 
 
-def test_a_bare_path_supports_nothing_with_a_primitive():
+def test_a_bare_path_supports_only_the_protocols_that_have_no_primitive():
     class Bare(Path):
         __slots__ = ()
 
-    assert capabilities(Bare) == frozenset()
+    assert capabilities(Bare) == {Identity, Copy}
 
 
 def test_local_path_supports_what_pathlib_provides():
-    # `open` and `stat` are pathlib's; `_open` is not defined at all.
-    assert supports(LocalPath, Stat, Chmod, BinaryOpen)
+    # `open`, `stat`, `iterdir`, `mkdir` and `rename` are pathlib's;
+    # `_open` and `_mkdir` are not defined at all.
+    assert supports(LocalPath, Stat, Chmod, BinaryOpen, Create, Listing, Remove)
+    assert supports(LocalPath, Symlink, Move, Identity, Copy)
     assert not supports(LocalPath, NativeChecksum)
 
 
@@ -94,10 +103,11 @@ def test_a_primitive_replaced_by_an_operation_of_another_library_counts():
 
 
 def test_capabilities_of_the_providers_of_the_core():
-    assert capabilities(LocalPath) == {Stat, Chmod, BinaryOpen}
-    assert capabilities(MemPath) == {Stat, BinaryOpen}
-    assert capabilities(FTPPath) == {Stat, Chmod, BinaryOpen}
-    assert capabilities(ZipPath) == {Stat, BinaryOpen}
+    everywhere = {Stat, BinaryOpen, Create, Listing, Remove, Identity, Copy}
+    assert capabilities(LocalPath) == everywhere | {Chmod, Symlink, Move}
+    assert capabilities(MemPath) == everywhere
+    assert capabilities(FTPPath) == everywhere | {Chmod, Move}
+    assert capabilities(ZipPath) == everywhere | {Move}
 
 
 def test_capabilities_of_an_instance_equal_those_of_its_class():
@@ -122,6 +132,7 @@ def test_the_hook_decides_for_an_instance_and_none_falls_through():
     assert supports(here, BinaryOpen)
     assert not supports(here, BinaryOpen, Stat)
     assert supports(Connected, Stat, BinaryOpen)
+    assert not supports(Connected, Symlink)
     assert Stat not in capabilities(here)
     assert Chmod in capabilities(here)
 

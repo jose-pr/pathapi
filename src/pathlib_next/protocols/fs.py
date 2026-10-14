@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import abc as _abc
+import errno as _errno
 import stat as _stat
+import time as _time
 import typing as _ty
 
 from .. import _permissions, _stubs
+from ._errors import _os_error
+from ._info import _PathInfo
 
-__all__ = ["Chmod", "FileStatLike", "Stat"]
+__all__ = ["Chmod", "Create", "FileStatLike", "Stat"]
 
 
 class FileStatLike(_ty.Protocol):
@@ -111,6 +115,63 @@ class Stat(_ty.Protocol):
         """
         return _stat.S_ISSOCK(self._st_mode() or 0)
 
+    @property
+    def info(self) -> "_PathInfo":
+        """What this path is, as an object shaped like `pathlib.types.PathInfo`
+        (Python 3.14): `exists()`, `is_dir()`, `is_file()` (each with
+        `follow_symlinks=True`) and `is_symlink()`. It asks `stat()` at most
+        once with and once without following links and remembers the answers
+        on that object only: a new `info` is a new question. `LocalPath` has
+        pathlib's own on 3.14."""
+        return _PathInfo(self)
+
+    def is_junction(self) -> bool:
+        """Whether this path is a Windows junction (pathlib 3.12 parity).
+
+        A junction is NOT a symlink: it is a second NAME for a directory,
+        the Windows equivalent of a Linux bind mount. `is_symlink()` is
+        False for one, `readlink()` does not describe it, and a
+        non-following stat reports a plain directory -- which is exactly why
+        a symlink check cannot protect a recursive walk from it.
+
+        Default False; `LocalPath` answers for real. A remote
+        backend has no such concept unless it says otherwise.
+        """
+        return False
+
+    def is_mount(self) -> bool:
+        """Whether this path is a mount point (pathlib parity).
+
+        The POSIX half of the same idea: a bind mount makes one tree visible
+        under a second name, with no link anywhere to say so. Default False;
+        `LocalPath` answers for real.
+        """
+        return False
+
+    def is_dir_binding(self) -> bool:
+        """Whether this directory is another tree's second NAME rather than
+        part of this one: a Windows junction or a mount point (bind or
+        otherwise).
+
+        The distinction that matters to anything walking a tree. A symlink
+        announces itself -- `is_symlink()` is True and every walker here
+        already declines to follow one. A binding does not: it looks like an
+        ordinary directory, and its contents belong to whoever mounted or
+        junctioned it. `rm(recursive=True)` removes the binding itself
+        rather than the contents behind it.
+
+        An implementation that cannot answer (stdlib's `is_mount()` raises
+        on Windows before 3.12) counts as "not a binding" rather than
+        breaking the operation that asked.
+        """
+        for test in (self.is_junction, self.is_mount):
+            try:
+                if test():
+                    return True
+            except (NotImplementedError, OSError, ValueError):
+                continue
+        return False
+
 
 class Chmod(_ty.Protocol):
     """Composable protocol for objects supporting permission, owner and time
@@ -203,3 +264,103 @@ class Chmod(_ty.Protocol):
             # backend decide what an all-sentinel call means).
             return
         return self._chown(uid, gid, follow_symlinks=follow_symlinks)
+
+
+class Create(Stat, Chmod, _ty.Protocol):
+    """Creating a directory or a file: `mkdir()` and `touch()` on top of the
+    `_mkdir()` primitive. `touch()` also uses `open()` (`BinaryOpen`) and
+    `unlink()` (`Remove`)."""
+
+    __slots__ = ()
+
+    __primitives__ = (("_mkdir", "mkdir"),)
+
+    def touch(self, mode=None, exist_ok=True):
+        """
+        Create this file, if it doesn't exist.
+
+        Raises FileExistsError if exist_ok is False and the file already
+        exists (pathlib parity). An existing file is never truncated.
+
+        Differences from `pathlib.Path.touch`, which creates through
+        `os.open()` (so the process umask applies) and bumps an existing
+        file's mtime:
+
+        - `mode` is applied with `chmod()` only when passed explicitly, and
+          then verbatim: a remote server's umask is unknowable. A backend
+          that cannot chmod raises `NotImplementedError` and the file it
+          created is removed again, so a mode that was asked for is never
+          silently dropped. The default (`None`) leaves a new file with the
+          permissions the backend gives it, instead of chmod'ing it to a
+          world-writable 0o666.
+        - An existing file's access and modification times are set to the
+          current time through `_utime()`; a backend that cannot set a time
+          leaves the file as it is, since rewriting the content to bump it
+          is not a touch. `LocalPath` uses pathlib's own touch.
+        """
+        # stat() directly, not exists(): exists() reads *any* OSError (a
+        # timeout, a dropped connection) as "missing", which let a transient
+        # failure fall through to a truncating open("w").
+        try:
+            self.stat()
+        except FileNotFoundError:
+            pass
+        else:
+            if not exist_ok:
+                raise _os_error(FileExistsError, _errno.EEXIST, self)
+            now = _time.time()
+            try:
+                self._utime(atime=now, mtime=now)
+            except NotImplementedError:
+                pass
+            return
+        try:
+            with self.open("x"):
+                ...
+        except FileExistsError:
+            # Created since the stat() above: an existing file, not ours to
+            # truncate.
+            if not exist_ok:
+                raise
+            return
+        except NotImplementedError:
+            # _open() doesn't support "x" (optional per the mode contract),
+            # so the stat() above is the only guard before the truncating
+            # "w" -- a small TOCTOU window.
+            with self.open("w"):
+                ...
+        if mode is not None:
+            try:
+                self.chmod(mode)
+            except NotImplementedError:
+                # The caller asked for a mode this backend cannot apply: leave
+                # no file that has other permissions than the ones asked for.
+                try:
+                    self.unlink()
+                except (OSError, NotImplementedError):
+                    pass
+                raise
+
+    @_stubs.primitive
+    def _mkdir(self, mode: int):
+        """Backend primitive: create this directory (a stub:
+        `NotImplementedError`). `mkdir()` calls it."""
+        return _stubs._unimplemented("_mkdir")
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+            self._mkdir(mode)
+        except FileNotFoundError:
+            if not parents or self.parent == self:
+                raise
+            # Parents may already exist (e.g. a sibling branch created them)
+            # -- mirror CPython: exist_ok=True for parents, original
+            # exist_ok only for the final retry of self.
+            self.parent.mkdir(parents=True, exist_ok=True)
+            self.mkdir(mode, parents=False, exist_ok=exist_ok)
+        except FileExistsError:
+            if not exist_ok or not self.is_dir():
+                raise

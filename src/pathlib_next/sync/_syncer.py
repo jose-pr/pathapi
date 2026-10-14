@@ -10,7 +10,7 @@ import typing as _ty
 
 from .. import _errorpolicy, _names
 from ..path import Path
-from ..path._removal import _listing, _write_batch_of
+from ..protocols._removal import _listing, _write_batch_of
 from .._filestat import FileStat
 from ..glob import _entries
 from ._compare import (

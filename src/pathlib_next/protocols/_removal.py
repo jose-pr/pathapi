@@ -8,7 +8,7 @@ import typing as _ty
 from .._filestat import FileStat
 
 if _ty.TYPE_CHECKING:
-    from ._path import Path
+    from ..path import Path
 
 
 def _write_batch_of(path) -> "_ty.ContextManager[object]":
