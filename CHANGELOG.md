@@ -7,84 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Published as `pathlib-next` up to 0.10.0; from 0.1.0 as `pathapi`. The released
-sections below keep the name they were published under.
+## [0.10.1] - 2026-10-15
 
-### Added
-
-- **`supports()` and `capabilities()`: which protocols a path class implements.**
-  `pathapi.protocols.supports(obj_or_class, *protocols)` is true when every
-  primitive of every protocol named is something other than its default stub, and
-  `capabilities(obj_or_class)` lists the protocols that hold. Ask once instead of
-  calling and catching `NotImplementedError`. The answer is advisory: a primitive may
-  still refuse an argument. A class whose answer depends on its connection defines
-  `_supports(protocol) -> bool | None`.
-- **The operations of `Path` are protocols you can mix in.** `Create` (`mkdir`,
-  `touch`), `Listing` (`iterdir`, `glob`, `rglob`, `walk`), `Remove` (`unlink`, `rmdir`,
-  `rm`), `Readlink` (`readlink`), `Symlink` (`symlink_to`), `Identity` (`samefile`), `Copy`, `Move`
-  and the pure-path description `Named` are in `pathapi.protocols`, and
-  `Path` is built from them. A read-only backend can be a class built from `Pathname`,
-  `Listing`, `Stat` and `BinaryOpen` with no `Path`: `glob`, `checksum.md5`
-  and `PathSyncer` take it as a source.
-- **`Chmod` is split, and so is every pair of a reader and a writer.** `Chown`
-  (`chown()`), `Owned` (`owner()`, `group()`), `Utime` (`_utime()`), `Readlink` and
-  `Symlink` are protocols of their own, so `supports(path, Chmod)` asks for `chmod()`
-  alone and an archive supports `Readlink` and not `Symlink`. `Chmod` still inherits
-  `Chown` and `Utime`, so `chown`, `_chown` and `_utime` stay reachable from it.
-- **`owner()`, `group()`, `readlink()`, `hardlink_to()`, `absolute()` and `resolve()`
-  on every `Path`.** A backend supplies `_user_name()` and `_group_name()`,
-  `readlink()`, `_hardlink_to()` and `_cwd()`; `resolve()` follows links through
-  `readlink()`, at most 40, and is lexical where a class has none. `LocalPath` keeps
-  pathlib's own.
-- The contract suites' switches `supports_listing`, `supports_mkdir`,
-  `supports_delete`, `supports_utime` and `supports_rename` default to `None`, which
-  asks `supports()` about `Listing`, `Create`, `Remove`, `Utime` and `Move`, so a class
-  without a protocol skips those tests with no switch set and the skip names the
-  protocol. Set one to `True` or `False` on the test class to override the answer.
-- `providers.primitive` marks a default of a primitive whose body raises an error of its
-  own, so `supports()` reads it as absent.
-- `providers.derived_from(*primitives)` marks a method that only wraps other
-  primitives, so a base class can define `iterdir()` over `_listdir()` and
-  `supports()` still says a subclass without `_listdir()` cannot list.
-- `providers.notimplemented` takes a reason: `@notimplemented("why")` marks a stub
-  that `supports()` reads as absent and whose `NotImplementedError` carries the
-  reason; the bare form is unchanged.
+The last release under the name `pathlib-next`: the project is now `pathapi`. This
+release contains no implementation of its own.
 
 ### Changed
 
-- **The distribution, the import package and the repository are `pathapi`.** Version
-  numbering restarts at 0.1.0. `pathlib-next` 0.10.1 is a final release that depends on
-  `pathapi` and re-exports it under the old import name with a `DeprecationWarning`.
-  What to do: install `pathapi` and change the names in this table.
-
-  | Before | After |
-  | --- | --- |
-  | `pip install pathlib-next` | `pip install pathapi` |
-  | `import pathlib_next`, `pathlib_next.<module>` | `import pathapi`, `pathapi.<module>` |
-  | entry-point group `pathlib_next.http_transports` | `pathapi.http_transports` |
-  | `pathlib-next-requests` (`pathlib_next_requests`) | `pathapi-requests` (`pathapi_requests`) |
-  | `PATHLIB_NEXT_HTTP_TRANSPORT` | `PATHAPI_HTTP_TRANSPORT` |
-  | the `pathlib-next/<version>` user agent, the `.pathlib-next-tmp` suffix of a `PathSyncer` temporary sibling | `pathapi/<version>`, `.pathapi-tmp` |
-  | the `pathlib_next.sync` and `pathlib_next.http` loggers | `pathapi.sync`, `pathapi.http` |
-  | benchmark result schema `pathlib_next.bench/1` | `pathapi.bench/1` |
-
-- `copy()` over an existing file does not call `unlink()` on a target whose class has no
-  `Remove` (it replaces the content through `open()`), and `move()` raises
-  `NotImplementedError` before copying when the source cannot be removed and has no
-  `rename()` to use. Before, the first raised from the `unlink()` and the second left
-  the file in two places. What to do: nothing, unless you relied on either.
-- Every `Path` now has a `readlink()`, which raises `NotImplementedError` where the class
-  cannot read links, so `hasattr(path, "readlink")` no longer tells the two apart. What
-  to do: ask `supports(path, Readlink)`.
-- A write stream that commits on close (`CommitOnClose`, and any stream built on
-  `DiscardOnError`), or the text file over one, that is garbage collected without being
-  closed is now discarded with a `ResourceWarning` instead of committed, as a `with`
-  block that raised already was. Before, the collector closed it and so uploaded or
-  rewrote what the program never finished. What to do: close the file (use `with`);
-  a stream of your own on `DiscardOnError` can override `_holds_uncommitted()` to stay
-  silent when it has nothing to commit.
-- `_supports(protocol)` may make at most one request per backend, cached for the
-  backend's lifetime, and never raises (it answers `None` when the request fails).
+- `pathlib-next` depends on `pathapi>=0.1.0,<0.2`, and `import pathlib_next` re-exports
+  it after a `DeprecationWarning`: every public name, and every submodule
+  (`pathlib_next.protocols`, `pathlib_next.http`, ...) as the same module object as its
+  `pathapi` counterpart, so `isinstance` agrees across the two names. The package
+  ships `py.typed`; `PATHLIB_NEXT_HTTP_TRANSPORT` is copied to `PATHAPI_HTTP_TRANSPORT`
+  when only the old one is set. What to do: install `pathapi` and import `pathapi`;
+  `README.md` has the table of names. `pathapi` 0.1.0 is 0.10.0 plus the protocols of
+  `pathapi` and the changes listed in its changelog.
 
 ## [0.10.0] - 2026-10-14
 
@@ -3537,7 +3474,8 @@ behaviour with what to do about it.
 - Sync error handling.
 - Generic Path Protocol based pathlib implementation for URI paths with file access support for sftp, http, file schemes.
 
-[Unreleased]: https://github.com/jose-pr/pathapi/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/jose-pr/pathapi/compare/pathlib-next-v0.10.1...pathlib-next-final
+[0.10.1]: https://github.com/jose-pr/pathapi/releases/tag/pathlib-next-v0.10.1
 [0.10.0]: https://github.com/jose-pr/pathlib-next/compare/v0.9.14...v0.10.0
 [0.9.14]: https://github.com/jose-pr/pathlib-next/compare/v0.9.13...v0.9.14
 [0.9.13]: https://github.com/jose-pr/pathlib-next/compare/v0.9.12...v0.9.13
