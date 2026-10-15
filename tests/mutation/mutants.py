@@ -109,17 +109,17 @@ mutant(
 )
 mutant(
     "sync-overlap-check-dropped",
-    "sync/_syncer.py",
-    "            elif _paths_overlap(source.path, target.path):\n",
-    "            elif False:\n",
+    "sync/_entry.py",
+    "        elif _paths_overlap(source.path, target.path):\n",
+    "        elif False:\n",
     "tests/test_sync_safety.py::test_source_inside_target_raises_and_source_survives",
     "PathSyncer: overlap check dropped",
 )
 mutant(
     "sync-missing-source-root-is-no-error",
-    "sync/_syncer.py",
-    "            error = None\n            if not source.exists():\n",
-    "            error = None\n            if False:\n",
+    "sync/_entry.py",
+    "        error = None\n        if not source.exists():\n",
+    "        error = None\n        if False:\n",
     "tests/test_sync_safety.py::test_missing_root_source_raises_and_keeps_target",
     "PathSyncer: missing root source no longer an error",
 )
@@ -208,9 +208,9 @@ mutant(
 )
 mutant(
     "sync-accepts-unsafe-child-names",
-    "sync/_syncer.py",
-    "                if _names.is_safe_child_name(name, windows=windows_target):\n",
-    "                if True:\n",
+    "sync/_entry.py",
+    "        if _names.is_safe_child_name(name, windows=self._windows):\n",
+    "        if True:\n",
     "tests/test_destructive_safety.py::test_sync_never_merges_names_windows_rewrites",
     "PathSyncer: unsafe child-name refusal off",
 )
@@ -264,17 +264,17 @@ mutant(
 )
 mutant(
     "sync-removes-extras-without-remove-missing",
-    "sync/_syncer.py",
-    "            if self.remove_missing and not target_absent:\n",
-    "            if not target_absent:\n",
+    "sync/_entry.py",
+    "        if syncer.remove_missing and not self._absent:\n",
+    "        if not self._absent:\n",
     "tests/test_sync_safety.py::test_root_target_symlink_is_followed",
     "PathSyncer deletes target-only entries with remove_missing=False",
 )
 mutant(
     "sync-leaves-its-temp-file-after-a-failed-copy",
-    "sync/_syncer.py",
-    "                                temp.unlink(missing_ok=True)\n",
-    "                                pass\n",
+    "sync/_entry.py",
+    "                        temp.unlink(missing_ok=True)\n",
+    "                        pass\n",
     "tests/test_sync_safety.py::test_unlink_refused_during_the_fallback_keeps_the_old_version",
     "PathSyncer leaves its temporary file behind after a failed copy",
 )
