@@ -12,7 +12,8 @@ from .._filestat import FileStat
 from ..exceptions import NonRelativePatternError
 from ..glob import _entries
 from ._errors import _os_error
-from ._removal import _InvalidPolicy, _follow_policy, _is_junction, _listing
+from ._removal import _follow_policy, _is_junction
+from ._removing import _Removal
 from .fs import Stat
 
 __all__ = ["Listing", "Remove"]
@@ -376,83 +377,8 @@ class Remove(Listing, _ty.Protocol):
         check_follow("follow_symlinks", follow_symlinks)
         check_follow("follow_binds", follow_binds)
 
-        # An error the handler declined, or raised itself, on its way out:
-        # each enclosing directory's `except` catches it again, and consulting
-        # the handler there reported one failure once per ancestor.
-        declined = []
-
-        def _handle(error, path):
-            if isinstance(error, _InvalidPolicy):
-                # A mistake of the caller, not a removal that failed.
-                raise error
-            if any(error is seen for seen in declined):
-                raise error
-            try:
-                swallowed = _onerror(error, path)
-            except BaseException as raised:
-                declined.append(raised)
-                raise
-            if not swallowed:
-                declined.append(error)
-                raise error
-
-        def _remove_tree(path, *, link=False):
-            try:
-                entries = list(_listing(path))
-            except Exception as error:
-                _handle(error, path)
-                return
-
-            for name, child_stat in entries:
-                child = None
-                try:
-                    # Checked before any child is built from the name; only the one-component
-                    # rule, as a listed name is not rewritten by the platform that listed it.
-                    if not _names.is_safe_child_name(name):
-                        raise ValueError(
-                            f"refusing unsafe child name {name!r} under {path}"
-                        )
-                    child = _entries._child(path, name)
-                    if child_stat is None:
-                        child_stat = FileStat.from_path(child, follow_symlink=False)
-                    if child_stat is not None and child_stat.is_symlink():
-                        # A link, whatever it points at. The non-following
-                        # stat says "link", so this branch is reached before
-                        # the directory one.
-                        policy = _follow_policy(follow_symlinks, child)
-                        if policy == "ignore":
-                            continue
-                        if policy == "follow" and child.is_dir():
-                            _remove_tree(child, link=True)
-                        else:
-                            child.unlink()
-                    elif child_stat is not None and child_stat.is_dir():
-                        if child.is_dir_binding():
-                            # A binding: what is inside belongs to the tree
-                            # it names, not to this one.
-                            policy = _follow_policy(follow_binds, child)
-                            if policy == "ignore":
-                                continue
-                            if policy == "follow":
-                                _remove_tree(child)
-                            else:
-                                # `rmdir()` on a live mount fails (EBUSY) --
-                                # the right answer, and far better than
-                                # emptying someone else's filesystem.
-                                child.rmdir()
-                        else:
-                            _remove_tree(child)
-                    else:
-                        child.unlink()
-                except Exception as error:
-                    _handle(error, path if child is None else child)
-
-            try:
-                # `rmdir()` on a symlink is ENOTDIR on POSIX: the link is
-                # unlinked once what is behind it has been removed.
-                path.unlink() if link else path.rmdir()
-            except Exception as error:
-                _handle(error, path)
+        removal = _Removal(_onerror, follow_symlinks, follow_binds)
+        _handle = removal.handle
 
         try:
             stat = FileStat.from_path(self, follow_symlink=False)
@@ -468,7 +394,7 @@ class Remove(Listing, _ty.Protocol):
                 return
             try:
                 if policy == "follow" and recursive and self.is_dir():
-                    _remove_tree(self, link=True)
+                    removal.tree(self, link=True)
                 else:
                     self.unlink()
             except Exception as error:
@@ -479,7 +405,7 @@ class Remove(Listing, _ty.Protocol):
             if policy == "ignore":
                 return
             if recursive and (not binding or policy == "follow"):
-                _remove_tree(self)
+                removal.tree(self)
             else:
                 try:
                     self.rmdir()

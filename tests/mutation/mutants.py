@@ -101,9 +101,9 @@ mutant(
 )
 mutant(
     "rm-follows-a-directory-symlink",
-    "protocols/tree.py",
-    '                        if policy == "follow" and child.is_dir():\n',
-    "                        if child.is_dir():\n",
+    "protocols/_removing.py",
+    '                if policy == "follow" and child.is_dir():\n',
+    "                if child.is_dir():\n",
     "tests/test_destructive_safety.py::test_rm_removes_a_link_and_a_binding_not_what_is_behind_them",
     "rm(recursive=True) descends into directory symlinks by default",
 )
@@ -125,9 +125,9 @@ mutant(
 )
 mutant(
     "copy-replaces-an-existing-target-by-default",
-    "protocols/transfer.py",
-    "            if not overwrite:\n                raise FileExistsError(target)\n\n        # Open the source",
-    "            if False:\n                raise FileExistsError(target)\n\n        # Open the source",
+    "protocols/_writing.py",
+    "    if not overwrite:\n        raise FileExistsError(target)\n    return True\n",
+    "    if False:\n        raise FileExistsError(target)\n    return True\n",
     "tests/test_parity_io.py::test_copy_overwrite",
     "copy(): existing target replaced without overwrite=True",
 )
@@ -313,17 +313,17 @@ mutant(
 )
 mutant(
     "copy-onto-itself",
-    "protocols/transfer.py",
-    "        if _same_file(src, target, identity=False):\n",
-    "        if False:\n",
+    "protocols/_writing.py",
+    "    if _same_file(src, target, identity=False):\n",
+    "    if False:\n",
     "tests/test_destructive_safety.py::test_copy_onto_itself_raises_and_keeps_content",
     "copy() of a file onto itself is not refused",
 )
 mutant(
     "copy-into-itself",
-    "protocols/transfer.py",
-    "            if contains(src, target):\n",
-    "            if False:\n",
+    "protocols/_copytree.py",
+    "    if contains(src, target):\n",
+    "    if False:\n",
     "tests/test_destructive_safety.py::test_mem_copy_directory_into_a_relative_spelling_of_itself_refuses",
     "copy(recursive=True) of a directory into itself is not refused",
 )
@@ -361,9 +361,9 @@ mutant(
 )
 mutant(
     "rm-descends-into-a-junction-or-mount",
-    "protocols/tree.py",
-    "                        if child.is_dir_binding():\n",
-    "                        if False:\n",
+    "protocols/_removing.py",
+    "                if child.is_dir_binding():\n",
+    "                if False:\n",
     "tests/test_destructive_safety.py::test_rm_recursive_does_not_descend_into_junction",
     "rm(recursive=True) empties what a junction or mount below the tree points at",
     platform="nt",
@@ -379,9 +379,9 @@ mutant(
 )
 mutant(
     "rm-builds-a-child-from-an-unsafe-listed-name",
-    "protocols/tree.py",
-    '                    if not _names.is_safe_child_name(name):\n                        raise ValueError(\n                            f"refusing unsafe child name {name!r} under {path}"\n                        )\n                    child = _entries._child(path, name)',
-    '                    if False:\n                        raise ValueError(\n                            f"refusing unsafe child name {name!r} under {path}"\n                        )\n                    child = _entries._child(path, name)',
+    "protocols/_removing.py",
+    '            if not _names.is_safe_child_name(name):\n                raise ValueError(f"refusing unsafe child name {name!r} under {path}")\n            child = _entries._child(path, name)',
+    '            if False:\n                raise ValueError(f"refusing unsafe child name {name!r} under {path}")\n            child = _entries._child(path, name)',
     "tests/test_listing_names.py::test_rm_recursive_offers_each_unsafe_name_to_ignore_error",
     "rm(recursive=True) builds a child from a listed name such as '..'",
 )
@@ -990,8 +990,8 @@ mutant(
 mutant(
     "client-redirect-reask-forgets-the-origin",
     "http/_client.py",
-    "            method, location, sent, None, None, stream, timeout, first=url\n",
-    "            method, location, sent, None, None, stream, timeout, first=None\n",
+    "            method, location, sent, None, None, stream, timeout, deadline, first=url\n",
+    "            method, location, sent, None, None, stream, timeout, deadline, first=None\n",
     "tests/transport/test_client_redirect_origin.py::test_a_request_asked_again_at_another_origin_does_not_carry_authorization",
     "stat() and what is built on it re-ask the redirect target as if it were the first origin, with Authorization",
 )

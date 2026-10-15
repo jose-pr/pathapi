@@ -2,15 +2,44 @@
 
 from __future__ import annotations
 
+import errno as _errno
 import pathlib as _pathlib
+import stat as _stat
 import typing as _ty
 
+from ._relation import _same_file
 from ._support import supports
+from ._transfer import _same_identity
 from .io import _ASK_STAT, BinaryOpen
 from .tree import Remove
 
 if _ty.TYPE_CHECKING:
     from ..path import Path
+
+
+def _existing_target(src, target, src_stat, target_absent, overwrite) -> bool:
+    """Whether a file of `target`'s name exists, after the refusals that
+    `copy()` makes before anything is written: the same file, a directory in
+    the way, an existing file without `overwrite`."""
+    # What needs no I/O first; the stats below settle the rest.
+    if _same_file(src, target, identity=False):
+        raise OSError(_errno.EINVAL, "Source and target are the same file", str(target))
+    # stat(), not exists(): exists() reads a transient error (a 503, a
+    # timeout) as "missing", and overwrite=False must never be decided by
+    # a failure. Only FileNotFoundError means the target is absent.
+    try:
+        target_stat = None if target_absent else target.stat()
+    except FileNotFoundError:
+        return False
+    if target_stat is None:
+        return False
+    if _same_identity(src_stat, target_stat):
+        raise OSError(_errno.EINVAL, "Source and target are the same file", str(target))
+    if _stat.S_ISDIR(target_stat.st_mode):
+        raise IsADirectoryError(target)
+    if not overwrite:
+        raise FileExistsError(target)
+    return True
 
 
 def _stream(src, input, target, progress, total_size) -> None:

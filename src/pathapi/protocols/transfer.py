@@ -11,6 +11,7 @@ import typing as _ty
 from .. import _names, _stubs
 from .._errorpolicy import copy_error_predicate
 from .._filestat import FileStat
+from ._copytree import _copy_tree
 from ._relation import (
     _INNER,
     _OTHER,
@@ -19,9 +20,7 @@ from ._relation import (
     _drop_second_name,
     _relation,
     _same_file,
-    contains,
 )
-from ._removal import _write_batch_of
 from ._support import supports
 from ._transfer import (
     _copy_mode,
@@ -31,7 +30,7 @@ from ._transfer import (
     _stat_or_none,
     _take_handed,
 )
-from ._writing import _write_target
+from ._writing import _existing_target, _write_target
 from .fs import Create, Stat
 from .io import _ASK_STAT, BinaryOpen
 from .links import Readlink, Symlink
@@ -255,82 +254,22 @@ class Copy(Identity, Create, Symlink, Readlink, BinaryOpen, _ty.Protocol):
         target_absent = handed is not None and handed.target_absent
 
         if recursive and src_stat is not None and _stat.S_ISDIR(src_stat.st_mode):
-            if contains(src, target):
-                # Checked before anything is created: the new directory would
-                # be listed and copied into itself without end.
-                raise OSError(
-                    _errno.EINVAL,
-                    "Cannot copy a directory into itself",
-                    str(target),
-                )
-            # The writes below may be committed together by a backend that
-            # pays for each one (see `_write_batch`).
-            with _write_batch_of(target):
-                # Listed before the target exists, as shutil.copytree does.
-                children = list(src.iterdir())
-                if not target_absent and target.exists():
-                    if not target.is_dir():
-                        raise FileExistsError(target)
-                    if not overwrite:
-                        raise FileExistsError(target)
-                else:
-                    target.mkdir()
-                windows_target = _names.is_windows_flavoured(target)
-                for child in children:
-                    try:
-                        # A listed name is untrusted: one that is not a single component inside
-                        # `target` is refused (see the child-name paragraph of the docstring).
-                        _require_safe_child(target, child.name, windows_target)
-                        child.copy(
-                            target / child.name,
-                            overwrite=overwrite,
-                            follow_symlinks=follow_symlinks,
-                            preserve_metadata=preserve_metadata,
-                            recursive=True,
-                            ignore_error=ignore_error,
-                            progress=progress,
-                            # Passed on only when given, so a `copy()` override
-                            # without the keyword still works as a child.
-                            **({} if offering is None else {"on_error": offering}),
-                        )
-                    except Exception as e:
-                        if offering is not None:
-                            if not offering(e, child):
-                                raise
-                        elif callable(ignore_error):
-                            # A notify-and-suppress hook: its return value is not
-                            # consulted, so `errors.append` works.
-                            ignore_error(e)
-                        elif not ignore_error:
-                            raise
-                if preserve_metadata:
-                    # After the children: a read-only directory could not take
-                    # them, and its mode is only settled once they are in.
-                    _copy_mode(src, target, follow_symlinks, src_stat)
-                return
-
-        # What needs no I/O first; the stats below settle the rest.
-        if _same_file(src, target, identity=False):
-            raise OSError(
-                _errno.EINVAL, "Source and target are the same file", str(target)
+            return _copy_tree(
+                src,
+                target,
+                src_stat,
+                target_absent,
+                overwrite=overwrite,
+                follow_symlinks=follow_symlinks,
+                preserve_metadata=preserve_metadata,
+                ignore_error=ignore_error,
+                progress=progress,
+                offering=offering,
             )
-        # stat(), not exists(): exists() reads a transient error (a 503, a
-        # timeout) as "missing", and overwrite=False must never be decided by
-        # a failure. Only FileNotFoundError means the target is absent.
-        try:
-            target_stat = None if target_absent else target.stat()
-        except FileNotFoundError:
-            target_stat = None
-        target_exists = target_stat is not None
-        if target_stat is not None:
-            if _same_identity(src_stat, target_stat):
-                raise OSError(
-                    _errno.EINVAL, "Source and target are the same file", str(target)
-                )
-            if _stat.S_ISDIR(target_stat.st_mode):
-                raise IsADirectoryError(target)
-            if not overwrite:
-                raise FileExistsError(target)
+
+        target_exists = _existing_target(
+            src, target, src_stat, target_absent, overwrite
+        )
 
         # Open the source before the target is touched at all: a missing or
         # unreadable source must leave an existing target intact and must not
