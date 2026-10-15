@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 [project]
 # The distribution and the import package are both `pathapi`.
 name = "pathapi"
-version = "0.1.0"
+version = "0.1.1"
 authors = [{ name = "Jose A" }]
 description = "Generic Path Protocol based pathlib"
 readme = "README.md"
