@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`deadline` for a whole HTTP request.** `HTTPClient(deadline=...)` and the
+  `deadline=` keyword of `request()` and `redirect()` take the seconds a request may
+  take, redirects and the reading of the body included (`None`, the default, is no
+  limit). Each wait's timeout is held to the time that remains and `TimeoutError` is
+  raised once it has passed; `timeout` still bounds each wait. A read already blocked
+  can overrun the deadline by at most its timeout. A value that is not a number is
+  `TypeError`, one that is not positive `ValueError`. It works over every transport.
+
+### Fixed
+
+- **`copy(overwrite=True)` no longer destroys the old target when the copy fails.**
+  An existing file was removed before the new content was written, so a source that
+  failed half way left no file, or a partial one. The old file is kept until the
+  new content is complete: it is written to a hidden `.NAME.<hex>.pathapi-tmp`
+  sibling and renamed over it, and a class whose write stream commits on close is
+  written to directly. A class that cannot rename writes the sibling and then writes
+  it over the target. If you list the directory while a copy runs, you may see that
+  sibling.
+- **`pathlib.Path(src).copy(target)` (3.14) onto a `Path` of this library refuses
+  unsafe child names.** `_copy_from()` joined every listed name onto the target; a
+  name that is not one component (`..`, a separator, on a Windows target a drive or
+  a trailing dot) now raises `ValueError` before anything is written for it, as
+  `copy(recursive=True)` does. A source that lists such names needs a copy that
+  skips them.
+- **The shipped transport suite names the file of its tests wherever it is run
+  from.** `python -m pathapi.http.testing` (and `run()`) roots pytest at the suite's
+  own directory unless `--rootdir` is given, so node ids keep their file when the
+  checkout and the installed package are on different drives.
+
 ## [0.1.0] - 2026-10-15
 
 Published as `pathlib-next` up to 0.10.0; from 0.1.0 as `pathapi`. The released

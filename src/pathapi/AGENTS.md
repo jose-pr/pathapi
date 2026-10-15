@@ -424,10 +424,16 @@ Base class for I/O paths.
     `samefile()` where `stat()` carries `st_dev`/`st_ino`, else equal paths
     of one type that `_same_filesystem()` places together.
   - The source is opened before the target is touched; a failed stream
-    removes the partial target. `overwrite=True` removes an existing file
-    target with `unlink(missing_ok=True)` just before writing: a backend
-    whose write replaces the file and which cannot delete implements
-    `unlink()` so that `missing_ok=True` returns without removing.
+    removes the partial target it created. `overwrite=True` never removes
+    or truncates the old file first: a source that fails half way leaves it
+    as it was. The new content is finished in a hidden temporary sibling
+    (`.NAME.<hex>.pathapi-tmp`) and renamed over the old file (`os.replace`
+    for a local path); where `rename()` is refused it is written over the
+    target from the finished copy, and the sibling is kept and named if that
+    fails. A class without `rename()` stages the same way when its write
+    stream takes bytes in place; one whose stream commits on close (it has
+    `discard()`) is written to directly, since a failed write leaves the old
+    file.
   - A recursive copy runs inside `target._write_batch()`: onto a zip
     archive it is one rewrite of the file, and a copy that raises leaves
     the archive as it was.
@@ -591,7 +597,9 @@ class CommitOnClose(DiscardOnError, BytesIO):
   works on 3.14, and returns `target.joinpath()`. It copies `source` (anything
   with `info`, `iterdir()`, `readlink()`, `open()` and `stat()`) as 3.14 does:
   an existing file is overwritten, an existing directory raises, children are
-  copied one by one, `follow_symlinks=False` makes a link through
+  copied one by one (a listed name that is not one safe component for this
+  path, by `providers.is_safe_child_name()`, is `ValueError` naming it before
+  anything is written for it), `follow_symlinks=False` makes a link through
   `symlink_to()`, and `preserve_metadata` copies the permission bits and the
   modification time where the class can set them (`chmod()`, `_utime()`).
   `Path.copy()` of this library does not call it. A class that mixes a
@@ -2289,7 +2297,8 @@ distribution and `pytest` installed:
 python -m pathapi.http.testing --http-transports requests -q
 ```
 
-Everything after `python -m pathapi.http.testing` goes to pytest.
+Everything after `python -m pathapi.http.testing` goes to pytest, which is
+rooted at `suite_directory()` unless the arguments give `--rootdir`.
 `--http-transports` takes names that `transport_names()` lists, separated by
 commas (default `builtin`): each test that depends on the transport runs once
 per name, with `PATHAPI_HTTP_TRANSPORT` set to it, so the clients the
