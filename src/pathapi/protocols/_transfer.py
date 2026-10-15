@@ -7,6 +7,8 @@ import contextvars as _contextvars
 import stat as _stat
 import typing as _ty
 
+from .. import _names
+
 if _ty.TYPE_CHECKING:
     from ..path import Path
 
@@ -65,6 +67,13 @@ def _take_handed(source, target) -> "_Handed | None":
         return None
     handed.taken = True
     return handed
+
+
+def _require_safe_child(target: Path, name: str, windows: bool) -> None:
+    """Refuse, with `ValueError`, a listed child `name` that is not one safe
+    component under `target`: the same rule for every copy of a tree."""
+    if not _names.is_safe_child_name(name, windows=windows):
+        raise ValueError(f"refusing unsafe child name {name!r} under {target}")
 
 
 def _same_identity(first, second) -> bool:

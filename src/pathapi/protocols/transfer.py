@@ -26,6 +26,7 @@ from ._support import supports
 from ._transfer import (
     _copy_mode,
     _handing,
+    _require_safe_child,
     _same_identity,
     _stat_or_none,
     _take_handed,
@@ -123,7 +124,9 @@ class Copy(Identity, Create, Symlink, Readlink, BinaryOpen, _ty.Protocol):
         """Copy `source` -- any path with `info`, `iterdir()`, `readlink()` and
         `open()`, such as a `pathlib.Path` -- to this path, creating files and
         directories as pathlib 3.14 does: an existing file is overwritten, an
-        existing directory raises. Python 3.14's `pathlib.Path.copy(target)`
+        existing directory raises. A listed child name that is not one safe
+        component for this path (`providers.is_safe_child_name`) raises
+        `ValueError` before anything is written for it. Python 3.14's `pathlib.Path.copy(target)`
         hands the work to `target._copy_from()`; `preserve_metadata` copies the
         permission bits and the modification time where this class can set
         them."""
@@ -134,7 +137,9 @@ class Copy(Identity, Create, Symlink, Readlink, BinaryOpen, _ty.Protocol):
         elif info.is_dir():
             children = source.iterdir()
             self.mkdir()
+            windows = _names.is_windows_flavoured(self)
             for child in children:
+                _require_safe_child(self, child.name, windows)
                 self.joinpath(child.name)._copy_from(
                     child, follow_symlinks, preserve_metadata
                 )
@@ -275,13 +280,7 @@ class Copy(Identity, Create, Symlink, Readlink, BinaryOpen, _ty.Protocol):
                     try:
                         # A listed name is untrusted: one that is not a single component inside
                         # `target` is refused (see the child-name paragraph of the docstring).
-                        if not _names.is_safe_child_name(
-                            child.name, windows=windows_target
-                        ):
-                            raise ValueError(
-                                f"refusing unsafe child name {child.name!r} "
-                                f"under {target}"
-                            )
+                        _require_safe_child(target, child.name, windows_target)
                         child.copy(
                             target / child.name,
                             overwrite=overwrite,

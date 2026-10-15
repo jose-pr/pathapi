@@ -200,9 +200,9 @@ mutant(
 )
 mutant(
     "copy-recursive-accepts-unsafe-child-names",
-    "protocols/transfer.py",
-    "                    if not _names.is_safe_child_name(\n",
-    "                    if False and not _names.is_safe_child_name(\n",
+    "protocols/_transfer.py",
+    "    if not _names.is_safe_child_name(name, windows=windows):\n",
+    "    if False and not _names.is_safe_child_name(name, windows=windows):\n",
     "tests/test_destructive_safety.py::test_copy_recursive_never_merges_names_windows_rewrites",
     "copy(recursive): unsafe child-name refusal off",
 )
@@ -1154,4 +1154,12 @@ mutant(
     "        if created and supports(target, Remove):\n",
     "tests/test_copy_overwrite.py::test_a_target_that_cannot_rename_keeps_its_content_when_the_source_fails",
     "a failed copy removes the old file of a class that commits on close",
+)
+mutant(
+    "copy-from-accepts-unsafe-child-names",
+    "protocols/transfer.py",
+    "                _require_safe_child(self, child.name, windows)\n",
+    "                pass\n",
+    "tests/test_copy_from_names.py",
+    "_copy_from() joins a listed name that is not one safe component",
 )
