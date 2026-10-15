@@ -1150,18 +1150,20 @@ distributions are built on it.
 class HTTPClient:
     headers: dict
     timeout: float | tuple | None
+    deadline: float | None
     user_agent: str
     def __init__(
-        self, transport=None, *, headers=None, timeout=(10, 60), user_agent=None,
+        self, transport=None, *, headers=None, timeout=(10, 60), deadline=None,
+        user_agent=None,
     ): ...
     transport
     def request(
         self, method, url, *, data=None, headers=None, stream=False,
-        allow_redirects=None, timeout=..., auth=None,
+        allow_redirects=None, timeout=..., deadline=..., auth=None,
     ): ...
     def redirect(
         self, method, url, resp, *, headers=None, stream=False, timeout=...,
-        auth=None,
+        deadline=..., auth=None,
     ): ...
     def close(self): ...
 
@@ -1170,7 +1172,7 @@ MAX_REPLY_BYTES = 8388608
 ```
 
 - **`HTTPClient(transport=None, *, headers=None, timeout=(10, 60),
-  user_agent=None)`** holds a transport and what every request is sent with.
+  deadline=None, user_agent=None)`** holds a transport and what every request is sent with.
   `transport` is any object with `send()` (the contract below); without one the
   client builds the transport that `PATHAPI_HTTP_TRANSPORT` names (the
   built-in `HTTPTransport` by default) on first use, and `close()` or leaving
@@ -1181,8 +1183,16 @@ MAX_REPLY_BYTES = 8388608
   `pathapi/<version>`) and `Accept: */*`. Every request gets
   `timeout=(10, 60)` seconds (`connect`, `read`) unless the client or the call
   gives one; `timeout=None` waits without limit. `repr()` shows no header.
+  `timeout` bounds each wait; `deadline` (seconds, `None` for none) bounds the
+  whole request, redirects and the reading of the body included: every wait is
+  held to the time that remains, and `TimeoutError` is raised once it has
+  passed (also between reads of a streamed body). A call's `deadline=` replaces
+  the client's; a value that is not a number or `None` is `TypeError`, one
+  that is not positive `ValueError`, before anything is sent. A read already
+  blocked can overrun it by at most the timeout of that wait. It works over
+  any transport: the contract below is unchanged.
 - **`request(method, url, *, data=None, headers=None, stream=False,
-  allow_redirects=None, timeout, auth=None)`** returns the final
+  allow_redirects=None, timeout, deadline, auth=None)`** returns the final
   `HTTPResponse`. `data` is `bytes`, `str` (UTF-8), a binary file or an
   iterable of `bytes`; one that is not `bytes` cannot be sent twice, so it is
   not sent again after a redirect or a dropped connection. `auth` is a
@@ -1213,7 +1223,7 @@ MAX_REPLY_BYTES = 8388608
   status and the `Location` (userinfo, query and fragment removed). A body
   that is not `bytes` cannot be sent again, so it raises too.
 - **`redirect(method, url, resp, *, headers=None, stream=False, timeout,
-  auth=None)`** sends `method` to where `resp`, the answer to a request for
+  deadline, auth=None)`** sends `method` to where `resp`, the answer to a request for
   `url` made with `allow_redirects=False`, redirects to, and follows what that
   redirects to in turn. `Authorization` is left off whenever the target is
   another scheme, host or port than `url`'s. No usable `Location` is

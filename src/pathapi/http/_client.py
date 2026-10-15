@@ -8,6 +8,7 @@ import typing as _ty
 
 from .. import __version__
 from . import _follow, _settings
+from ._deadline import Deadline, check_deadline
 from ._headers import check_headers, check_url, has_header, merge_headers
 from ._response import HTTPResponse
 from ._status import too_large
@@ -19,7 +20,7 @@ unless it is given `timeout` (`HTTPClient(timeout=...)` or per request);
 `timeout=None` waits without a limit."""
 
 _UNSET = object()
-"""The `timeout` of a call that did not give one: the client's own."""
+"""The `timeout` or `deadline` of a call that did not give one: the client's own."""
 
 
 class HTTPClient:
@@ -35,6 +36,11 @@ class HTTPClient:
     `user_agent` (`pathapi/<version>` by default) and `Accept: */*`.
     Every request gets `timeout=DEFAULT_TIMEOUT` (`(10, 60)` seconds) unless
     `timeout` here or in the call says otherwise (`None` waits without limit).
+    `timeout` bounds each wait; `deadline` (seconds, `None` for no limit, the
+    default) bounds the whole request: redirects and the reading of the body
+    included, each wait's timeout is held to the time that remains, and
+    `TimeoutError` is raised once it has passed. A read already blocked can
+    overrun it by at most the timeout of that wait.
 
     The client, not the transport, follows redirects. `GET`, `HEAD` and
     `OPTIONS` follow up to 30; a redirect that changes the scheme, host or
@@ -47,6 +53,7 @@ class HTTPClient:
     __slots__ = (
         "headers",
         "timeout",
+        "deadline",
         "user_agent",
         "_transport",
         "_built",
@@ -60,6 +67,7 @@ class HTTPClient:
         *,
         headers: "_ty.Mapping[str, str] | None" = None,
         timeout: "float | tuple | None" = DEFAULT_TIMEOUT,
+        deadline: "float | None" = None,
         user_agent: "str | None" = None,
     ):
         if transport is not None and not callable(getattr(transport, "send", None)):
@@ -69,6 +77,7 @@ class HTTPClient:
         self._transport_lock = _threading.Lock()
         self.headers = dict(headers or {})
         self.timeout = timeout
+        self.deadline = check_deadline(deadline)
         self.user_agent = user_agent or f"pathapi/{__version__}"
 
     def __repr__(self) -> str:
@@ -115,12 +124,24 @@ class HTTPClient:
         return sent
 
     def _dispatch(
-        self, method, url, sent, data, allow_redirects, stream, timeout, first=None
+        self,
+        method,
+        url,
+        sent,
+        data,
+        allow_redirects,
+        stream,
+        timeout,
+        deadline,
+        first=None,
     ) -> HTTPResponse:
         check_url(url)
         check_headers(sent)
         if timeout is _UNSET:
             timeout = self.timeout
+        deadline = self.deadline if deadline is _UNSET else check_deadline(deadline)
+        if deadline is not None:
+            deadline = Deadline(deadline, f"{method} {_follow.shown(first or url)}")
         if isinstance(data, str):
             data = data.encode("utf-8")
         transport = self.transport
@@ -129,7 +150,11 @@ class HTTPClient:
         if method.upper() in _follow.FOLLOWED_METHODS and data is None:
             if allow_redirects is False and first is None:
                 resp = transport.send(
-                    method, url, headers=sent, timeout=timeout, stream=True
+                    method,
+                    url,
+                    headers=sent,
+                    timeout=timeout if deadline is None else deadline.cap(timeout),
+                    stream=True,
                 )
             else:
                 resp = _follow.send_following(
@@ -140,6 +165,7 @@ class HTTPClient:
                     timeout=timeout,
                     stream=True,
                     first=first,
+                    deadline=deadline,
                 )
         else:
             resp = _follow.send_once(
@@ -150,7 +176,10 @@ class HTTPClient:
                 body=data,
                 timeout=timeout,
                 stream=True,
+                deadline=deadline,
             )
+        if deadline is not None:
+            deadline.bound(resp)
         if not stream:
             limit = _settings.MAX_REPLY_BYTES
             resp._buffered(limit, too_large(_follow.shown(url), limit))
@@ -166,6 +195,7 @@ class HTTPClient:
         stream: bool = False,
         allow_redirects: "bool | None" = None,
         timeout=_UNSET,
+        deadline=_UNSET,
         auth: "tuple[str | bytes, str | bytes] | str | None" = None,
     ) -> HTTPResponse:
         """Send `method` to `url` and return the final response. A `data` that
@@ -182,7 +212,9 @@ class HTTPClient:
         body over `MAX_REPLY_BYTES` is `OSError(EFBIG)`; with `stream=True` the
         caller reads it, and closes the response."""
         sent = self._sent_headers(headers, auth)
-        return self._dispatch(method, url, sent, data, allow_redirects, stream, timeout)
+        return self._dispatch(
+            method, url, sent, data, allow_redirects, stream, timeout, deadline
+        )
 
     def redirect(
         self,
@@ -193,6 +225,7 @@ class HTTPClient:
         headers: "_ty.Mapping[str, str] | None" = None,
         stream: bool = False,
         timeout=_UNSET,
+        deadline=_UNSET,
         auth: "tuple[str | bytes, str | bytes] | str | None" = None,
     ) -> HTTPResponse:
         """Send `method` to where `resp`, the answer to a request for `url`,
@@ -207,5 +240,5 @@ class HTTPClient:
                 method, url, resp, None, "no usable Location"
             )
         return self._dispatch(
-            method, location, sent, None, None, stream, timeout, first=url
+            method, location, sent, None, None, stream, timeout, deadline, first=url
         )

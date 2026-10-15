@@ -1179,3 +1179,43 @@ mutant(
     "tests/test_http_testing.py::test_run_keeps_a_rootdir_the_caller_gave",
     "the shipped suite adds its rootdir over the caller's",
 )
+mutant(
+    "deadline-body-read-unchecked",
+    "http/_deadline.py",
+    "        self._deadline.check()\n",
+    "        pass\n",
+    "tests/transport/test_client_deadline.py::test_a_streamed_body_is_cut_off_at_the_deadline_between_reads",
+    "a response body is read after the deadline has passed",
+)
+mutant(
+    "deadline-body-not-bounded",
+    "http/_client.py",
+    "            deadline.bound(resp)\n",
+    "            pass\n",
+    "tests/transport/test_client_deadline.py::test_a_server_that_trickles_its_body_is_cut_off_at_the_deadline",
+    "the response of a request with a deadline is not held to it",
+)
+mutant(
+    "deadline-wait-not-capped",
+    "http/_deadline.py",
+    "        return left if wait is None else min(wait, left)\n",
+    "        return wait\n",
+    "tests/transport/test_client_deadline.py::test_each_wait_is_capped_at_the_time_that_remains",
+    "a wait may outlast the time that remains of the deadline",
+)
+mutant(
+    "deadline-redirect-hop-not-capped",
+    "http/_follow.py",
+    "    return timeout if deadline is None else deadline.cap(timeout)\n",
+    "    return timeout\n",
+    "tests/transport/test_client_deadline.py::test_a_chain_of_redirects_shares_one_deadline",
+    "a redirect chain does not share the deadline",
+)
+mutant(
+    "deadline-zero-accepted",
+    "http/_deadline.py",
+    "    if _math.isnan(deadline) or deadline <= 0:\n",
+    "    if _math.isnan(deadline):\n",
+    "tests/transport/test_client_deadline.py::test_a_deadline_that_is_not_positive_is_a_value_error",
+    "a deadline of zero or less is accepted",
+)

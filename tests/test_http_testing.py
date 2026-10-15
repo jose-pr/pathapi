@@ -27,6 +27,7 @@ PER_TRANSPORT = re.compile(
 # transport's pool and proxy handling, the registry, the helper that a new
 # transport starts from) and so are not run over another transport.
 NOT_PER_TRANSPORT = {
+    "test_client_deadline.py",
     "test_client_urls.py",
     "test_transport_pool.py",
     "test_transport_prepare.py",

@@ -137,6 +137,11 @@ def _discard(resp: HTTPResponse) -> None:
         resp.close()
 
 
+def _capped(timeout, deadline):
+    """`timeout` held to what remains of `deadline`; as it is without one."""
+    return timeout if deadline is None else deadline.cap(timeout)
+
+
 def can_resend_body(body) -> bool:
     return body is None or isinstance(body, (bytes, bytearray, memoryview))
 
@@ -150,6 +155,7 @@ def send_following(
     timeout,
     stream: bool,
     first: "str | None" = None,
+    deadline=None,
 ) -> HTTPResponse:
     """Send a request that carries no body and follow its redirects, up to
     `MAX_REDIRECTS`. `Authorization` goes to the origin of `first` (the URL
@@ -163,7 +169,12 @@ def send_following(
         if origin(current) != home:
             headers = drop_header(headers, "Authorization")
         resp = transport.send(
-            method, current, headers=headers, body=None, timeout=timeout, stream=stream
+            method,
+            current,
+            headers=headers,
+            body=None,
+            timeout=_capped(timeout, deadline),
+            stream=stream,
         )
         if not is_redirect(resp):
             return resp
@@ -193,13 +204,19 @@ def send_once(
     body,
     timeout,
     stream: bool,
+    deadline=None,
 ) -> HTTPResponse:
     """Send a request that must not be redirected the way a browser does: a
     redirect with a status in `RESENT_STATUSES` to the same scheme, host and
     port is sent once more with the same method and body, and any other 3xx
     raises `OSError(EIO)` naming the status and the `Location`."""
     resp = transport.send(
-        method, url, headers=headers, body=body, timeout=timeout, stream=stream
+        method,
+        url,
+        headers=headers,
+        body=body,
+        timeout=_capped(timeout, deadline),
+        stream=stream,
     )
     if not 300 <= resp.status < 400:
         return resp
@@ -220,7 +237,12 @@ def send_once(
     else:
         _discard(resp)
         resp = transport.send(
-            method, location, headers=headers, body=body, timeout=timeout, stream=stream
+            method,
+            location,
+            headers=headers,
+            body=body,
+            timeout=_capped(timeout, deadline),
+            stream=stream,
         )
         if not 300 <= resp.status < 400:
             return resp
