@@ -192,9 +192,9 @@ mutant(
 )
 mutant(
     "copy-leaves-a-half-written-target",
-    "protocols/transfer.py",
-    "                if created and supports(target, Remove):\n",
-    "                if False:\n",
+    "protocols/_writing.py",
+    "        if created and not discarding and supports(target, Remove):\n",
+    "        if False:\n",
     "tests/test_destructive_safety.py::test_copy_failing_mid_stream_removes_partial_target",
     "copy(): half-written target left behind on failure",
 )
@@ -1140,10 +1140,18 @@ mutant(
     "move() copies a file it cannot then remove, leaving two",
 )
 mutant(
-    "copy-removes-a-target-that-cannot-be-removed",
-    "protocols/transfer.py",
-    "            if target_exists and supports(target, Remove):\n",
-    "            if target_exists:\n",
-    "tests/test_consumer_needs.py::test_copy_over_an_existing_file_of_a_class_without_remove_replaces_it",
-    "copy() over an existing file of a class without Remove raises instead of replacing it",
+    "copy-writes-an-existing-target-in-place",
+    "protocols/_writing.py",
+    "    if not replacing:\n",
+    "    if True:\n",
+    "tests/test_copy_overwrite.py::test_a_source_failing_half_way_leaves_the_old_target",
+    "copy(overwrite=True) truncates the old target before the new content is secured",
+)
+mutant(
+    "copy-removes-a-target-that-commits-on-close",
+    "protocols/_writing.py",
+    "        if created and not discarding and supports(target, Remove):\n",
+    "        if created and supports(target, Remove):\n",
+    "tests/test_copy_overwrite.py::test_a_target_that_cannot_rename_keeps_its_content_when_the_source_fails",
+    "a failed copy removes the old file of a class that commits on close",
 )

@@ -30,6 +30,7 @@ from ._transfer import (
     _stat_or_none,
     _take_handed,
 )
+from ._writing import _write_target
 from .fs import Create, Stat
 from .io import _ASK_STAT, BinaryOpen
 from .links import Readlink, Symlink
@@ -206,6 +207,9 @@ class Copy(Identity, Create, Symlink, Readlink, BinaryOpen, _ty.Protocol):
         directories above. `ignore_error` and `on_error` are two spellings of
         one policy: passing both raises `TypeError` before anything is copied.
 
+        With `overwrite=True` an existing file is kept until the new content
+        is complete: a source that fails half way leaves it as it was.
+
         A child whose listed name is not one safe component for `target` (a
         drive such as `C:x` or a backslash on a Windows target, which land
         outside it; a trailing dot, which Windows stores under another name)
@@ -333,40 +337,23 @@ class Copy(Identity, Create, Symlink, Readlink, BinaryOpen, _ty.Protocol):
         # unreadable source must leave an existing target intact and must not
         # leave a new empty one behind.
         with src.open("rb") as input:
-            if target_exists and supports(target, Remove):
-                target.unlink(missing_ok=True)
-            created = False
-            try:
-                with target.open("wb") as output:
-                    created = True
-                    BinaryOpen._copy_stream(
-                        src,
-                        input,
-                        output,
-                        progress=(
-                            None
-                            if progress is None
-                            else lambda copied, total: progress(src, copied, total)
-                        ),
-                        total_size=(
-                            _ASK_STAT
-                            if src_stat is None
-                            else (
-                                getattr(src_stat, "st_size", None)
-                                if getattr(src_stat, "size_known", True)
-                                else None
-                            )
-                        ),
+            _write_target(
+                src,
+                input,
+                target,
+                (
+                    _ASK_STAT
+                    if src_stat is None
+                    else (
+                        getattr(src_stat, "st_size", None)
+                        if getattr(src_stat, "size_known", True)
+                        else None
                     )
-            except BaseException:
-                # A half-written target is not a copy of anything; do not
-                # leave it looking like one.
-                if created and supports(target, Remove):
-                    try:
-                        target.unlink(missing_ok=True)
-                    except Exception:
-                        pass
-                raise
+                ),
+                progress=progress,
+                replacing=target_exists,
+                renames=target_exists and supports(target, Move),
+            )
 
         if preserve_metadata:
             _copy_mode(src, target, follow_symlinks, src_stat)
