@@ -1163,3 +1163,19 @@ mutant(
     "tests/test_copy_from_names.py",
     "_copy_from() joins a listed name that is not one safe component",
 )
+mutant(
+    "suite-run-leaves-pytest-without-a-rootdir",
+    "http/testing/__init__.py",
+    '    if not any(a == "--rootdir" or a.startswith("--rootdir=") for a in arguments):\n',
+    '    if False and not any(a == "--rootdir" for a in arguments):\n',
+    "tests/test_http_testing.py::test_run_roots_pytest_at_the_suite_directory",
+    "the shipped suite is run without a rootdir of its own",
+)
+mutant(
+    "suite-run-overrides-the-callers-rootdir",
+    "http/testing/__init__.py",
+    '    if not any(a == "--rootdir" or a.startswith("--rootdir=") for a in arguments):\n',
+    "    if True:\n",
+    "tests/test_http_testing.py::test_run_keeps_a_rootdir_the_caller_gave",
+    "the shipped suite adds its rootdir over the caller's",
+)

@@ -64,7 +64,8 @@ def suite_directory() -> _pathlib.Path:
 
 def run(arguments: "_ty.Sequence[str] | None" = None) -> int:
     """Runs `MODULES` with pytest and `arguments` (pytest options, such as
-    `--http-transports requests`) and returns the exit status. Raises
+    `--http-transports requests`) and returns the exit status. pytest's
+    rootdir is `suite_directory()` unless `arguments` give `--rootdir`. Raises
     `ImportError` when pytest is not installed."""
     try:
         import pytest
@@ -77,4 +78,9 @@ def run(arguments: "_ty.Sequence[str] | None" = None) -> int:
     # The files go first: with an option and its value ahead of them, pytest
     # 8 reads the value as the first path and loads no `conftest.py`, so the
     # option `--http-transports` is not known.
-    return int(pytest.main([*files, *(arguments or ())]))
+    arguments = list(arguments or ())
+    # pytest roots node ids at its rootdir; a checkout on another drive than
+    # the installed suite would list them without their file.
+    if not any(a == "--rootdir" or a.startswith("--rootdir=") for a in arguments):
+        files.append(f"--rootdir={directory}")
+    return int(pytest.main([*files, *arguments]))

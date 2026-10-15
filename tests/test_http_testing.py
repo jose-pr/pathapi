@@ -280,3 +280,26 @@ def test_the_suite_is_listed_by_the_command_and_runs_once_per_transport():
         for line in listed
     )
     assert not any("test_transport_pool.py" in line for line in listed)
+
+
+def _arguments_given_to_pytest(monkeypatch, tmp_path, arguments):
+    seen = []
+    monkeypatch.setattr(pytest, "main", lambda args: seen.append(list(args)) or 0)
+    monkeypatch.setattr(http_testing, "suite_directory", lambda: tmp_path)
+    assert http_testing.run(arguments) == 0
+    return seen[0]
+
+
+def test_run_roots_pytest_at_the_suite_directory(monkeypatch, tmp_path):
+    given = _arguments_given_to_pytest(monkeypatch, tmp_path, ["-q"])
+    assert f"--rootdir={tmp_path}" in given
+    assert given[-1] == "-q"
+
+
+@pytest.mark.parametrize(
+    "option", [["--rootdir=/elsewhere"], ["--rootdir", "/elsewhere"]]
+)
+def test_run_keeps_a_rootdir_the_caller_gave(monkeypatch, tmp_path, option):
+    given = _arguments_given_to_pytest(monkeypatch, tmp_path, option)
+    assert [a for a in given if a.startswith("--rootdir")] == option[:1]
+    assert given[-len(option) :] == option
