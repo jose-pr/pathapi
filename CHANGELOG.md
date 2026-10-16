@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`max_workers` for recursive `copy()`, `rm()` and `PathSyncer`.** `copy()` (and
+  `copy_into()`), `rm()` and `PathSyncer(...)` take `max_workers=None`. `None`, the
+  default, is one thread, exactly as before. An int of 2 or more hands the files
+  and links of each directory to a pool of at most that many threads, which
+  helps a backend that pays a round trip per entry. It applies to a class that sets
+  the new class attribute `_threadsafe = True` (`LocalPath` and `FTPPath` do); any other
+  class, including every class of another distribution until it sets the attribute,
+  runs serially whatever was asked. Callbacks (`progress`, `on_error`, `ignore_error`,
+  the sync `hook`, follow policies) run one at a time but on pool threads, in no
+  fixed order, and the error that ends the operation is the first to happen. A value
+  below 1 is `ValueError`, one that is not an int is `TypeError`. `PathContract`
+  has a `supports_concurrent_use` switch for the matching test.
+
 ### Fixed
 
 - **`move(overwrite=True)` no longer destroys the old target when the move fails.**

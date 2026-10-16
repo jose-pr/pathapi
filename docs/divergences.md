@@ -171,6 +171,14 @@ because a behavioral decision needed documenting:
   (`copy(recursive=True)` on a directory) -- do not invoke `progress`; this
   was a deliberate scope decision for the first cut (generic-stream-only),
   not an oversight. **2026-07-28.**
+- `max_workers=None` on `Path.copy(recursive=True)`, `Path.rm(recursive=True)` and
+  `PathSyncer(...)`: no pathlib equivalent. `None` is one thread, as before. An int
+  of 2 or more hands the files and links of each directory to a pool of that many
+  threads, for a class that sets `_threadsafe = True` (`LocalPath`, `FTPPath`); any
+  other class runs serially. Callbacks (`progress`, `on_error`, `ignore_error`, the
+  sync `hook`, follow policies) are called one at a time but from pool threads and in
+  no fixed order, and the error that ends the operation is the first to happen, not
+  the first in listing order.
 - `protocols.checksum.NativeChecksum` (`checksum(algorithm="md5") -> str`) --
   an entirely new, optional protocol with no pathlib equivalent. A `Path`
   subclass may implement it to compute a file digest server-side (e.g.
