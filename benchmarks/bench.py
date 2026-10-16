@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import platform
 import re
@@ -484,6 +485,247 @@ def print_recursive_matrix_results(rows, *, markdown=False):
         print(f"   - {name}: {_fmt_metric(metric)}")
 
 
+#: The tree of the fan-out suite: directories of small files.
+FANOUT_DIRS = 8
+FANOUT_FILES = 8
+FANOUT_BYTES = 512
+#: What each operation of the simulated slow backend waits, in seconds.
+FANOUT_DELAY = 0.002
+#: The `max_workers` settings the fan-out suite measures; None is serial.
+FANOUT_WORKERS = (None,)
+
+
+class _DelayedMem(MemPath):
+    """A `MemPath` whose every operation waits `FANOUT_DELAY` seconds: a
+    simulated backend with a round trip per call, not a measurement of any
+    real one. It may be used from several threads."""
+
+    _threadsafe = True
+
+    def _wait(self):
+        time.sleep(FANOUT_DELAY)
+
+    def stat(self, *, follow_symlinks=True):
+        self._wait()
+        return super().stat(follow_symlinks=follow_symlinks)
+
+    def iterdir(self):
+        self._wait()
+        return super().iterdir()
+
+    def _open(self, mode="r", buffering=-1):
+        self._wait()
+        return super()._open(mode, buffering)
+
+    def _mkdir(self, mode):
+        self._wait()
+        return super()._mkdir(mode)
+
+    def unlink(self, missing_ok=False):
+        self._wait()
+        return super().unlink(missing_ok)
+
+    def rmdir(self):
+        self._wait()
+        return super().rmdir()
+
+
+def _fanout_files():
+    payload = "x" * FANOUT_BYTES
+    return {
+        f"dir_{i}/file_{j:02d}.txt": payload
+        for i in range(FANOUT_DIRS)
+        for j in range(FANOUT_FILES)
+    }
+
+
+def _fanout_label():
+    return f"{FANOUT_DIRS * FANOUT_FILES}-file tree"
+
+
+class _LoopbackFtpServer:
+    """A pyftpdlib server on 127.0.0.1 serving a temporary directory."""
+
+    def __init__(self, directory):
+        import threading
+
+        from pyftpdlib.authorizers import DummyAuthorizer
+        from pyftpdlib.handlers import FTPHandler
+        from pyftpdlib.ioloop import Select
+        from pyftpdlib.servers import FTPServer
+
+        logging.getLogger("pyftpdlib").setLevel(logging.CRITICAL)
+        directory.mkdir(exist_ok=True)
+        authorizer = DummyAuthorizer()
+        authorizer.add_user("user", "12345", str(directory), perm="elradfmwMT")
+        handler = type("Handler", (FTPHandler,), {"authorizer": authorizer})
+        self._ioloop = Select()
+        self._server = FTPServer(("127.0.0.1", 0), handler, ioloop=self._ioloop)
+        self.port = self._server.socket.getsockname()[1]
+        self._thread = threading.Thread(target=self._serve, daemon=True)
+        self._thread.start()
+
+    def _serve(self):
+        try:
+            self._server.serve_forever()
+        except OSError:
+            pass
+
+    def close(self):
+        self._ioloop.call_later(0, self._server.close_all)
+        self._thread.join(timeout=10)
+
+
+def _measure_staged(setup, operation, *, repeat, name, group):
+    """Like `_measure`, but `setup()` runs before each sample, outside the
+    timing; the first run only opens the connections and is not recorded."""
+    samples = []
+    try:
+        for index in range(repeat + 1):
+            setup()
+            start = time.perf_counter()
+            operation()
+            elapsed = time.perf_counter() - start
+            if index:
+                samples.append(elapsed)
+    except Exception as error:
+        message = f"{type(error).__name__}: {error}"
+        RECORDER.error(name, message, group=group)
+        return message
+    RECORDER.timing(name, samples, group=group)
+    return statistics.median(samples)
+
+
+def _fanout_cases(rows, backend, source, make_target, seed_victim, remove):
+    """Time recursive copy, recursive rm and a first sync of the tree at
+    `source` into the path `make_target()` returns, for every setting of
+    `FANOUT_WORKERS`."""
+    tree = _fanout_label()
+    for workers in FANOUT_WORKERS:
+        extra = {} if workers is None else {"max_workers": workers}
+        label = "" if workers is None else f", max_workers={workers}"
+        target = make_target("target")
+        victim = make_target("victim")
+        for case, setup, operation in (
+            (
+                f"{backend} copy(recursive=True) {tree}{label}",
+                lambda: remove(target),
+                lambda: source.copy(target, recursive=True, **extra),
+            ),
+            (
+                f"{backend} rm(recursive=True) {tree}{label}",
+                lambda: seed_victim(victim),
+                lambda: victim.rm(recursive=True, **extra),
+            ),
+            (
+                f"{backend} sync {tree}{label}",
+                lambda: remove(target),
+                lambda: PathSyncer(**extra).sync(source, target),
+            ),
+        ):
+            rows.append(
+                (
+                    case,
+                    _measure_staged(
+                        setup,
+                        operation,
+                        repeat=_reps(3),
+                        name=f"fanout: {case}",
+                        group="fanout",
+                    ),
+                )
+            )
+
+
+def _seed_delayed(path, files):
+    path.mkdir()
+    for relpath, data in files.items():
+        file_path = path / relpath
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_text(data)
+
+
+def benchmark_fanout():
+    """Recursive copy, rm and sync of a tree of small files on a loopback FTP
+    server and on a simulated slow backend."""
+    rows = []
+    files = _fanout_files()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = StdlibPath(tmpdir)
+        served = root / "served"
+        _write_tree(root / "source", files)
+        try:
+            server = _LoopbackFtpServer(served)
+        except ImportError as error:
+            RECORDER.skip(
+                "fanout: FTP", f"pyftpdlib is not installed: {error}", group="fanout"
+            )
+        else:
+            from pathapi.ftp import FTPBackend, FTPPath
+
+            backend = FTPBackend(
+                "127.0.0.1", server.port, user="user", password="12345", timeout=30
+            )
+
+            def ftp_target(name):
+                return FTPPath(f"/{name}", backend=backend)
+
+            def ftp_remove(path):
+                shutil.rmtree(served / path.name, ignore_errors=True)
+
+            def ftp_seed(path):
+                ftp_remove(path)
+                _write_tree(served / path.name, files)
+
+            try:
+                _fanout_cases(
+                    rows,
+                    "FTP loopback",
+                    LocalPath(root / "source"),
+                    ftp_target,
+                    ftp_seed,
+                    ftp_remove,
+                )
+            finally:
+                backend.close()
+                server.close()
+
+    def delayed(name):
+        return _DelayedMem(f"/{name}", backend=MemPathBackend())
+
+    def delayed_remove(path):
+        if path.exists():
+            path.rm(recursive=True)
+
+    def delayed_seed(path):
+        delayed_remove(path)
+        _seed_delayed(path, files)
+
+    mem_source = delayed("source")
+    _seed_delayed(mem_source, files)
+    _fanout_cases(
+        rows,
+        f"simulated {FANOUT_DELAY * 1000:g} ms per call",
+        mem_source,
+        delayed,
+        delayed_seed,
+        delayed_remove,
+    )
+    return rows
+
+
+def print_fanout_results(rows, *, markdown=False):
+    if markdown:
+        print("| Benchmark Case | Time / Metric |")
+        print("|---|---|")
+        for name, metric in rows:
+            print(f"| {name} | {_fmt_metric(metric)} |")
+        return
+    print("Fan-out matrix:")
+    for name, metric in rows:
+        print(f"   - {name}: {_fmt_metric(metric)}")
+
+
 def main():
     print("Running benchmarks...")
 
@@ -617,6 +859,7 @@ def _samples_arg(value):
 SUITES = {
     "syncer": "run PathSyncer local tree probes",
     "recursive-matrix": "run narrow recursive local and mem call-count probes",
+    "fanout": "run recursive copy, rm and sync on loopback FTP and a simulated slow backend",
 }
 
 
@@ -674,6 +917,9 @@ def run_suite(command):
     elif command == "recursive-matrix":
         print("Running recursive operation matrix...")
         print_recursive_matrix_results(benchmark_recursive_matrix(), markdown=True)
+    elif command == "fanout":
+        print("Running fan-out benchmarks...")
+        print_fanout_results(benchmark_fanout(), markdown=True)
     else:
         main()
 

@@ -17,6 +17,7 @@ Narrower suites:
 ```bash
 python benchmarks/bench.py syncer
 python benchmarks/bench.py recursive-matrix
+python benchmarks/bench.py fanout
 ```
 
 ## Saved Results
@@ -47,6 +48,9 @@ claims in release notes come from CI runs.
 - `LocalPath` vs `pathlib.Path` on common local operations
 - `PathSyncer` on local trees, and recursive copy/remove on local and
   in-memory trees
+- the `fanout` suite: recursive copy, remove and a first sync of a tree of
+  small files on a loopback FTP server and on a simulated slow backend (a
+  `MemPath` that waits 2 ms per call, not a measurement of a real one)
 
 The benchmarks of the classes in other distributions (URIs, HTTP listings,
 SFTP, object stores) live with those distributions.

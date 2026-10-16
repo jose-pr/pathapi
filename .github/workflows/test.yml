@@ -154,10 +154,12 @@ jobs:
         shell: pwsh
         run: |
           python benchmarks/bench.py --save --name "ci-${{ matrix.os }}-py3.14" | Tee-Object -FilePath benchmark.txt
+          python benchmarks/bench.py --save --name "ci-${{ matrix.os }}-py3.14-fanout" fanout | Tee-Object -FilePath benchmark-fanout.txt
       - name: Upload benchmark artifact
         uses: actions/upload-artifact@v7
         with:
           name: benchmark-${{ matrix.os }}
           path: |
             benchmark.txt
+            benchmark-fanout.txt
             benchmarks/results/*.json

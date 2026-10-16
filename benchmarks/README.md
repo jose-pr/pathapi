@@ -34,7 +34,14 @@ python benchmarks/bench.py --save --name my-run
 | `--samples N` | Samples per metric for every case (1-100). Default: each case's own count, 1-5. |
 | `--note TEXT` | Free text stored in the JSON. |
 
-Suites: `syncer` and `recursive-matrix`; no suite name runs the default one.
+Suites: `syncer`, `recursive-matrix` and `fanout`; no suite name runs the default one.
+
+`fanout` times `copy(recursive=True)`, `rm(recursive=True)` and a first `PathSyncer.sync()`
+of a tree of 64 small files (8 directories of 8) on a `FTPPath` served by a loopback
+`pyftpdlib` server, and on a `MemPath` subclass that waits 2 ms per call to stand in for
+a backend with a round trip per operation. The second is a simulation, not a measurement
+of any real backend. Needs `pyftpdlib` (in `dev`); without it the FTP cases are skipped.
+The classes of other distributions are measured with those distributions.
 
 ## Comparing runs
 
@@ -74,7 +81,7 @@ Each entry in `metrics`:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `group` | string | `mem`, `local`, `syncer` or `recursive`; files written before 0.10.0 also hold `uri`, `http` and `sftp`. |
+| `group` | string | `mem`, `local`, `syncer`, `recursive` or `fanout`; files written before 0.10.0 also hold `uri`, `http` and `sftp`. |
 | `min_ms` | number | Fastest sample, in milliseconds per call. |
 | `median_ms` | number | Median sample, in milliseconds per call. Compare on this. |
 | `max_ms` | number | Slowest sample, in milliseconds per call. |
