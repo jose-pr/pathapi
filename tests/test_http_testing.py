@@ -307,3 +307,39 @@ def test_run_keeps_a_rootdir_the_caller_gave(monkeypatch, tmp_path, option):
     given = _arguments_given_to_pytest(monkeypatch, tmp_path, option)
     assert [a for a in given if a.startswith("--rootdir")] == option[:1]
     assert given[-len(option) :] == option
+
+
+def _listed(*options):
+    """The node ids `python -m pathapi.http.testing --collect-only` lists."""
+    code = (
+        "import sys; from pathapi.http import testing; "
+        "sys.exit(testing.run(['--collect-only', '-q', '-p', 'no:cacheprovider', "
+        f"{', '.join(map(repr, options))}]))"
+    )
+    return [line for line in _child(code).splitlines() if "::" in line]
+
+
+@pytest.mark.parametrize(
+    "options, async_kinds",
+    [
+        ((), {"builtin"}),
+        (("--http-transports", "builtin"), {"builtin"}),
+        (("--http-transports", "other"), set()),
+        (
+            ("--http-transports", "other", "--http-async-transports", "native"),
+            {"native"},
+        ),
+        (("--http-async-transports", "native,builtin"), {"native", "builtin"}),
+    ],
+)
+def test_the_async_half_runs_over_the_transports_it_is_asked_for(options, async_kinds):
+    listed = _listed(*options)
+    found = {
+        line.partition("[")[2].rstrip("]").split("-")[0]
+        for line in listed
+        if "test_async_transport.py::" in line or "test_async_client.py::" in line
+    }
+    assert found == async_kinds
+    asked = [line for line in listed if "test_async_transport.py::" in line]
+    assert all("[" in line for line in asked)
+    assert bool(asked) == bool(async_kinds)

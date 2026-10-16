@@ -2658,7 +2658,11 @@ test builds use `get_transport(name)()`. `--http-async-transports` does the
 same for the async half (`test_async_transport.py`, `test_async_client.py`),
 with the names `async_transport_names()` lists and
 `PATHAPI_HTTP_ASYNC_TRANSPORT`; those tests run their coroutines with
-`asyncio.run()` and need no pytest plugin. The tests are `HTTPClient` over
+`asyncio.run()` and need no pytest plugin. Without the option the async tests
+run over `builtin` when `--http-transports` is left out too, and are not
+collected when it names a transport, so `--http-transports requests` runs what
+it always ran. A distribution with only an async transport adds `-k async`
+to leave out the synchronous half. The tests are `HTTPClient` over
 loopback servers (redirects and the rule for `Authorization`, replies cut short
 or too large, errors, headers) and the transport contract against servers
 scripted at the byte level (what the server received is what is asserted). The

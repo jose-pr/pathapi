@@ -25,11 +25,25 @@ def pytest_addoption(parser):
     )
     parser.addoption(
         "--http-async-transports",
-        default="builtin",
+        default=None,
         help="the async HTTP transports the transport suite runs against, by "
         "the names of pathapi.http.async_transport_names(), separated by "
-        "commas (for example builtin,httpx)",
+        "commas (for example builtin,httpx). Left out, the async tests run "
+        "over builtin when --http-transports is left out too, and not at all "
+        "when it names a transport",
     )
+
+
+def _names(option):
+    return [name.strip() for name in option.split(",") if name.strip()]
+
+
+def _async_kinds(config):
+    option = config.getoption("--http-async-transports", default=None)
+    if option is None:
+        named = config.getoption("--http-transports", default="builtin")
+        option = "builtin" if _names(named) == ["builtin"] else ""
+    return _names(option)
 
 
 def pytest_configure(config):
@@ -77,9 +91,18 @@ def pytest_generate_tests(metafunc):
         kinds = [name.strip() for name in option.split(",") if name.strip()]
         metafunc.parametrize("http_transport_kind", kinds, indirect=True)
     if "async_http_transport_kind" in metafunc.fixturenames:
-        option = metafunc.config.getoption("--http-async-transports", default="builtin")
-        kinds = [name.strip() for name in option.split(",") if name.strip()]
-        metafunc.parametrize("async_http_transport_kind", kinds, indirect=True)
+        metafunc.parametrize(
+            "async_http_transport_kind", _async_kinds(metafunc.config), indirect=True
+        )
+
+
+def pytest_collection_modifyitems(config, items):
+    # No async transport to run: the async tests are left out, not skipped.
+    if not _async_kinds(config):
+        gone = [i for i in items if "async_http_transport_kind" in i.fixturenames]
+        if gone:
+            config.hook.pytest_deselected(items=gone)
+            items[:] = [i for i in items if i not in gone]
 
 
 @pytest.fixture
