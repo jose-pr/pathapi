@@ -11,7 +11,8 @@ import typing as _ty
 from .. import _names, _stubs
 from .._errorpolicy import copy_error_predicate
 from .._filestat import FileStat
-from ._copytree import _copy_tree
+from .. import _fanout
+from ._copytree import _copy_tree, _copy_tree_pooled
 from ._moving import _rename_over, _replace_tree
 from ._relation import (
     _INNER,
@@ -187,6 +188,7 @@ class Copy(Identity, Create, Symlink, Readlink, BinaryOpen, _ty.Protocol):
         ignore_error=None,
         progress: "_ty.Callable[[_ty.Self, int, _ty.Optional[int]], None]" = None,
         on_error: "bool | _ty.Callable[[Exception, _ty.Self], bool] | None" = None,
+        max_workers: "int | None" = None,
     ):
         """Copy this file's content to `target`.
 
@@ -235,8 +237,14 @@ class Copy(Identity, Create, Symlink, Readlink, BinaryOpen, _ty.Protocol):
         backend transfers that bypass the generic streaming copy (e.g.
         an SFTP backend's concurrent fan-out) do not invoke `progress`;
         see `docs/divergences.md`'s "Deliberate extensions" section.
+
+        `max_workers` (`None`, one thread, by default) lets a recursive copy
+        of a class that sets `_threadsafe` use that many threads for the files
+        of each directory; `progress` and the error callbacks are then called
+        one at a time, from pool threads. Another class copies serially.
         """
         offering = copy_error_predicate(ignore_error, on_error)
+        _fanout.check_workers(max_workers)
         if isinstance(target, str):
             target = self._coerce_target(target)
         src = self
@@ -255,11 +263,7 @@ class Copy(Identity, Create, Symlink, Readlink, BinaryOpen, _ty.Protocol):
         target_absent = handed is not None and handed.target_absent
 
         if recursive and src_stat is not None and _stat.S_ISDIR(src_stat.st_mode):
-            return _copy_tree(
-                src,
-                target,
-                src_stat,
-                target_absent,
+            keywords = dict(
                 overwrite=overwrite,
                 follow_symlinks=follow_symlinks,
                 preserve_metadata=preserve_metadata,
@@ -267,6 +271,16 @@ class Copy(Identity, Create, Symlink, Readlink, BinaryOpen, _ty.Protocol):
                 progress=progress,
                 offering=offering,
             )
+            workers = (
+                1
+                if _fanout.ACTIVE.get() is not None
+                else _fanout.workers_for(max_workers, src, target)
+            )
+            if workers > 1:
+                return _copy_tree_pooled(
+                    workers, src, target, src_stat, target_absent, **keywords
+                )
+            return _copy_tree(src, target, src_stat, target_absent, **keywords)
 
         target_exists = _existing_target(
             src, target, src_stat, target_absent, overwrite
@@ -319,6 +333,7 @@ class Copy(Identity, Create, Symlink, Readlink, BinaryOpen, _ty.Protocol):
         ignore_error=None,
         progress: "_ty.Callable[[_ty.Self, int, _ty.Optional[int]], None]" = None,
         on_error: "bool | _ty.Callable[[Exception, _ty.Self], bool] | None" = None,
+        max_workers: "int | None" = None,
     ) -> "Path":
         """Copy this file or directory into the directory `target_dir`, under
         its own name, and return the new path (pathlib 3.14 parity).
@@ -337,6 +352,7 @@ class Copy(Identity, Create, Symlink, Readlink, BinaryOpen, _ty.Protocol):
             ignore_error=ignore_error,
             progress=progress,
             **({} if on_error is None else {"on_error": on_error}),
+            **({} if max_workers is None else {"max_workers": max_workers}),
         )
         return target
 

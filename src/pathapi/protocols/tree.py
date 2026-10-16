@@ -5,7 +5,7 @@ from __future__ import annotations
 import errno as _errno
 import typing as _ty
 
-from .. import _errorpolicy, _names, _stubs
+from .. import _errorpolicy, _fanout, _names, _stubs
 from .. import glob as _glob
 from .._errorpolicy import check_follow
 from .._filestat import FileStat
@@ -333,6 +333,7 @@ class Remove(Listing, _ty.Protocol):
         *,
         follow_symlinks: "bool | None | _ty.Callable[[_ty.Self], bool | None]" = False,
         follow_binds: "bool | None | _ty.Callable[[_ty.Self], bool | None]" = False,
+        max_workers: "int | None" = None,
     ):
         """Remove this file or directory, optionally recursively and ignoring errors.
 
@@ -369,6 +370,11 @@ class Remove(Listing, _ty.Protocol):
         joined onto the directory: it raises `ValueError`, offered to
         `ignore_error` as `(error, directory)` once per entry, and nothing is
         removed for it.
+
+        `max_workers` (`None`, one thread, by default) lets a recursive removal
+        of a class that sets `_threadsafe` use that many threads for the files
+        of each directory; a directory is still removed after what it holds,
+        and `ignore_error` is called one call at a time, from pool threads.
         """
         # Same bool-or-callable normalization as copy()/PathSyncer, via the
         # shared helper. A supplied callable keeps rm()'s own `(error, path)`
@@ -376,43 +382,69 @@ class Remove(Listing, _ty.Protocol):
         _onerror = _errorpolicy.as_error_handler(ignore_error)
         check_follow("follow_symlinks", follow_symlinks)
         check_follow("follow_binds", follow_binds)
+        _fanout.check_workers(max_workers)
+        workers = _fanout.workers_for(max_workers, self) if recursive else 1
 
-        removal = _Removal(_onerror, follow_symlinks, follow_binds)
-        _handle = removal.handle
+        if workers > 1:
+            with _fanout.Fanout(workers) as fan:
+                _remove(
+                    self,
+                    _Removal(_onerror, follow_symlinks, follow_binds, fan),
+                    recursive,
+                    missing_ok,
+                    follow_symlinks,
+                    follow_binds,
+                )
+                fan.check()
+            return
+        _remove(
+            self,
+            _Removal(_onerror, follow_symlinks, follow_binds),
+            recursive,
+            missing_ok,
+            follow_symlinks,
+            follow_binds,
+        )
 
+
+def _remove(self, removal, recursive, missing_ok, follow_symlinks, follow_binds):
+    """The body of `rm()`: `removal` carries the error handler and the
+    pool, if any."""
+    _handle = removal.handle
+
+    try:
+        stat = FileStat.from_path(self, follow_symlink=False)
+    except Exception as error:
+        _handle(error, self)
+        return
+    if stat is None:
+        if not missing_ok:
+            _handle(_os_error(FileNotFoundError, _errno.ENOENT, self), self)
+    elif stat.is_symlink():
+        policy = _follow_policy(follow_symlinks, self)
+        if policy == "ignore":
+            return
         try:
-            stat = FileStat.from_path(self, follow_symlink=False)
+            if policy == "follow" and recursive and self.is_dir():
+                removal.tree(self, link=True)
+            else:
+                self.unlink()
         except Exception as error:
             _handle(error, self)
+    elif stat.is_dir():
+        binding = self.is_dir_binding()
+        policy = _follow_policy(follow_binds, self) if binding else "follow"
+        if policy == "ignore":
             return
-        if stat is None:
-            if not missing_ok:
-                _handle(_os_error(FileNotFoundError, _errno.ENOENT, self), self)
-        elif stat.is_symlink():
-            policy = _follow_policy(follow_symlinks, self)
-            if policy == "ignore":
-                return
-            try:
-                if policy == "follow" and recursive and self.is_dir():
-                    removal.tree(self, link=True)
-                else:
-                    self.unlink()
-            except Exception as error:
-                _handle(error, self)
-        elif stat.is_dir():
-            binding = self.is_dir_binding()
-            policy = _follow_policy(follow_binds, self) if binding else "follow"
-            if policy == "ignore":
-                return
-            if recursive and (not binding or policy == "follow"):
-                removal.tree(self)
-            else:
-                try:
-                    self.rmdir()
-                except Exception as error:
-                    _handle(error, self)
+        if recursive and (not binding or policy == "follow"):
+            removal.tree(self)
         else:
             try:
-                self.unlink()
+                self.rmdir()
             except Exception as error:
                 _handle(error, self)
+    else:
+        try:
+            self.unlink()
+        except Exception as error:
+            _handle(error, self)

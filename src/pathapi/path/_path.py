@@ -106,6 +106,11 @@ class Path(
 
     __slots__ = ()
 
+    #: Whether paths of this class may be used from several threads at once.
+    #: Only a class that does lets `max_workers` of `copy()`, `rm()` and
+    #: `PathSyncer` use more than one thread; the others run serially.
+    _threadsafe: _ty.ClassVar[bool] = False
+
     def __init_subclass__(cls, **kwargs):
         """Guarantee pathapi operation precedence in every subclass.
 

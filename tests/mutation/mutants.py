@@ -1259,3 +1259,59 @@ mutant(
     "tests/test_move_overwrite_secures.py::test_a_directory_is_replaced_whole_where_rename_would_merge_into_it",
     "a directory is renamed over the existing one instead of replacing it",
 )
+mutant(
+    "fanout-undeclared-class-pooled",
+    "_fanout.py",
+    '    if all(getattr(type(path), "_threadsafe", False) for path in paths):\n',
+    "    if True:\n",
+    "tests/test_fanout.py::test_a_class_that_does_not_declare_threads_is_worked_on_serially",
+    "a class that does not declare _threadsafe is worked on by several threads",
+)
+mutant(
+    "fanout-pool-not-capped",
+    "_fanout.py",
+    "            max_workers=workers, thread_name_prefix=",
+    "            max_workers=workers + 8, thread_name_prefix=",
+    "tests/test_fanout.py::test_a_copy_with_workers_uses_them_and_never_more_than_asked",
+    "the pool runs more threads than max_workers",
+)
+mutant(
+    "fanout-error-not-raised",
+    "_fanout.py",
+    "        if error is None and self._fan.error is not None:\n",
+    "        if False:\n",
+    "tests/test_fanout.py::test_a_batch_raises_the_first_error_of_its_tasks",
+    "an error raised on a pool thread is lost",
+)
+mutant(
+    "fanout-progress-not-serialized",
+    "protocols/_copytree.py",
+    "        with fan.lock:\n            return callback(*args)\n",
+    "        if True:\n            return callback(*args)\n",
+    "tests/test_fanout.py::test_progress_is_called_one_call_at_a_time",
+    "progress is called from several threads at once",
+)
+mutant(
+    "fanout-sync-hook-not-serialized",
+    "sync/_syncer.py",
+    "        with self._callbacks:\n            if self._hook:\n                self._hook(source, target, event, dry_run)\n",
+    "        if True:\n            if self._hook:\n                self._hook(source, target, event, dry_run)\n",
+    "tests/test_fanout.py::test_the_sync_hook_is_called_one_call_at_a_time",
+    "the sync hook is called from several threads at once",
+)
+mutant(
+    "fanout-on-error-not-serialized",
+    "protocols/_copytree.py",
+    "            with lock if lock is not None else _contextlib.nullcontext():\n",
+    "            with _contextlib.nullcontext():\n",
+    "tests/test_fanout.py::test_the_on_error_predicate_is_asked_one_call_at_a_time",
+    "the on_error predicate of a copy is called from several threads at once",
+)
+mutant(
+    "fanout-rm-handler-not-serialized",
+    "protocols/_removing.py",
+    "        with _locked(self.fan):\n            if any(error is seen",
+    "        with _locked(None):\n            if any(error is seen",
+    "tests/test_fanout.py::test_the_ignore_error_of_an_rm_is_asked_one_call_at_a_time",
+    "the ignore_error handler of rm() is called from several threads at once",
+)

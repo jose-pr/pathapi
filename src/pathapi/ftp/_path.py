@@ -85,6 +85,9 @@ class FTPPath(TreePath):
 
     __slots__ = ("_backend",)
 
+    # Each thread works on a control connection of its own (see `FTPBackend`).
+    _threadsafe = True
+
     def __init__(
         self,
         *segments: "str | FTPPath",

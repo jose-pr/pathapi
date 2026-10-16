@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib as _contextlib
 import errno as _errno
 import logging as _logging
 import typing as _ty
@@ -56,6 +57,7 @@ class _Entry:
         "root",
         "swept",
         "listings",
+        "fan",
         "_absent",
         "_windows",
         "_source_children_cache",
@@ -72,7 +74,9 @@ class _Entry:
         root,
         swept,
         listings,
+        fan=None,
     ):
+        self.fan = fan
         self.syncer = syncer
         self.source = source
         self.target = target
@@ -510,6 +514,30 @@ class _Entry:
             return PathAndStat.from_stat(path, None)
         return listed.get(name, path)
 
+    def _child_sync(self, child, name, listed):
+        """The sync of one listed child, as a call with no arguments."""
+
+        def run():
+            self._event(
+                SyncEvent.SyncChild,
+                # Propagate the resolved policy into the recursive
+                # call so a per-call override applies to the whole
+                # subtree, not just this level.
+                lambda: self.syncer._sync(
+                    child,
+                    self._target_child(name, listed),
+                    self.dry_run,
+                    self.policy,
+                    False,
+                    self.swept,
+                    self.listings,
+                    self.fan,
+                ),
+                always_run=True,
+            )
+
+        return run
+
     def _sync_children(self) -> None:
         target = self.target
         try:
@@ -521,24 +549,19 @@ class _Entry:
                     # Each child is stat'd on its own and reports
                     # its own failure.
                     _logger.debug("could not list %s: %s", target.path, error)
-            for name, child in self._source_children():
-                if self._unsafe_name(name, child, target, SyncEvent.SyncChild):
-                    continue
-                self._event(
-                    SyncEvent.SyncChild,
-                    # Propagate the resolved policy into the recursive
-                    # call so a per-call override applies to the whole
-                    # subtree, not just this level.
-                    lambda child=child, name=name: self.syncer._sync(
-                        child,
-                        self._target_child(name, listed),
-                        self.dry_run,
-                        self.policy,
-                        False,
-                        self.swept,
-                        self.listings,
-                    ),
-                    always_run=True,
-                )
+            fan = self.fan if self.fan is not None and self.fan.owned() else None
+            with fan.batch() if fan is not None else _contextlib.nullcontext() as batch:
+                for name, child in self._source_children():
+                    if self._unsafe_name(name, child, target, SyncEvent.SyncChild):
+                        continue
+                    if fan is not None:
+                        fan.check()
+                    sync_child = self._child_sync(child, name, listed)
+                    # A directory is synced on this thread, so that its own files
+                    # join the pool; any other entry runs on a pool thread.
+                    if fan is None or child.stat is None or child.is_dir():
+                        sync_child()
+                    else:
+                        batch.submit(sync_child)
         finally:
             self.listings.pop(str(target.path), None)

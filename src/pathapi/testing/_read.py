@@ -20,6 +20,10 @@ _SWITCH_PROTOCOLS = {
 }
 
 
+def _declares_threads(root) -> bool:
+    return bool(getattr(type(root), "_threadsafe", False))
+
+
 class PurePathContract:
     """Contract tests for pure path (logical) operations, not requiring any I/O."""
 
@@ -77,6 +81,8 @@ class ReadPathContract(PurePathContract):
             protocol = _SWITCH_PROTOCOLS.get(capability)
             if root is not None and protocol is not None:
                 self._support(root, protocol)
+            if capability == "supports_concurrent_use" and not _declares_threads(root):
+                pytest.skip(f"{type(root).__name__} does not declare _threadsafe")
         elif not value:
             pytest.skip(f"{type(self).__name__}.{capability} is False")
 
@@ -84,6 +90,8 @@ class ReadPathContract(PurePathContract):
         """Whether a switch is on: as set, else as the class under test supports it."""
         value = getattr(self, capability)
         if value is None:
+            if capability == "supports_concurrent_use":
+                return _declares_threads(root)
             return supports(root, _SWITCH_PROTOCOLS[capability])
         return bool(value)
 

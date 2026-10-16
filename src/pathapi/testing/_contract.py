@@ -27,7 +27,8 @@ class PathContract(ReadPathContract):
     `supports_question_mark_names`; set one False only for a documented gap):
     `supports_rename`, `supports_append`, `supports_exclusive_create`,
     `enforces_directory_hierarchy`, `supports_mkdir`, `supports_delete`,
-    `supports_move`, `supports_unusual_names`, `supports_utime`, and
+    `supports_move`, `supports_unusual_names`, `supports_utime`,
+    `supports_concurrent_use` (default None: the class's `_threadsafe`), and
     `supports_question_mark_names` (default False).
     """
 
@@ -41,6 +42,7 @@ class PathContract(ReadPathContract):
     supports_unusual_names = True
     supports_question_mark_names = False
     supports_utime = None
+    supports_concurrent_use = None
 
     def test_mkdir_and_is_dir(self, root):
         self._require("supports_mkdir", root)
@@ -404,6 +406,45 @@ class PathContract(ReadPathContract):
             (root / "sub").copy(dst, recursive=True, overwrite=True)
             assert (dst / "c.py").read_text() == "changed"
             assert (dst / "nested" / "d.py").read_text() == "d"
+
+    def test_tree_operations_with_workers_give_the_serial_result(self, root):
+        self._require("supports_mkdir", root)
+        self._require("supports_delete", root)
+        self._require("supports_concurrent_use", root)
+        from pathapi.sync import PathSyncer
+
+        src = root / "workers_src"
+        src.mkdir()
+        for i in range(3):
+            (src / f"d{i}").mkdir()
+            (src / f"d{i}" / "inner").mkdir()
+            (src / f"d{i}" / "inner" / "deep.txt").write_text(f"deep{i}")
+            for j in range(4):
+                (src / f"d{i}" / f"f{j}.txt").write_text(f"{i}-{j}")
+        (src / "top.txt").write_text("top")
+
+        def listing(base):
+            return sorted(
+                (p.relative_to(base).as_posix(), p.is_dir() or p.read_text())
+                for p in base.rglob("*")
+            )
+
+        serial, pooled, synced = (root / n for n in ("w_serial", "w_pool", "w_sync"))
+        src.copy(serial, recursive=True)
+        src.copy(pooled, recursive=True, max_workers=4)
+        PathSyncer(max_workers=4).sync(src, synced)
+        assert listing(pooled) == listing(serial) == listing(src)
+        assert listing(synced) == listing(src)
+
+        (src / "d0" / "f0.txt").write_text("changed")
+        (synced / "stale.txt").write_text("stale")
+        PathSyncer(max_workers=4, remove_missing=True).sync(src, synced)
+        assert listing(synced) == listing(src)
+
+        pooled.rm(recursive=True, max_workers=4)
+        synced.rm(recursive=True, max_workers=4)
+        assert not pooled.exists() and not synced.exists()
+        assert serial.exists()
 
     def test_move(self, root):
         self._require("supports_move")

@@ -5,6 +5,7 @@ import errno as _errno
 import typing as _ty
 
 from .._errorpolicy import as_error_handler, check_follow
+from .._fanout import check_workers
 from .._commit import CommitOnClose
 from ._names import _normalize_member_name
 from ._snapshot import _Snapshot
@@ -218,11 +219,13 @@ class _WritableMembers:
         *,
         follow_symlinks=False,
         follow_binds=False,
+        max_workers=None,
     ):
         # An archive holds no bindings, and a link member is an entry like
         # any other for a removal that does not follow it.
         check_follow("follow_symlinks", follow_symlinks)
         check_follow("follow_binds", follow_binds)
+        check_workers(max_workers)
         if not (
             recursive
             and self._rm_tree(
@@ -235,6 +238,7 @@ class _WritableMembers:
                 ignore_error=ignore_error,
                 follow_symlinks=follow_symlinks,
                 follow_binds=follow_binds,
+                max_workers=max_workers,
             )
 
     def _rm_tree(self, on_error, follows: bool = False) -> bool:

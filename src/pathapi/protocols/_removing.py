@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib as _contextlib
 import typing as _ty
 
 from .. import _names
@@ -17,12 +18,14 @@ class _Removal:
     """One `rm()` call: the error handler, the follow policies and the errors
     already declined. It lives for the length of the call."""
 
-    __slots__ = ("onerror", "follow_symlinks", "follow_binds", "declined")
+    __slots__ = ("onerror", "follow_symlinks", "follow_binds", "declined", "fan")
 
-    def __init__(self, onerror, follow_symlinks, follow_binds):
+    def __init__(self, onerror, follow_symlinks, follow_binds, fan=None):
+        self.fan = fan
         self.onerror = onerror
-        self.follow_symlinks = follow_symlinks
-        self.follow_binds = follow_binds
+        # A policy callable is asked one call at a time when threads remove.
+        self.follow_symlinks = _serialized(fan, follow_symlinks)
+        self.follow_binds = _serialized(fan, follow_binds)
         # An error the handler declined, or raised itself, on its way out:
         # each enclosing directory's `except` catches it again, and consulting
         # the handler there reported one failure once per ancestor.
@@ -32,16 +35,17 @@ class _Removal:
         if isinstance(error, _InvalidPolicy):
             # A mistake of the caller, not a removal that failed.
             raise error
-        if any(error is seen for seen in self.declined):
-            raise error
-        try:
-            swallowed = self.onerror(error, path)
-        except BaseException as raised:
-            self.declined.append(raised)
-            raise
-        if not swallowed:
-            self.declined.append(error)
-            raise error
+        with _locked(self.fan):
+            if any(error is seen for seen in self.declined):
+                raise error
+            try:
+                swallowed = self.onerror(error, path)
+            except BaseException as raised:
+                self.declined.append(raised)
+                raise
+            if not swallowed:
+                self.declined.append(error)
+                raise error
 
     def tree(self, path: "Path", *, link: bool = False) -> None:
         """Remove what is in the directory `path`, then `path` itself (an
@@ -52,8 +56,12 @@ class _Removal:
             self.handle(error, path)
             return
 
-        for name, child_stat in entries:
-            self._child(path, name, child_stat)
+        fan = self.fan if self.fan is not None and self.fan.owned() else None
+        if fan is None:
+            for name, child_stat in entries:
+                self._child(path, name, child_stat)
+        else:
+            self._children_fanned(fan, path, entries)
 
         try:
             # `rmdir()` on a symlink is ENOTDIR on POSIX: the link is
@@ -61,6 +69,17 @@ class _Removal:
             path.unlink() if link else path.rmdir()
         except Exception as error:
             self.handle(error, path)
+
+    def _children_fanned(self, fan, path: "Path", entries) -> None:
+        """Remove what `path` holds: a directory on this thread, so that its
+        own files join the pool, and every other entry on a pool thread."""
+        with fan.batch() as batch:
+            for name, child_stat in entries:
+                fan.check()
+                if child_stat is None or child_stat.is_dir():
+                    self._child(path, name, child_stat)
+                else:
+                    batch.submit(self._child, path, name, child_stat)
 
     def _child(self, path: "Path", name: str, child_stat) -> None:
         child = None
@@ -103,3 +122,20 @@ class _Removal:
                 child.unlink()
         except Exception as error:
             self.handle(error, path if child is None else child)
+
+
+def _locked(fan):
+    return _contextlib.nullcontext() if fan is None else fan.lock
+
+
+def _serialized(fan, policy):
+    """A follow `policy` that is a callable, called while holding the lock of
+    `fan`; anything else, or no `fan`, as it is."""
+    if fan is None or not callable(policy):
+        return policy
+
+    def ask(path):
+        with fan.lock:
+            return policy(path)
+
+    return ask

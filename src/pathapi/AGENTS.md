@@ -195,7 +195,7 @@ class Path(
     def rmdir(self): ...
     def rm(
         self, recursive=False, missing_ok=False, ignore_error=False, *,
-        follow_symlinks=False, follow_binds=False,
+        follow_symlinks=False, follow_binds=False, max_workers=None,
     ): ...
     def rename(self, target): ...
     def symlink_to(
@@ -210,12 +210,12 @@ class Path(
     def copy(
         self, target, *, overwrite=False, follow_symlinks=True,
         preserve_metadata=True, recursive=False, ignore_error=None,
-        progress=None, on_error=None,
+        progress=None, on_error=None, max_workers=None,
     ): ...
     def copy_into(
         self, target_dir, *, overwrite=False, follow_symlinks=True,
         preserve_metadata=True, recursive=False, ignore_error=None,
-        progress=None, on_error=None,
+        progress=None, on_error=None, max_workers=None,
     ) -> Path: ...
     def move_into(self, target_dir, *, overwrite=False) -> Path: ...
     def replace(self, target) -> Path: ...
@@ -233,6 +233,25 @@ class Path(
 
 Base class for I/O paths.
 `Path(*args)` on the bare class constructs a `LocalPath`.
+
+- Threads: `max_workers` of `copy(recursive=True)`, `rm(recursive=True)` and
+  `PathSyncer` is `None` (the default: one thread, as always) or an int >= 1
+  (`ValueError` below 1, `TypeError` for anything else, before anything is
+  done). With 2 or more, a tree is walked on the calling thread, directory by
+  directory, and the files and links of each directory are handled by a pool of
+  at most `max_workers` threads; a directory is finished before its parent is
+  (`rm()` removes a directory after what it holds). It applies only when the
+  class of every path involved sets the class attribute `_threadsafe = True`
+  (`LocalPath` and `FTPPath` do; the default is `False`, and so are `MemPath` and
+  the archive paths): any other runs serially, whatever was asked. Set it only
+  for a class whose paths may be used from several threads at once, one
+  connection or handle per thread. What changes with threads: `progress`,
+  `on_error`, `ignore_error`, a `PathSyncer` `hook` and a follow policy
+  are called one call at a time but from pool threads, in no fixed order;
+  the first error that ends the operation is the first to happen, not the
+  first in listing order, and entries not yet started are skipped once it
+  has; a listed name that is not one safe component is reported against the
+  directory that listed it.
 
 - Operation precedence: `Path.__init_subclass__` re-asserts pathapi's
   `copy`, `move`, `copy_into`, `move_into`, `exists`, `rglob`, `read_text`,
@@ -1726,7 +1745,7 @@ class Remove(Listing, Protocol):
     def rmdir(self): ...
     def rm(
         self, recursive=False, missing_ok=False, ignore_error=False, *,
-        follow_symlinks=False, follow_binds=False,
+        follow_symlinks=False, follow_binds=False, max_workers=None,
     ): ...
 ```
 
@@ -1810,12 +1829,12 @@ class Copy(Identity, Create, Symlink, Readlink, BinaryOpen, Protocol):
     def copy(
         self, target, *, overwrite=False, follow_symlinks=True,
         preserve_metadata=True, recursive=False, ignore_error=None,
-        progress=None, on_error=None,
+        progress=None, on_error=None, max_workers=None,
     ): ...
     def copy_into(
         self, target_dir, *, overwrite=False, follow_symlinks=True,
         preserve_metadata=True, recursive=False, ignore_error=None,
-        progress=None, on_error=None,
+        progress=None, on_error=None, max_workers=None,
     ) -> Path: ...
     def _copy_from(
         self, source, follow_symlinks=True, preserve_metadata=False,
@@ -1870,6 +1889,7 @@ class PathSyncer:
         self, checksum=None, /, remove_missing=False, follow_symlinks=True,
         symlink_mode="preserve", hook=None, ignore_error=False,
         quick_check=True, preserve_mtime=True, follow_mounts=True,
+        max_workers=None,
     ) -> None: ...
     def sync(self, source, target, /, dry_run=False, ignore_error=None): ...
     def log(self, msg, *args): ...
@@ -1940,6 +1960,10 @@ One-way tree sync between any two
   and a target name the listing did not report are stat'd, one call each. A
   backend with no `_scandir()` of its own pays the default's `stat()` per
   entry of every directory it lists.
+- `max_workers` (`None`: one thread): see the threads paragraph under `Path`;
+  the hook and `ignore_error` are called one call at a time from pool threads,
+  entries of different directories interleave, and a directory is `Synced` after
+  its children.
 - `remove_missing=True` deletes target entries absent from the source. With
   `False`, a non-empty target directory whose source became a file or link
   is kept (`IsADirectoryError`, event `TypeMismatch`).

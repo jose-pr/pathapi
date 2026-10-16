@@ -68,6 +68,10 @@ default to `None`, meaning "ask `supports()`" (`supports_listing`, `supports_mkd
   keeps no settable time (an object store, an archive) is correct without
   it: it leaves `_utime()` to raise `NotImplementedError` and sets this False.
 
+- `PathContract.supports_concurrent_use` -- `copy()`, `rm()` and `PathSyncer`
+  give the serial result with `max_workers` above 1. Default `None`: run when
+  the class sets `_threadsafe`, skip when it does not.
+
 A test that needs an operation checks the matching switch first, so a
 backend without that operation needs no expected-failure marks. The tree
 itself is yours to build: `populate_fixture_tree()` uses `mkdir()` and

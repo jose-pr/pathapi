@@ -5,10 +5,11 @@ from __future__ import annotations
 import contextlib as _contextlib
 import errno as _errno
 import logging as _logging
+import threading as _threading
 import time as _time
 import typing as _ty
 
-from .. import _errorpolicy, _names
+from .. import _errorpolicy, _fanout, _names
 from ..path import Path
 from ..protocols import Utime
 from ..protocols._bundles import Readable
@@ -152,6 +153,12 @@ class PathSyncer(object):
     tolerates is logged at WARNING (with the traceback) on the
     `pathapi.sync` logger and reported to `hook` as `SyncEvent.Error`.
 
+    `max_workers` (`None`, one thread, by default) lets a sync between classes
+    that set `_threadsafe` use that many threads for the files and links of each
+    directory. The hook and the error policy are then called one call at a time,
+    from pool threads, and the events of different entries interleave; those of one
+    entry keep their order, and a directory is reported `Synced` after its children.
+
     `hook` receives `PathAndStat` entries for every event, and the `dry_run`
     value of the call for every event, including the structural ones
     (`SyncStart`, `CheckTargetChild(ren)`, `SyncChild(ren)`).
@@ -167,6 +174,8 @@ class PathSyncer(object):
         "quick_check",
         "preserve_mtime",
         "follow_mounts",
+        "max_workers",
+        "_callbacks",
     )
     EVENT_LOG_FORMAT = "[%s] Source:%s Target:%s DryRun:%s"
 
@@ -182,7 +191,9 @@ class PathSyncer(object):
         quick_check: bool = True,
         preserve_mtime: bool = True,
         follow_mounts: bool = True,
+        max_workers: "int | None" = None,
     ) -> None:
+        _fanout.check_workers(max_workers)
         # `None` resolves to `_default_checksum`, which `sync()` recognizes (via `is`) to
         # decide native versus streaming across BOTH sides at once. A caller-supplied
         # callable is used as-is: `checksum(target) == checksum(source)`.
@@ -203,6 +214,10 @@ class PathSyncer(object):
         self.quick_check = quick_check
         self.preserve_mtime = preserve_mtime
         self.follow_mounts = follow_mounts
+        self.max_workers = max_workers
+        # Held while a hook or an error policy runs, so that with `max_workers`
+        # they are called one at a time.
+        self._callbacks = _threading.RLock()
 
     def log(self, msg: str, *args: object):
         # Overridable hook: a subclass routes sync progress elsewhere (the class has
@@ -233,9 +248,10 @@ class PathSyncer(object):
                 if self._tolerate(ignore_error, e, source, target, event, dry_run):
                     return e
                 raise
-        if self._hook:
-            self._hook(source, target, event, dry_run)
-        self.log(self.EVENT_LOG_FORMAT, event, source, target, dry_run)
+        with self._callbacks:
+            if self._hook:
+                self._hook(source, target, event, dry_run)
+            self.log(self.EVENT_LOG_FORMAT, event, source, target, dry_run)
 
     def _copy_mtime(self, source: PathAndStat, target: Path) -> None:
         """Give the file just copied to `target` the modification time the
@@ -274,20 +290,21 @@ class PathSyncer(object):
         error is logged at WARNING and reported to the hook as
         `SyncEvent.Error`, so `ignore_error=True` never loses it silently."""
         source, target = _as_entry(source), _as_entry(target)
-        if not _offer_error(policy, error, source, target, event):
-            return False
-        _logger.warning(
-            "[%s] ignored %s: %s Source:%s Target:%s",
-            event,
-            type(error).__name__,
-            error,
-            source,
-            target,
-            exc_info=(type(error), error, error.__traceback__),
-        )
-        if self._hook:
-            self._hook(source, target, SyncEvent.Error, dry_run)
-        self.log(self.EVENT_LOG_FORMAT, SyncEvent.Error, source, target, dry_run)
+        with self._callbacks:
+            if not _offer_error(policy, error, source, target, event):
+                return False
+            _logger.warning(
+                "[%s] ignored %s: %s Source:%s Target:%s",
+                event,
+                type(error).__name__,
+                error,
+                source,
+                target,
+                exc_info=(type(error), error, error.__traceback__),
+            )
+            if self._hook:
+                self._hook(source, target, SyncEvent.Error, dry_run)
+            self.log(self.EVENT_LOG_FORMAT, SyncEvent.Error, source, target, dry_run)
         return True
 
     def _keeps_directory(
@@ -369,9 +386,10 @@ class PathSyncer(object):
         process, and a store that reports no modification time never
         qualifies. Best effort: a listing or removal that fails is logged,
         not raised."""
-        if str(target_dir) in swept:
-            return
-        swept.add(str(target_dir))
+        with self._callbacks:
+            if str(target_dir) in swept:
+                return
+            swept.add(str(target_dir))
         # The directory's own `_sync` listed it already when it is a
         # target directory being synced; a file's parent is listed here.
         listing = listings.get(str(target_dir))
@@ -476,10 +494,24 @@ class PathSyncer(object):
             else _errorpolicy.as_error_handler(ignore_error)
         )
         root = target.path if isinstance(target, PathAndStat) else target
+        workers = _fanout.workers_for(
+            self.max_workers,
+            root,
+            source.path if isinstance(source, PathAndStat) else source,
+        )
         # One commit for the whole tree where the target pays for each write;
         # a dry run writes nothing.
         with _contextlib.nullcontext() if dry_run else _write_batch_of(root):
-            return self._sync(source, target, dry_run, _ignore_error, True, set(), {})
+            if workers == 1:
+                return self._sync(
+                    source, target, dry_run, _ignore_error, True, set(), {}
+                )
+            with _fanout.Fanout(workers) as fan:
+                result = self._sync(
+                    source, target, dry_run, _ignore_error, True, set(), {}, fan
+                )
+                fan.check()
+                return result
 
     def _sync(
         self,
@@ -490,7 +522,8 @@ class PathSyncer(object):
         root: bool,
         swept: "set[str]",
         listings: "dict[str, list]",
+        fan: "_fanout.Fanout | None" = None,
     ):
         return _Entry(
-            self, source, target, dry_run, _ignore_error, root, swept, listings
+            self, source, target, dry_run, _ignore_error, root, swept, listings, fan
         ).run()

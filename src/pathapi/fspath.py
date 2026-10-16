@@ -229,6 +229,8 @@ class LocalPath(
 
     __slots__ = ()
 
+    _threadsafe = True
+
     def _scandir(self):
         # On 3.11+ stdlib's `_scandir()` (ahead of ours in the MRO) returns raw
         # `os.DirEntry`; walk()/glob() expect `(name, FileStat|None)`, so ours is
