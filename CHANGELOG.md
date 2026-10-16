@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-17
+
 ### Added
 
 - **`max_workers` for recursive `copy()`, `rm()` and `PathSyncer`.** `copy()` (and
@@ -3658,7 +3660,8 @@ behaviour with what to do about it.
 - Sync error handling.
 - Generic Path Protocol based pathlib implementation for URI paths with file access support for sftp, http, file schemes.
 
-[Unreleased]: https://github.com/jose-pr/pathapi/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/jose-pr/pathapi/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/jose-pr/pathapi/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/jose-pr/pathapi/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/jose-pr/pathapi/compare/v0.10.0...v0.1.0
 [0.10.0]: https://github.com/jose-pr/pathlib-next/compare/v0.9.14...v0.10.0
