@@ -1385,8 +1385,8 @@ mutant(
 mutant(
     "async-listing-order-reversed",
     "path/_async.py",
-    "            self._ready[:0] = items[::-1]\n",
-    "            self._ready[:0] = items\n",
+    "            self._queue[:0] = items[::-1]\n",
+    "            self._queue[:0] = items\n",
     "tests/test_async_path.py::test_a_listing_is_read_a_batch_at_a_time_in_order",
     "a listing delivers each batch back to front",
 )

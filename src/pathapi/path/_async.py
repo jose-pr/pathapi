@@ -33,7 +33,7 @@ def _invoke(path, name, args, kwargs):
     return getattr(path, name)(*args, **kwargs)
 
 
-async def _finish(work) -> None:
+async def _complete(work) -> None:
     """Await `work` (a coroutine) to completion even when the caller is
     cancelled meanwhile, and then re-raise the cancellation."""
     task = _asyncio.ensure_future(work)
@@ -310,7 +310,7 @@ class _Listing:
     `aclose()` closes the sync iterator; an iterator that ran to its end is
     already closed. Use it from one task at a time."""
 
-    __slots__ = ("_make", "_batch", "_convert", "_source", "_ready", "_end", "_lock")
+    __slots__ = ("_make", "_batch", "_convert", "_upstream", "_queue", "_end", "_gate")
 
     def __init__(
         self,
@@ -321,29 +321,29 @@ class _Listing:
         self._make = make
         self._batch = batch
         self._convert = convert
-        self._source = None
-        self._ready: "list" = []
+        self._upstream = None
+        self._queue: "list" = []
         self._end: "BaseException | None" = None
-        self._lock = _threading.Lock()
+        self._gate = _threading.Lock()
 
     def __aiter__(self) -> "_Listing":
         return self
 
     def _pull(self) -> None:
         # Items go in front of any a cancelled earlier call left behind.
-        with self._lock:
-            if self._source is None:
-                self._source = iter(self._make())
+        with self._gate:
+            if self._upstream is None:
+                self._upstream = iter(self._make())
             items = []
             failure = None
             try:
-                items.extend(_itertools.islice(self._source, self._batch))
+                items.extend(_itertools.islice(self._upstream, self._batch))
             except BaseException as error:
                 failure = error
-            self._ready[:0] = items[::-1]
+            self._queue[:0] = items[::-1]
             if failure is not None or len(items) < self._batch:
                 self._end = failure or StopAsyncIteration()
-                source, self._source = self._source, None
+                source, self._upstream = self._upstream, None
                 close = getattr(source, "close", None)
                 if close is not None:
                     close()
@@ -352,24 +352,24 @@ class _Listing:
                 raise failure
 
     async def __anext__(self):
-        if not self._ready and self._end is None:
+        if not self._queue and self._end is None:
             await _asyncio.to_thread(self._pull)
-        if self._ready:
-            return self._convert(self._ready.pop())
+        if self._queue:
+            return self._convert(self._queue.pop())
         end, self._end = self._end, StopAsyncIteration()
         raise end
 
     async def aclose(self) -> None:
         """Stop the iteration and close the sync iterator."""
-        self._ready = []
+        self._queue = []
         self._end = StopAsyncIteration()
-        source, self._source = self._source, None
+        source, self._upstream = self._upstream, None
         close = getattr(source, "close", None)
         if close is not None:
-            await _finish(_asyncio.to_thread(self._close, close))
+            await _complete(_asyncio.to_thread(self._close, close))
 
     def _close(self, close) -> None:
-        with self._lock:
+        with self._gate:
             close()
 
 
@@ -377,11 +377,11 @@ class _Opening:
     """What `AsyncPath.open()` returns: awaited, it opens; as an async
     context manager it opens and closes."""
 
-    __slots__ = ("_make", "_file")
+    __slots__ = ("_make", "_wrapped")
 
     def __init__(self, make) -> None:
         self._make = make
-        self._file = None
+        self._wrapped = None
 
     def __await__(self):
         return self._open().__await__()
@@ -397,11 +397,11 @@ class _Opening:
         return AsyncFile(handle)
 
     async def __aenter__(self) -> "AsyncFile":
-        self._file = await self._open()
-        return self._file
+        self._wrapped = await self._open()
+        return self._wrapped
 
     async def __aexit__(self, *exc) -> None:
-        await self._file.aclose()
+        await self._wrapped.aclose()
 
 
 def _close_late(task) -> None:
@@ -428,45 +428,45 @@ class AsyncFile:
     touches the file. `file` is the sync file; do not use it while a
     coroutine runs."""
 
-    __slots__ = ("_file", "_lock")
+    __slots__ = ("_wrapped", "_gate")
 
     def __init__(self, file) -> None:
-        self._file = file
-        self._lock = _threading.Lock()
+        self._wrapped = file
+        self._gate = _threading.Lock()
 
     @property
     def file(self):
         """The sync file object this wraps."""
-        return self._file
+        return self._wrapped
 
     @property
     def closed(self) -> bool:
-        return self._file.closed
+        return self._wrapped.closed
 
     @property
     def name(self):
-        return getattr(self._file, "name", None)
+        return getattr(self._wrapped, "name", None)
 
     @property
     def mode(self):
-        return getattr(self._file, "mode", None)
+        return getattr(self._wrapped, "mode", None)
 
     def readable(self) -> bool:
-        return self._file.readable()
+        return self._wrapped.readable()
 
     def writable(self) -> bool:
-        return self._file.writable()
+        return self._wrapped.writable()
 
     def seekable(self) -> bool:
-        return self._file.seekable()
+        return self._wrapped.seekable()
 
     def _call(self, name: str, args: tuple):
-        with self._lock:
-            return getattr(self._file, name)(*args)
+        with self._gate:
+            return getattr(self._wrapped, name)(*args)
 
     async def aclose(self) -> None:
         """Close the file."""
-        await _finish(_asyncio.to_thread(self._call, "close", ()))
+        await _complete(_asyncio.to_thread(self._call, "close", ()))
 
     def __aiter__(self) -> "AsyncFile":
         return self
