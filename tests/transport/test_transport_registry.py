@@ -10,10 +10,15 @@ from pathapi.http import HTTPClient, HTTPTransport, _transports, get_transport
 from pathapi.http import transport_names
 from transport_distribution import install, run
 
-REQUESTS_MESSAGE = (
-    "the 'requests' HTTP transport is provided by the pathapi-requests "
-    "distribution: pip install pathapi-requests"
-)
+GROUP_HINT = "a transport registers in the entry-point group 'pathapi.http_transports'"
+
+
+def requests_message(subject):
+    return (
+        f"{subject} is not an HTTP transport (expected one of 'builtin'); "
+        f"{GROUP_HINT}: look for a distribution named 'pathapi-requests' "
+        "(a name to look for, not a known package)"
+    )
 
 
 @pytest.fixture
@@ -39,15 +44,15 @@ def declare(monkeypatch, **entries):
     )
 
 
-def test_the_built_in_transport_is_listed_with_the_ones_provided_elsewhere(
+def test_only_the_built_in_transport_is_listed_when_nothing_is_declared(
     nothing_declared,
 ):
-    assert transport_names() == ("builtin", "requests")
+    assert transport_names() == ("builtin",)
 
 
 def test_an_entry_of_the_group_is_listed(monkeypatch):
     declare(monkeypatch, zeta=object)
-    assert transport_names() == ("builtin", "requests", "zeta")
+    assert transport_names() == ("builtin", "zeta")
 
 
 def test_the_group_is_the_one_distributions_declare():
@@ -80,13 +85,16 @@ def test_an_entry_that_is_not_a_class_is_a_type_error(monkeypatch):
         get_transport("odd")
 
 
-def test_a_transport_provided_elsewhere_that_is_not_installed_names_the_distribution(
-    nothing_declared,
-):
-    with pytest.raises(ImportError) as raised:
+def test_a_name_nothing_declares_suggests_a_name_to_look_for(nothing_declared):
+    with pytest.raises(ValueError) as raised:
         get_transport("requests")
-    assert str(raised.value) == REQUESTS_MESSAGE
-    assert raised.value.name == "pathapi_requests"
+    assert str(raised.value) == requests_message("'requests'")
+
+
+def test_the_suggestion_is_derived_from_the_name_in_lower_case(nothing_declared):
+    with pytest.raises(ValueError) as raised:
+        get_transport("Fancy_Name")
+    assert "look for a distribution named 'pathapi-fancy_name'" in str(raised.value)
 
 
 @pytest.mark.parametrize("name", ["", "Requests", "BUILTIN", "urllib3", None, 3])
@@ -95,17 +103,27 @@ def test_a_name_that_is_not_a_transport_is_a_value_error_naming_the_choices(
 ):
     with pytest.raises(ValueError) as raised:
         get_transport(name)
-    assert "expected one of 'builtin', 'requests'" in str(raised.value)
+    assert "expected one of 'builtin')" in str(raised.value)
+    assert GROUP_HINT in str(raised.value)
 
 
-def test_the_requests_transport_asked_for_by_the_environment_names_the_distribution(
+@pytest.mark.parametrize("name", ["", "  ", "a b", "x/y", "-x", None, 3])
+def test_a_name_that_cannot_be_part_of_a_distribution_name_suggests_none(
+    nothing_declared, name
+):
+    with pytest.raises(ValueError) as raised:
+        get_transport(name)
+    assert "look for" not in str(raised.value)
+
+
+def test_the_requests_transport_asked_for_by_the_environment_suggests_a_name(
     nothing_declared, monkeypatch
 ):
     monkeypatch.setenv("PATHAPI_HTTP_TRANSPORT", "requests")
     with HTTPClient() as client:
-        with pytest.raises(ImportError) as raised:
+        with pytest.raises(ValueError) as raised:
             client.transport
-    assert str(raised.value) == REQUESTS_MESSAGE
+    assert str(raised.value) == requests_message("PATHAPI_HTTP_TRANSPORT='requests'")
 
 
 # --- a distribution that is installed ---------------------------------------
@@ -207,5 +225,7 @@ def test_a_value_the_variable_cannot_resolve_names_the_choices(provider):
     )
     assert found == (
         "PATHAPI_HTTP_TRANSPORT='Other' is not an HTTP transport "
-        "(expected one of 'builtin', 'other', 'requests')"
+        "(expected one of 'builtin', 'other', 'requests'); "
+        f"{GROUP_HINT}: look for a distribution named 'pathapi-other' "
+        "(a name to look for, not a known package)"
     )

@@ -9,7 +9,10 @@ import typing as _ty
 import urllib.parse as _urlparse
 import urllib.request as _urlrequest
 
-REQUESTS_HINT = "use the requests transport of pathapi-requests for it"
+REQUESTS_HINT = (
+    "use a transport registered in the group pathapi.http_transports "
+    "that supports it"
+)
 
 
 class ProxyAddress:

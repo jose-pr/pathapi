@@ -1366,7 +1366,8 @@ class Headers:
   absolute-form requests for `http:` and `CONNECT` for `https:`, with
   `Proxy-Authorization: Basic` from the proxy URL's userinfo (sent to the proxy
   only); any other scheme (`socks5`, `https`) is `OSError(EPROTONOSUPPORT)`
-  naming the scheme and `pathapi-requests`. A proxy that refuses `CONNECT`
+  naming the scheme and pointing at a transport registered in the group
+  `pathapi.http_transports` that supports it. A proxy that refuses `CONNECT`
   is a `ConnectionError` and the next proxy is not tried. Proxy credentials are
   in no message, `repr()` or traceback.
 
@@ -1444,21 +1445,19 @@ def prepare_request(
 ```
 
 A distribution provides an HTTP transport by declaring an entry point in the
-group `pathapi.http_transports`: the name is the transport's (`requests`)
-and the value names a class that is built with no arguments (`pyproject.toml`:
-`[project.entry-points."pathapi.http_transports"]`, `requests =
-"pathapi_requests:RequestsTransport"`). The class implements "The transport
+group `pathapi.http_transports`: the name is the transport's and the value names a class that is built with no arguments (`pyproject.toml`:
+`[project.entry-points."pathapi.http_transports"]`, `name =
+"package:Class"`). The class implements "The transport
 contract" above: `send()` and `close()`.
 
 - `transport_names()` — the transport names, sorted: `builtin`, every entry of
-  the group of an installed distribution, and `requests` whether or not its
-  distribution is installed. Nothing is imported to list them.
+  the group of an installed distribution. Nothing is imported to list them.
 - `get_transport(name)` — the class called `name`; the name is case-sensitive.
   `builtin` is always `HTTPTransport`: an entry called `builtin` in the group is
-  ignored. A transport that another distribution provides and that is not
-  installed raises `ImportError` naming it (`pip install pathapi-requests`
-  for `requests`); any other name is a `ValueError` listing `transport_names()`;
-  an entry that does not load a class is a `TypeError`.
+  ignored. Any other name is a `ValueError` listing
+  `transport_names()`, naming the group `pathapi.http_transports` and, for a
+  name that can be part of a distribution name, suggesting `pathapi-NAME` (lower
+  case) as a name to look for, not a known package; an entry that does not load a class is a `TypeError`.
 - `default_transport()` — a new transport of the kind
   `PATHAPI_HTTP_TRANSPORT` names, which is what a client given no transport
   builds: `get_transport(name)()`. An empty, differently cased or unknown value
@@ -2376,11 +2375,10 @@ The package reads one.
 
 `builtin` (the default when unset), or the name of a
 transport an installed distribution declares in the group
-`pathapi.http_transports` (`requests`, from `pathapi-requests`): the
-transport an `HTTPClient` builds when it was given none. `requests` without
-that distribution raises `ImportError` naming it; the value is case-sensitive,
-and an empty or unrecognised one raises `ValueError` naming the choices
-(`transport_names()`). It is read when a client first needs its transport,
+`pathapi.http_transports`: the transport an `HTTPClient` builds when it was
+given none. The value is case-sensitive, and an empty or unrecognised one
+raises `ValueError` naming the choices (`transport_names()`), the group and,
+as `get_transport()` does, a `pathapi-NAME` to look for. It is read when a client first needs its transport,
 once per client, so a change reaches clients that need theirs afterwards.
 
 ## Gotchas

@@ -61,7 +61,8 @@ def test_a_value_that_is_not_a_choice_is_a_value_error_naming_the_choices(
     with pytest.raises(ValueError) as excinfo:
         client.transport
     message = str(excinfo.value)
-    assert VARIABLE in message and "'builtin'" in message and "'requests'" in message
+    assert VARIABLE in message and "'builtin'" in message
+    assert "pathapi.http_transports" in message
 
 
 def test_a_bad_setting_is_reported_when_the_client_sends_not_when_it_is_built(

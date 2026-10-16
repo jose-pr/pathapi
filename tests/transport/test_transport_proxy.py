@@ -304,14 +304,15 @@ def test_all_proxy_in_the_environment_serves_a_scheme_with_none_of_its_own(
         ("socks4://127.0.0.1:1080", "socks4"),
     ],
 )
-def test_a_proxy_scheme_that_is_not_http_is_refused_naming_the_other_transport(
+def test_a_proxy_scheme_that_is_not_http_is_refused_pointing_at_the_transport_group(
     transport_for, url, scheme
 ):
     with pytest.raises(OSError) as excinfo:
         get(transport_for(Provider(url)), "http://backend.test/f")
     assert excinfo.value.errno == errno.EPROTONOSUPPORT
     message = str(excinfo.value)
-    assert scheme in message and "pathapi-requests" in message
+    assert scheme in message and "pathapi.http_transports" in message
+    assert "pathapi-requests" not in message
     assert "PROXYSECRET" not in message and "carol" not in message
 
 

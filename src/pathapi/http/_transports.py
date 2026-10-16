@@ -4,6 +4,7 @@ starts from."""
 from __future__ import annotations
 
 import os as _os
+import re as _re
 import typing as _ty
 
 from ._body import prepare_body as _prepare_body
@@ -20,27 +21,19 @@ from ._headers import (
 
 TRANSPORT_GROUP = "pathapi.http_transports"
 """The entry-point group of the HTTP transports. An entry's name is the
-transport's name (`requests`) and its value names a class that is built with
+transport's name and its value names a class that is built with
 no arguments."""
 
 TRANSPORT_ENV = "PATHAPI_HTTP_TRANSPORT"
 """Names the transport an `HTTPClient` builds for itself: `builtin`, or the
-name of one that an installed distribution declares in `TRANSPORT_GROUP`
-(`requests`, from `pathapi-requests`). Read when that transport is first
+name of one that an installed distribution declares in `TRANSPORT_GROUP`.
+Read when that transport is first
 needed; unset means `builtin`."""
 
 _BUILTIN = "builtin"
 
-# Transport -> (the distribution that provides it, its import name, what to run
-# to get it). The name is known without the distribution, whose own entry in
-# `TRANSPORT_GROUP` is found first.
-_PROVIDED = {
-    "requests": (
-        "pathapi-requests",
-        "pathapi_requests",
-        "pip install pathapi-requests",
-    ),
-}
+# What a distribution name may hold after `pathapi-`.
+_SUGGESTABLE = _re.compile(r"[A-Za-z0-9][A-Za-z0-9._]*")
 
 # The methods whose request says `Content-Length: 0` when it has no body.
 _EXPECTING_BODY = frozenset({"PATCH", "POST", "PUT"})
@@ -62,10 +55,26 @@ def _declared() -> "dict[str, _ty.Any]":
 
 
 def transport_names() -> "tuple[str, ...]":
-    """The names of the HTTP transports, sorted: `builtin`, every entry of
-    `TRANSPORT_GROUP`, and the transports that another distribution provides
-    whether or not it is installed (`requests`). Nothing is imported."""
-    return tuple(sorted({_BUILTIN, *_declared(), *_PROVIDED}))
+    """The names of the HTTP transports, sorted: `builtin` and every entry of
+    `TRANSPORT_GROUP` of an installed distribution. Nothing is imported."""
+    return tuple(sorted({_BUILTIN, *_declared()}))
+
+
+def _not_a_transport(subject: str, name: object) -> str:
+    """The message for a name no transport answers to: the choices, the group
+    a transport registers in and, for a name that can be part of one, the
+    distribution name `pathapi-NAME` as a name to look for."""
+    text = (
+        f"{subject} is not an HTTP transport "
+        f"(expected one of {', '.join(map(repr, transport_names()))}); "
+        f"a transport registers in the entry-point group {TRANSPORT_GROUP!r}"
+    )
+    if isinstance(name, str) and _SUGGESTABLE.fullmatch(name):
+        text += (
+            f": look for a distribution named {'pathapi-' + name.lower()!r} "
+            "(a name to look for, not a known package)"
+        )
+    return text
 
 
 def get_transport(name: str) -> type:
@@ -73,9 +82,8 @@ def get_transport(name: str) -> type:
     entry point. `builtin` is always `HTTPTransport`: no entry point replaces
     it.
 
-    Raises `ImportError` naming what to install for a transport that another
-    distribution provides and that is not installed, and `ValueError` naming
-    the choices for any other name."""
+    Raises `ValueError` for any other name, naming the choices, the entry-point
+    group and a distribution name to look for."""
     if name == _BUILTIN:
         return HTTPTransport
     entry = _declared().get(name) if isinstance(name, str) else None
@@ -84,24 +92,13 @@ def get_transport(name: str) -> type:
         if not callable(found):
             raise TypeError(f"the HTTP transport {name!r} is not a class")
         return found
-    if isinstance(name, str) and name in _PROVIDED:
-        distribution, package, install = _PROVIDED[name]
-        raise ImportError(
-            f"the {name!r} HTTP transport is provided by the {distribution} "
-            f"distribution: {install}",
-            name=package,
-        )
-    raise ValueError(
-        f"{name!r} is not an HTTP transport "
-        f"(expected one of {', '.join(map(repr, transport_names()))})"
-    )
+    raise ValueError(_not_a_transport(repr(name), name))
 
 
 def default_transport():
     """A new transport of the kind `PATHAPI_HTTP_TRANSPORT` names. A value
     that is empty, differently cased or unknown is `ValueError` naming the
-    choices; one that another distribution provides and that is not installed
-    is `ImportError` naming it."""
+    choices, the entry-point group and a distribution name to look for."""
     value = _os.environ.get(TRANSPORT_ENV)
     kind = _BUILTIN if value is None else value
     if kind == _BUILTIN:
@@ -109,10 +106,7 @@ def default_transport():
     try:
         transport_class = get_transport(kind)
     except ValueError:
-        raise ValueError(
-            f"{TRANSPORT_ENV}={kind!r} is not an HTTP transport "
-            f"(expected one of {', '.join(map(repr, transport_names()))})"
-        ) from None
+        raise ValueError(_not_a_transport(f"{TRANSPORT_ENV}={kind!r}", kind)) from None
     return transport_class()
 
 

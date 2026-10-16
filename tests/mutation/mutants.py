@@ -717,12 +717,12 @@ mutant(
     "a write is sent again to the host a 307 names, with its body and credentials",
 )
 mutant(
-    "transport-provided-elsewhere-that-is-not-installed-does-not-raise",
+    "transport-name-that-is-no-distribution-name-gets-a-suggestion",
     "http/_transports.py",
-    "    if isinstance(name, str) and name in _PROVIDED:\n",
-    "    if False:\n",
-    "tests/transport/test_transport_registry.py::test_a_transport_provided_elsewhere_that_is_not_installed_names_the_distribution",
-    "get('requests') answers with a ValueError instead of naming pathapi-requests",
+    "    if isinstance(name, str) and _SUGGESTABLE.fullmatch(name):\n",
+    "    if isinstance(name, str):\n",
+    "tests/transport/test_transport_registry.py::test_a_name_that_cannot_be_part_of_a_distribution_name_suggests_none",
+    "an empty or spaced transport name is told to look for 'pathapi-' plus that text",
 )
 mutant(
     "transport-entry-point-replaces-the-built-in-transport",
@@ -847,7 +847,7 @@ mutant(
     "http/_proxies.py",
     '            f"the built-in HTTP transport has no {scheme!r} proxy support; "\n            + REQUESTS_HINT,',
     '            f"the built-in HTTP transport has no {scheme!r} proxy support ({url}); "\n            + REQUESTS_HINT,',
-    "tests/transport/test_transport_proxy.py::test_a_proxy_scheme_that_is_not_http_is_refused_naming_the_other_transport",
+    "tests/transport/test_transport_proxy.py::test_a_proxy_scheme_that_is_not_http_is_refused_pointing_at_the_transport_group",
     "the error for an unsupported proxy scheme quotes the proxy URL with its credentials",
 )
 mutant(
