@@ -297,8 +297,8 @@ mutant(
 mutant(
     "rm-missing-ok-is-ignored",
     "protocols/tree.py",
-    "        if stat is None:\n            if not missing_ok:\n",
-    "        if stat is None:\n            if True:\n",
+    "    if stat is None:\n        if not missing_ok:\n",
+    "    if stat is None:\n        if True:\n",
     "tests/test_parity_io.py::test_rm_missing_ok",
     "rm(missing_ok=True) raises anyway",
 )
@@ -354,8 +354,8 @@ mutant(
 mutant(
     "move-onto-itself",
     "protocols/transfer.py",
-    "        target_stat = None\n        if relation != _SAME:\n",
-    "        target_stat = None\n        if True:\n",
+    "        replacing = standing = False\n        if relation != _SAME:\n",
+    "        replacing = standing = False\n        if True:\n",
     "tests/test_destructive_safety.py::test_move_directory_onto_itself_keeps_the_tree",
     "move() of a path onto itself removes it as an existing target",
 )
@@ -371,8 +371,8 @@ mutant(
 mutant(
     "rm-root-junction-or-mount-is-emptied",
     "protocols/tree.py",
-    '            binding = self.is_dir_binding()\n            policy = _follow_policy(follow_binds, self) if binding else "follow"\n',
-    '            binding = False\n            policy = _follow_policy(follow_binds, self) if binding else "follow"\n',
+    '        binding = self.is_dir_binding()\n        policy = _follow_policy(follow_binds, self) if binding else "follow"\n',
+    '        binding = False\n        policy = _follow_policy(follow_binds, self) if binding else "follow"\n',
     "tests/test_destructive_safety.py::test_rm_recursive_on_junction_itself_removes_only_the_link",
     "rm(recursive=True) of a junction or mount empties what is behind it",
     platform="nt",
