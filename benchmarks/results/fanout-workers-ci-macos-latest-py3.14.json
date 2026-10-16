@@ -1,0 +1,122 @@
+{
+  "schema": "pathapi.bench/1",
+  "name": "ci-macos-latest-py3.14-fanout",
+  "suite": "fanout",
+  "source": "ci",
+  "note": null,
+  "created_utc": "2026-10-16T17:54:30+00:00",
+  "package": {
+    "name": "pathapi",
+    "version": "0.1.1"
+  },
+  "git": {
+    "commit": "09577567b761a7db6b4b91488d6440f200edff70",
+    "dirty": true
+  },
+  "python": "CPython 3.14.8",
+  "interpreter": "3.14-darwin-universal2",
+  "processor": "Darwin-arm64",
+  "cpu_count": 3,
+  "env": {},
+  "metrics": {
+    "fanout: FTP loopback copy(recursive=True) 64-file tree": {
+      "group": "fanout",
+      "min_ms": 116.722458,
+      "median_ms": 121.653584,
+      "max_ms": 122.043208,
+      "samples": 3,
+      "calls_per_sample": 1
+    },
+    "fanout: FTP loopback copy(recursive=True) 64-file tree, max_workers=8": {
+      "group": "fanout",
+      "min_ms": 225.207916,
+      "median_ms": 249.681833,
+      "max_ms": 288.168792,
+      "samples": 3,
+      "calls_per_sample": 1
+    },
+    "fanout: FTP loopback rm(recursive=True) 64-file tree": {
+      "group": "fanout",
+      "min_ms": 20.670417,
+      "median_ms": 21.30175,
+      "max_ms": 21.583541,
+      "samples": 3,
+      "calls_per_sample": 1
+    },
+    "fanout: FTP loopback rm(recursive=True) 64-file tree, max_workers=8": {
+      "group": "fanout",
+      "min_ms": 37.843041,
+      "median_ms": 40.469083,
+      "max_ms": 56.635958,
+      "samples": 3,
+      "calls_per_sample": 1
+    },
+    "fanout: FTP loopback sync 64-file tree": {
+      "group": "fanout",
+      "min_ms": 119.525084,
+      "median_ms": 137.357959,
+      "max_ms": 316.9895,
+      "samples": 3,
+      "calls_per_sample": 1
+    },
+    "fanout: FTP loopback sync 64-file tree, max_workers=8": {
+      "group": "fanout",
+      "min_ms": 243.112583,
+      "median_ms": 321.322417,
+      "max_ms": 411.850458,
+      "samples": 3,
+      "calls_per_sample": 1
+    },
+    "fanout: simulated 2 ms per call copy(recursive=True) 64-file tree": {
+      "group": "fanout",
+      "min_ms": 2684.733625,
+      "median_ms": 2784.391292,
+      "max_ms": 2792.478375,
+      "samples": 3,
+      "calls_per_sample": 1
+    },
+    "fanout: simulated 2 ms per call copy(recursive=True) 64-file tree, max_workers=8": {
+      "group": "fanout",
+      "min_ms": 1143.0185,
+      "median_ms": 1377.220791,
+      "max_ms": 1397.758834,
+      "samples": 3,
+      "calls_per_sample": 1
+    },
+    "fanout: simulated 2 ms per call rm(recursive=True) 64-file tree": {
+      "group": "fanout",
+      "min_ms": 1331.522167,
+      "median_ms": 1356.959792,
+      "max_ms": 1378.345458,
+      "samples": 3,
+      "calls_per_sample": 1
+    },
+    "fanout: simulated 2 ms per call rm(recursive=True) 64-file tree, max_workers=8": {
+      "group": "fanout",
+      "min_ms": 817.181125,
+      "median_ms": 927.423791,
+      "max_ms": 990.644542,
+      "samples": 3,
+      "calls_per_sample": 1
+    },
+    "fanout: simulated 2 ms per call sync 64-file tree": {
+      "group": "fanout",
+      "min_ms": 2983.680958,
+      "median_ms": 3106.966167,
+      "max_ms": 3127.0645,
+      "samples": 3,
+      "calls_per_sample": 1
+    },
+    "fanout: simulated 2 ms per call sync 64-file tree, max_workers=8": {
+      "group": "fanout",
+      "min_ms": 1074.850625,
+      "median_ms": 1179.562042,
+      "max_ms": 1203.491291,
+      "samples": 3,
+      "calls_per_sample": 1
+    }
+  },
+  "counters": {},
+  "errors": {},
+  "skipped": {}
+}

@@ -129,3 +129,4 @@ Excerpt (values illustrative):
 | `ci-macos-latest-py3.14.json` | The same job on the hosted macOS runner. |
 | `ci-windows-latest-py3.14.json` | The same job on the hosted Windows runner. |
 | `fanout-baseline-ci-ubuntu-latest-py3.14.json` | The `fanout` suite from the `benchmark` job on the hosted Linux runner, serial (before `max_workers` existed). The macOS and Windows runners have a file each of the same name pattern. |
+| `fanout-workers-ci-ubuntu-latest-py3.14.json` | The `fanout` suite with `max_workers=8` beside the serial cases, from the `benchmark` job on the hosted Linux runner. The macOS and Windows runners have a file each of the same name pattern. |
