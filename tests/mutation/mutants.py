@@ -1395,3 +1395,11 @@ mutant(
     "tests/test_async_path.py::test_a_file_opened_by_a_cancelled_await_is_closed_when_the_worker_returns",
     "a file opened by a cancelled await is never closed",
 )
+mutant(
+    "async-supports-ignores-the-wrapped-path",
+    "path/_async.py",
+    "        return _supports(self._path, protocol)\n",
+    "        return True\n",
+    "tests/test_async_contract.py::TestMemAsyncContract::test_supports_and_capabilities_answer_for_the_wrapped_path",
+    "supports() of an AsyncPath says yes to every protocol",
+)

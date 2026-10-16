@@ -49,30 +49,10 @@ class PurePathContract:
         assert not p.match("*.py")
 
 
-class ReadPathContract(PurePathContract):
-    """Contract tests for read-only path operations.
-
-    Subclasses must provide a `root` fixture pointing to a fresh directory
-    pre-populated with the standard tree -- see `populate_fixture_tree()` and
-    `FIXTURE_TREE`:
-
-    - a.txt (content: "a")
-    - b.py (content: "b")
-    - .hidden.txt (content: "hidden")
-    - sub/c.py (content: "c")
-    - sub/nested/d.py (content: "d")
-    - empty_dir/
-
-    Capability attributes (all default True; set one False only for a
-    documented gap, and the affected tests skip): `supports_listing`,
-    `supports_empty_directories`, `distinguishes_file_types`,
-    `supports_pickle`.
-    """
-
-    supports_listing = None
-    supports_empty_directories = True
-    distinguishes_file_types = True
-    supports_pickle = True
+class _Switches:
+    """The capability switches of the contracts: `_require()` skips a test
+    whose switch is off, `_has()` answers it, `_support()` skips for a missing
+    protocol. A switch left `None` asks `supports()` about its protocol."""
 
     def _require(self, capability, root=None):
         value = getattr(self, capability)
@@ -103,6 +83,32 @@ class ReadPathContract(PurePathContract):
                 pytest.skip(
                     f"{type(root).__name__} does not support {protocol.__name__}"
                 )
+
+
+class ReadPathContract(_Switches, PurePathContract):
+    """Contract tests for read-only path operations.
+
+    Subclasses must provide a `root` fixture pointing to a fresh directory
+    pre-populated with the standard tree -- see `populate_fixture_tree()` and
+    `FIXTURE_TREE`:
+
+    - a.txt (content: "a")
+    - b.py (content: "b")
+    - .hidden.txt (content: "hidden")
+    - sub/c.py (content: "c")
+    - sub/nested/d.py (content: "d")
+    - empty_dir/
+
+    Capability attributes (all default True; set one False only for a
+    documented gap, and the affected tests skip): `supports_listing`,
+    `supports_empty_directories`, `distinguishes_file_types`,
+    `supports_pickle`.
+    """
+
+    supports_listing = None
+    supports_empty_directories = True
+    distinguishes_file_types = True
+    supports_pickle = True
 
     def test_exists_and_types(self, root):
         assert root.exists()

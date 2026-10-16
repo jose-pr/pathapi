@@ -72,6 +72,11 @@ default to `None`, meaning "ask `supports()`" (`supports_listing`, `supports_mkd
   give the serial result with `max_workers` above 1. Default `None`: run when
   the class sets `_threadsafe`, skip when it does not.
 
+`AsyncPathContract` takes the same `root` fixture and checks that `AsyncPath`
+over that backend gives what the sync path gives; it shares `supports_listing`,
+`supports_mkdir`, `supports_delete`, `supports_rename`, `supports_move` and
+`supports_concurrent_use` with `PathContract`.
+
 A test that needs an operation checks the matching switch first, so a
 backend without that operation needs no expected-failure marks. The tree
 itself is yours to build: `populate_fixture_tree()` uses `mkdir()` and
@@ -79,6 +84,9 @@ itself is yours to build: `populate_fixture_tree()` uses `mkdir()` and
 """
 
 from __future__ import annotations
+
+import importlib as _importlib
+import typing as _ty
 
 from ._fixtures import (
     DIRECTORY_ERRORS,
@@ -89,7 +97,11 @@ from ._fixtures import (
 from ._read import PurePathContract, ReadPathContract
 from ._contract import PathContract
 
+if _ty.TYPE_CHECKING:
+    from ._async import AsyncPathContract
+
 __all__ = [
+    "AsyncPathContract",
     "DIRECTORY_ERRORS",
     "FIXTURE_TREE",
     "NOT_EMPTY_ERRNOS",
@@ -98,3 +110,12 @@ __all__ = [
     "ReadPathContract",
     "populate_fixture_tree",
 ]
+
+
+def __getattr__(name: str):
+    # `asyncio` loads `ssl`, which importing the contracts must not.
+    if name == "AsyncPathContract":
+        value = getattr(_importlib.import_module("._async", __name__), name)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

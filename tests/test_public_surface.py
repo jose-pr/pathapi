@@ -147,6 +147,7 @@ EXPORTS = {
     "pathapi.mempath": {"MemBytesIO", "MemFile", "MemPath", "MemPathBackend"},
     "pathapi.sync": {"PathAndStat", "PathSyncer", "SyncEvent"},
     "pathapi.testing": {
+        "AsyncPathContract",
         "DIRECTORY_ERRORS",
         "FIXTURE_TREE",
         "NOT_EMPTY_ERRNOS",
