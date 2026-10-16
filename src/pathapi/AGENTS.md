@@ -539,6 +539,8 @@ Base class for I/O paths.
 ```python
 class AsyncPath:
     def __init__(self, path): ...
+    @classmethod
+    def _adopt(cls, path) -> AsyncPath: ...
     path
     # no I/O: plain methods and properties, AsyncPath in and out
     name: str
@@ -718,6 +720,12 @@ never calls `asyncio.run()`.
   and `move()` run the sync method once, so `max_workers=` is the sync fan-out
   of `Path` (see the threads note under `Path`): only a class that sets
   `_threadsafe` uses more than one thread, the others run serially.
+- **A subclass gets its own class back.** Every `Path` the object hands out as
+  an `AsyncPath` (`/`, `parent`, `parents`, `with_*()`, `joinpath()`,
+  `relative_to()`, a coroutine's result, the entries of `iterdir()`, `glob()`,
+  `rglob()` and `walk()`) is built by the classmethod `_adopt(path)` of the
+  object it came from, which is `cls(path)`. A subclass whose constructor
+  differs from `AsyncPath(path)` overrides `_adopt()` and returns its own class.
 - `AsyncPath` compares, hashes and orders as the wrapped paths do, only with
   another `AsyncPath` (`AsyncPath(p) != p`); `str()` is the wrapped path's.
 
@@ -1665,8 +1673,8 @@ contract" above: `send()` and `close()`.
   `ValueError`, before anything is sent, for a method or header name that is not
   a token, a header value or URL with a control character, a URL with
   credentials or another scheme, a `Content-Length` that is not a count of bytes
-  or exceeds the body, and a timeout that is not a positive number, `None` or a
-  pair of them; and `TypeError` for a `str` body. No message quotes the URL or a
+  or exceeds the body, and a timeout that is not a positive finite number, `None`
+  or a pair of them (`nan` and `inf` included); and `TypeError` for a `str` body. No message quotes the URL or a
   header value.
 
 The suite that holds a transport to these promises ships with the package:
@@ -2533,12 +2541,14 @@ class AsyncPathContract:
     supports_rename = None
     supports_move = True
     supports_concurrent_use = None
+    async_path_class = AsyncPath
 ```
 
 The contract of `AsyncPath` (see above) over a backend. `root` is the same
 fixture `PathContract` takes, a **sync** path: a fresh, function-scoped
 directory populated with `populate_fixture_tree()`; each test wraps it in
-`AsyncPath` and compares what the coroutine returns or raises with what the
+`async_path_class` (`AsyncPath`; name a subclass there, and every path the
+tests derive must be an instance of it) and compares what the coroutine returns or raises with what the
 sync call on the same backend returns or raises. The coroutines run with
 `asyncio.run()` inside ordinary test functions, so no pytest plugin is needed.
 It covers the pure members, existence and type tests, `stat()`, reads and

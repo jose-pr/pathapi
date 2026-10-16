@@ -32,7 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   loop is not blocked; cancelling an `await` abandons the wait and the worker finishes the
   call. Recursive `copy()`, `rm()` and `move()` are one such call, so `max_workers=` is the
   sync fan-out. `supports()` and `capabilities()` of an `AsyncPath` answer for the wrapped
-  path.
+  path. A subclass gets its own class for every path derived from it, built by the
+  classmethod `AsyncPath._adopt(path)` (`cls(path)`), which a subclass with another
+  constructor overrides.
 - **`AsyncHTTPClient`: the HTTP client for an event loop.** `pathapi.http.AsyncHTTPClient`
   is the sibling of `HTTPClient`: the same constructor arguments, redirect and
   `Authorization` rules, `timeout`, `deadline`, reply limit and errors, with `request()`
@@ -53,7 +55,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `--http-transports NAME` gets the tests it got before.
 - **`pathapi.testing.AsyncPathContract`.** The pytest contract of `AsyncPath` over a
   backend: it takes the `root` fixture of `PathContract` and checks each coroutine
-  against the sync path's result, with `asyncio.run()` and no extra test dependency.
+  against the sync path's result, with `asyncio.run()` and no extra test dependency. Its
+  class attribute `async_path_class` (default `AsyncPath`) names the class under test, so a
+  subclass of `AsyncPath` is tested with the paths it derives.
 
 ### Changed
 
@@ -69,6 +73,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A `nan` or infinite HTTP timeout is refused with `ValueError`.** `timeout=float("nan")`
+  passed the check, and the built-in transport then failed in `socket.settimeout()` after
+  it had opened the connection, which leaked the socket. Pass a positive finite number of
+  seconds, or `None`.
 - **`move(overwrite=True)` no longer destroys the old target when the move fails.**
   An existing target was removed before the source was renamed or copied over it, so
   a failing rename or copy lost the target. The target now stays until the source
