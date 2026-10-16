@@ -60,6 +60,12 @@ def transport_names() -> "tuple[str, ...]":
     return tuple(sorted({_BUILTIN, *_declared()}))
 
 
+class _NotATransport(ValueError, ImportError):
+    """No transport answers to a name. Also an `ImportError`, which is what a
+    caller of earlier releases caught for a transport whose distribution was
+    not installed."""
+
+
 def _not_a_transport(subject: str, name: object) -> str:
     """The message for a name no transport answers to: the choices, the group
     a transport registers in and, for a name that can be part of one, the
@@ -82,8 +88,8 @@ def get_transport(name: str) -> type:
     entry point. `builtin` is always `HTTPTransport`: no entry point replaces
     it.
 
-    Raises `ValueError` for any other name, naming the choices, the entry-point
-    group and a distribution name to look for."""
+    Raises `ValueError` (also an `ImportError`) for any other name, naming the
+    choices, the entry-point group and a distribution name to look for."""
     if name == _BUILTIN:
         return HTTPTransport
     entry = _declared().get(name) if isinstance(name, str) else None
@@ -92,21 +98,24 @@ def get_transport(name: str) -> type:
         if not callable(found):
             raise TypeError(f"the HTTP transport {name!r} is not a class")
         return found
-    raise ValueError(_not_a_transport(repr(name), name))
+    raise _NotATransport(_not_a_transport(repr(name), name))
 
 
 def default_transport():
     """A new transport of the kind `PATHAPI_HTTP_TRANSPORT` names. A value
-    that is empty, differently cased or unknown is `ValueError` naming the
-    choices, the entry-point group and a distribution name to look for."""
+    that is empty, differently cased or unknown is `ValueError` (also an
+    `ImportError`) naming the choices, the entry-point group and a distribution
+    name to look for."""
     value = _os.environ.get(TRANSPORT_ENV)
     kind = _BUILTIN if value is None else value
     if kind == _BUILTIN:
         return HTTPTransport()
     try:
         transport_class = get_transport(kind)
-    except ValueError:
-        raise ValueError(_not_a_transport(f"{TRANSPORT_ENV}={kind!r}", kind)) from None
+    except _NotATransport:
+        raise _NotATransport(
+            _not_a_transport(f"{TRANSPORT_ENV}={kind!r}", kind)
+        ) from None
     return transport_class()
 
 

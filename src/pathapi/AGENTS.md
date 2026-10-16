@@ -1454,14 +1454,14 @@ contract" above: `send()` and `close()`.
   the group of an installed distribution. Nothing is imported to list them.
 - `get_transport(name)` — the class called `name`; the name is case-sensitive.
   `builtin` is always `HTTPTransport`: an entry called `builtin` in the group is
-  ignored. Any other name is a `ValueError` listing
+  ignored. Any other name is a `ValueError`, which is also an `ImportError`, listing
   `transport_names()`, naming the group `pathapi.http_transports` and, for a
   name that can be part of a distribution name, suggesting `pathapi-NAME` (lower
   case) as a name to look for, not a known package; an entry that does not load a class is a `TypeError`.
 - `default_transport()` — a new transport of the kind
   `PATHAPI_HTTP_TRANSPORT` names, which is what a client given no transport
   builds: `get_transport(name)()`. An empty, differently cased or unknown value
-  is a `ValueError` naming the choices.
+  is the same `ValueError` (also an `ImportError`) naming the choices.
 - `prepare_request(method, url, *, headers, body=None, timeout)` — the arguments
   of `send()` as the contract reads them, so a transport that starts with it
   refuses what the built-in transport refuses and frames a body the same way.

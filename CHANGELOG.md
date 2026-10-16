@@ -27,12 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **An unknown HTTP transport name is told where to look, not which package to
   install.** `get_transport()` and `PATHAPI_HTTP_TRANSPORT` raise `ValueError` for a
   name no installed distribution declares in the group `pathapi.http_transports`,
-  naming the group and suggesting `pathapi-NAME` as a name to look for. `requests`
-  is no longer special: without a distribution that declares it, it raises
-  `ValueError` where it raised `ImportError`, and `transport_names()` lists it only
-  when one does. The refusal of a proxy that is not `http://` points at a transport
-  of that group that supports it. Install the distribution that provides the
-  transport; code catching `ImportError` for `requests` catches `ValueError` now.
+  naming the group and suggesting `pathapi-NAME` as a name to look for. The error is
+  a `ValueError` that is also an `ImportError`, so code that caught either still
+  does. `requests` is no longer special: `transport_names()` lists it only when an
+  installed distribution declares it. The refusal of a proxy that is not `http://`
+  points at a transport of that group that supports it. Install the distribution
+  that provides the transport.
 
 ### Fixed
 

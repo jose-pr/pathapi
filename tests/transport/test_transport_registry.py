@@ -91,6 +91,17 @@ def test_a_name_nothing_declares_suggests_a_name_to_look_for(nothing_declared):
     assert str(raised.value) == requests_message("'requests'")
 
 
+@pytest.mark.parametrize("name", ["requests", "", None])
+def test_an_unknown_name_is_also_an_import_error(nothing_declared, name, monkeypatch):
+    # Callers of earlier releases caught ImportError for an uninstalled transport.
+    with pytest.raises(ImportError):
+        get_transport(name)
+    monkeypatch.setenv("PATHAPI_HTTP_TRANSPORT", "requests")
+    with HTTPClient() as client:
+        with pytest.raises(ImportError):
+            client.transport
+
+
 def test_the_suggestion_is_derived_from_the_name_in_lower_case(nothing_declared):
     with pytest.raises(ValueError) as raised:
         get_transport("Fancy_Name")
