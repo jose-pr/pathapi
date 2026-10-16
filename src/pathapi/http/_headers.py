@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import collections.abc as _abc
+import math as _math
 import re as _re
 import typing as _ty
 import urllib.parse as _urlparse
@@ -118,9 +119,13 @@ def check_timeout(timeout) -> "tuple[float | None, float | None]":
         connect = read = timeout
     for value in (connect, read):
         if value is not None and (
-            isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not 0 < value < _math.inf
         ):
-            raise ValueError("a timeout is a positive number of seconds, or None")
+            raise ValueError(
+                "a timeout is a positive finite number of seconds, or None"
+            )
     return connect, read
 
 

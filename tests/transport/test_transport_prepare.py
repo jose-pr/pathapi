@@ -42,7 +42,20 @@ def test_the_timeout_is_a_connect_and_read_pair(timeout):
     assert prepare(timeout=timeout).timeout == expected[timeout]
 
 
-@pytest.mark.parametrize("timeout", [0, -1, "5", (1, 2, 3), True, (5, -1)])
+@pytest.mark.parametrize(
+    "timeout",
+    [
+        0,
+        -1,
+        "5",
+        (1, 2, 3),
+        True,
+        (5, -1),
+        float("nan"),
+        float("inf"),
+        (5, float("nan")),
+    ],
+)
 def test_a_timeout_that_is_not_a_positive_number_is_refused(timeout):
     with pytest.raises(ValueError):
         prepare(timeout=timeout)

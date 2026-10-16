@@ -399,7 +399,9 @@ def test_a_url_that_is_not_a_plain_http_url_is_refused_without_quoting_it(
     run(async_http_transport_kind, scenario)
 
 
-@pytest.mark.parametrize("timeout", [0, -1, "5", (1, 2, 3)])
+@pytest.mark.parametrize(
+    "timeout", [0, -1, "5", (1, 2, 3), float("nan"), float("inf"), (5, float("nan"))]
+)
 def test_a_timeout_that_is_not_a_positive_number_is_refused(
     async_http_transport_kind, timeout
 ):

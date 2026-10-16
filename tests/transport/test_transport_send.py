@@ -442,7 +442,20 @@ def test_credentials_in_a_url_are_refused_and_not_quoted(http_transport):
     assert "S3CR3T" not in str(excinfo.value)
 
 
-@pytest.mark.parametrize("timeout", [0, -1, "5", (1, 2, 3), True, (5, -1)])
+@pytest.mark.parametrize(
+    "timeout",
+    [
+        0,
+        -1,
+        "5",
+        (1, 2, 3),
+        True,
+        (5, -1),
+        float("nan"),
+        float("inf"),
+        (5, float("nan")),
+    ],
+)
 def test_a_timeout_that_is_not_a_positive_number_is_refused(http_transport, timeout):
     with Wire() as wire:
         with pytest.raises((ValueError, TypeError)):
