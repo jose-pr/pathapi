@@ -22,6 +22,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   below 1 is `ValueError`, one that is not an int is `TypeError`. `PathContract`
   has a `supports_concurrent_use` switch for the matching test.
 
+### Changed
+
+- **An unknown HTTP transport name is told where to look, not which package to
+  install.** `get_transport()` and `PATHAPI_HTTP_TRANSPORT` raise `ValueError` for a
+  name no installed distribution declares in the group `pathapi.http_transports`,
+  naming the group and suggesting `pathapi-NAME` as a name to look for. `requests`
+  is no longer special: without a distribution that declares it, it raises
+  `ValueError` where it raised `ImportError`, and `transport_names()` lists it only
+  when one does. The refusal of a proxy that is not `http://` points at a transport
+  of that group that supports it. Install the distribution that provides the
+  transport; code catching `ImportError` for `requests` catches `ValueError` now.
+
 ### Fixed
 
 - **`move(overwrite=True)` no longer destroys the old target when the move fails.**

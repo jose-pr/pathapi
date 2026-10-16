@@ -28,10 +28,6 @@ Paths for other places are separate distributions built on this one:
 | Distribution | Provides |
 | --- | --- |
 | [`uripath`](https://github.com/jose-pr/uripath) | `URIPath`: one class for any URI (`file:`, `data:`, `ftp:`, `zip:`, `tar:`, `http:`, `dav:`), and the `uripath` command |
-| [`sftppath`](https://github.com/jose-pr/sftppath) | `SFTPPath` (paramiko or asyncssh) |
-| [`objpath`](https://github.com/jose-pr/objpath) | `S3Path`, `GSPath` and `AZPath` |
-| [`repopath`](https://github.com/jose-pr/repopath) | `RepoPath`, `GitHubPath` and `GitLabPath` |
-| [`pathapi-requests`](https://github.com/jose-pr/pathapi-requests) | `RequestsTransport` for `pathapi.http` |
 
 ## Tour
 

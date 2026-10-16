@@ -41,8 +41,8 @@ where the backend has a faster way.
 - **`pathapi.http`**: `HTTPClient` and a transport contract for HTTP
   requests on the standard library (redirects that never carry
   `Authorization` to another origin, TLS verified by default, a `proxies=`
-  provider); the `requests` library plugs in as a transport through the
-  `pathapi-requests` distribution.
+  provider); another HTTP library plugs in as a transport through the
+  `pathapi.http_transports` entry-point group.
 - **`PathSyncer`**: one-way, content-compared tree sync between any two
   implementations, with dry runs and event hooks.
 - **Extensible**: subclass `Path` for any resource, and verify it with the
@@ -53,10 +53,6 @@ Paths for other places are separate distributions built on this one:
 | Distribution | Provides |
 | --- | --- |
 | [`uripath`](https://github.com/jose-pr/uripath) | `URIPath`: one class for any URI, with the schemes `file:`, `data:`, `ftp:`, `zip:`, `tar:`, `http:` and `dav:`, and the `uripath` command |
-| [`sftppath`](https://github.com/jose-pr/sftppath) | `SFTPPath` (paramiko or asyncssh) |
-| [`objpath`](https://github.com/jose-pr/objpath) | `S3Path`, `GSPath` and `AZPath` (Amazon S3, Google Cloud Storage, Azure Blob Storage) |
-| [`repopath`](https://github.com/jose-pr/repopath) | `RepoPath`, `GitHubPath` and `GitLabPath` (the REST APIs of the hosting services) |
-| [`pathapi-requests`](https://github.com/jose-pr/pathapi-requests) | `RequestsTransport`, the HTTP transport that sends through a `requests.Session` |
 
 ## Installation
 
