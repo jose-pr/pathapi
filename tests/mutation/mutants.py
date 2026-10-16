@@ -70,8 +70,19 @@ mutant(
     "protocols/transfer.py",
     "            target.unlink(missing_ok=True)\n        target.symlink_to(link,",
     "            pass\n        target.symlink_to(link,",
-    "tests/test_copy_move_fidelity.py::test_copying_a_link_replaces_a_link_at_the_target_when_asked_to",
+    "tests/test_copy_symlink_overwrite.py::test_a_store_that_cannot_rename_unlinks_first_and_makes_the_link",
     "copy(overwrite=True) of a link leaves the old link in the way",
+)
+mutant(
+    "copy-link-over-not-renamed",
+    "protocols/_moving.py",
+    "            _rename_over(temp, target, directory=False)\n",
+    "            pass\n",
+    (
+        "tests/test_copy_symlink_overwrite.py::test_a_local_link_replaces_an_existing_one",
+        "tests/test_copy_move_fidelity.py::test_copying_a_link_replaces_a_link_at_the_target_when_asked_to",
+    ),
+    "the link made beside the target is never renamed over it",
 )
 mutant(
     "copy-link-onto-directory",
