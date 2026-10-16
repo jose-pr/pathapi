@@ -1449,7 +1449,7 @@ mutant(
 mutant(
     "async-result-not-wrapped",
     "path/_async.py",
-    "        return _wrap(result)\n",
+    "        return _wrap(type(self), result)\n",
     "        return result\n",
     "tests/test_async_path.py::test_a_path_a_method_returns_is_an_async_path_and_other_values_stay",
     "a path a coroutine returns is not an AsyncPath",
@@ -1457,8 +1457,8 @@ mutant(
 mutant(
     "async-walk-reads-ahead",
     "path/_async.py",
-    "            1,\n            lambda entry: (_wrap(entry[0]), *entry[1:]),\n",
-    "            2,\n            lambda entry: (_wrap(entry[0]), *entry[1:]),\n",
+    "            1,\n            lambda entry: (self._adopt(entry[0]), *entry[1:]),\n",
+    "            2,\n            lambda entry: (self._adopt(entry[0]), *entry[1:]),\n",
     "tests/test_async_path.py::test_walk_hands_over_one_directory_at_a_time_so_pruning_works",
     "walk() lists the next directory before the caller can prune it",
 )
@@ -1493,4 +1493,33 @@ mutant(
     "        return True\n",
     "tests/test_async_contract.py::TestMemAsyncContract::test_supports_and_capabilities_answer_for_the_wrapped_path",
     "supports() of an AsyncPath says yes to every protocol",
+)
+mutant(
+    "transport-timeout-nan-accepted",
+    "http/_headers.py",
+    "            or not 0 < value < _math.inf\n",
+    "            or value <= 0\n",
+    "tests/transport/test_transport_prepare.py::test_a_timeout_that_is_not_a_positive_number_is_refused",
+    "a nan or infinite timeout reaches the socket after the connection is made",
+)
+mutant(
+    "async-derived-path-is-the-base-class",
+    "path/_async.py",
+    "        return cls(path)\n",
+    "        return AsyncPath(path)\n",
+    (
+        "tests/test_async_path.py::test_every_path_a_subclass_derives_is_that_subclass",
+        "tests/test_async_path.py::test_the_hook_of_the_base_class_builds_the_class_it_is_called_on",
+    ),
+    "a subclass of AsyncPath gets plain AsyncPath for the paths it derives",
+)
+mutant(
+    "async-contract-ignores-the-class-under-test",
+    "testing/_async.py",
+    '        path = self.async_path_class(root) / "sub" / "c.py"\n',
+    '        path = AsyncPath(root) / "sub" / "c.py"\n',
+    (
+        "tests/test_async_contract.py::TestSubclassAsyncContract::test_the_pure_members_are_plain_and_give_async_paths",
+    ),
+    "the contract wraps the root in AsyncPath, not in the class it names",
 )
