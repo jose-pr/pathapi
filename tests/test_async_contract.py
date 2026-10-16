@@ -31,6 +31,34 @@ class TestMemAsyncContract(AsyncPathContract):
         return populate_fixture_tree(MemPath("/"))
 
 
+class TaggedAsyncPath(AsyncPath):
+    __slots__ = ()
+
+
+class TestSubclassAsyncContract(AsyncPathContract):
+    async_path_class = TaggedAsyncPath
+
+    @pytest.fixture
+    def root(self):
+        return populate_fixture_tree(MemPath("/"))
+
+
+def test_the_contract_fails_when_a_derived_path_is_not_the_class_under_test():
+    class Plain(AsyncPath):
+        __slots__ = ()
+
+        @classmethod
+        def _adopt(cls, path):
+            return AsyncPath(path)
+
+    class Contract(AsyncPathContract):
+        async_path_class = Plain
+
+    root = populate_fixture_tree(MemPath("/"))
+    with pytest.raises(AssertionError):
+        Contract().test_the_pure_members_are_plain_and_give_async_paths(root)
+
+
 class TestFTPAsyncContract(AsyncPathContract):
     @pytest.fixture
     def root(self, ftp_server):

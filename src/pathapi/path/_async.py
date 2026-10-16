@@ -23,8 +23,8 @@ def _unwrap(value):
     return value._path if isinstance(value, AsyncPath) else value
 
 
-def _wrap(value):
-    return AsyncPath(value) if isinstance(value, Pathname) else value
+def _wrap(owner, value):
+    return owner._adopt(value) if isinstance(value, Pathname) else value
 
 
 def _invoke(path, name, args, kwargs):
@@ -129,7 +129,7 @@ def _coroutine(name: str):
         args = tuple(_unwrap(arg) for arg in args)
         kwargs = {key: _unwrap(value) for key, value in kwargs.items()}
         result = await _asyncio.to_thread(_invoke, self._path, name, args, kwargs)
-        return _wrap(result)
+        return _wrap(type(self), result)
 
     return _named(method, name)
 
@@ -138,7 +138,7 @@ def _plain(name: str):
     def method(self, *args, **kwargs):
         args = tuple(_unwrap(arg) for arg in args)
         kwargs = {key: _unwrap(value) for key, value in kwargs.items()}
-        return _wrap(getattr(self._path, name)(*args, **kwargs))
+        return _wrap(type(self), getattr(self._path, name)(*args, **kwargs))
 
     return _named(method, name)
 
@@ -186,6 +186,10 @@ class AsyncPath:
 
     Equality, hashing and ordering are those of the wrapped paths, and
     an `AsyncPath` never equals a plain path.
+
+    A subclass gets its own class for every path derived from it: they are
+    built by the classmethod `_adopt(path)` (`cls(path)`), which a subclass
+    with another constructor overrides.
     """
 
     __slots__ = ("_path",)
@@ -203,6 +207,12 @@ class AsyncPath:
     def path(self) -> Pathname:
         """The wrapped path."""
         return self._path
+
+    @classmethod
+    def _adopt(cls, path: Pathname) -> "AsyncPath":
+        """The async path for a path this one derived (a result, an entry of a
+        listing, a parent). A subclass whose constructor differs overrides it."""
+        return cls(path)
 
     def _supports(self, protocol: type) -> bool:
         return _supports(self._path, protocol)
@@ -246,35 +256,35 @@ class AsyncPath:
         )
 
     def __truediv__(self, key):
-        return AsyncPath(self._path / _unwrap(key))
+        return self._adopt(self._path / _unwrap(key))
 
     def __rtruediv__(self, key):
-        return AsyncPath(_unwrap(key) / self._path)
+        return self._adopt(_unwrap(key) / self._path)
 
     @property
     def parent(self) -> "AsyncPath":
-        return AsyncPath(self._path.parent)
+        return self._adopt(self._path.parent)
 
     @property
     def parents(self) -> "tuple[AsyncPath, ...]":
-        return tuple(AsyncPath(parent) for parent in self._path.parents)
+        return tuple(self._adopt(parent) for parent in self._path.parents)
 
     def iterdir(self) -> "_Listing":
         """Async iterator over the entries of this directory, as `AsyncPath`.
         The listing starts when iteration does, and reads a batch of entries
         per worker-thread call."""
-        return _Listing(lambda: self._path.iterdir(), _BATCH, _wrap)
+        return _Listing(lambda: self._path.iterdir(), _BATCH, self._adopt)
 
     def glob(self, *args, **kwargs) -> "_Listing":
         """Async iterator over `Path.glob()`, as `AsyncPath`. A bad pattern
         raises on the first step of the iteration, not on this call."""
         args = tuple(_unwrap(arg) for arg in args)
-        return _Listing(lambda: self._path.glob(*args, **kwargs), _BATCH, _wrap)
+        return _Listing(lambda: self._path.glob(*args, **kwargs), _BATCH, self._adopt)
 
     def rglob(self, *args, **kwargs) -> "_Listing":
         """Async iterator over `Path.rglob()`, as `AsyncPath`."""
         args = tuple(_unwrap(arg) for arg in args)
-        return _Listing(lambda: self._path.rglob(*args, **kwargs), _BATCH, _wrap)
+        return _Listing(lambda: self._path.rglob(*args, **kwargs), _BATCH, self._adopt)
 
     def walk(self, *args, **kwargs) -> "_Listing":
         """Async iterator over `Path.walk()`: `(AsyncPath, dirnames, filenames)`.
@@ -283,7 +293,7 @@ class AsyncPath:
         return _Listing(
             lambda: self._path.walk(*args, **kwargs),
             1,
-            lambda entry: (_wrap(entry[0]), *entry[1:]),
+            lambda entry: (self._adopt(entry[0]), *entry[1:]),
         )
 
     def open(self, *args, **kwargs) -> "_Opening":

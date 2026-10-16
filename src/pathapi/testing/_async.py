@@ -34,8 +34,12 @@ class AsyncPathContract(_Switches):
     `supports_delete`, `supports_rename` (all default `None`: ask
     `supports()` on `root`), `supports_move` (`True`) and
     `supports_concurrent_use` (`None`: the class's `_threadsafe`), as for
-    `PathContract`.
+    `PathContract`. `async_path_class` (`AsyncPath`) is the class under test:
+    a subclass of `AsyncPath` is named there, and every path the tests derive
+    must be an instance of it.
     """
+
+    async_path_class = AsyncPath
 
     supports_listing = None
     supports_mkdir = None
@@ -48,31 +52,35 @@ class AsyncPathContract(_Switches):
         return asyncio.run(coroutine)
 
     def test_the_pure_members_are_plain_and_give_async_paths(self, root):
-        path = AsyncPath(root) / "sub" / "c.py"
-        assert isinstance(path, AsyncPath)
+        path = self.async_path_class(root) / "sub" / "c.py"
+        assert isinstance(path, self.async_path_class)
         assert path.path == root / "sub" / "c.py"
         assert (path.name, path.suffix, path.stem) == ("c.py", ".py", "c")
-        assert path.parent == AsyncPath(root / "sub")
+        assert path.parent == self.async_path_class(root / "sub")
         assert path.with_name("e.py").path == root / "sub" / "e.py"
         assert path.joinpath("x").path == root / "sub" / "c.py" / "x"
         assert path.match("*.py")
-        assert path.relative_to(AsyncPath(root)).path == (
+        assert path.relative_to(self.async_path_class(root)).path == (
             root / "sub" / "c.py"
         ).relative_to(root)
-        assert all(isinstance(p, AsyncPath) for p in path.parents)
+        assert all(isinstance(p, self.async_path_class) for p in path.parents)
         assert path != root / "sub" / "c.py"
 
     def test_the_io_methods_are_coroutine_functions(self, root):
         for name in ("stat", "exists", "read_text", "write_text", "rm", "copy"):
-            assert inspect.iscoroutinefunction(getattr(AsyncPath, name)), name
+            assert inspect.iscoroutinefunction(
+                getattr(self.async_path_class, name)
+            ), name
         for name in ("name", "parent", "joinpath", "match", "iterdir", "walk", "open"):
-            assert not inspect.iscoroutinefunction(getattr(AsyncPath, name)), name
+            assert not inspect.iscoroutinefunction(
+                getattr(self.async_path_class, name)
+            ), name
 
     def test_exists_and_the_type_tests_answer_as_the_sync_path_does(self, root):
         async def main():
             for name in ("a.txt", "sub", "missing", "sub/missing/x"):
                 path = root.joinpath(*name.split("/"))
-                async_path = AsyncPath(path)
+                async_path = self.async_path_class(path)
                 assert await async_path.exists() == path.exists(), name
                 assert await async_path.is_dir() == path.is_dir(), name
                 assert await async_path.is_file() == path.is_file(), name
@@ -82,30 +90,30 @@ class AsyncPathContract(_Switches):
 
     def test_stat_gives_the_sync_size_and_type_and_raises_the_same_error(self, root):
         async def main():
-            stat = await AsyncPath(root / "a.txt").stat()
+            stat = await self.async_path_class(root / "a.txt").stat()
             expected = (root / "a.txt").stat()
             assert (stat.st_size, stat.st_mode & 0o170000) == (
                 expected.st_size,
                 expected.st_mode & 0o170000,
             )
             with pytest.raises(FileNotFoundError):
-                await AsyncPath(root / "missing").stat()
+                await self.async_path_class(root / "missing").stat()
             with pytest.raises(FileNotFoundError):
-                await AsyncPath(root / "missing").read_text()
+                await self.async_path_class(root / "missing").read_text()
 
         self._run(main())
 
     def test_reads_and_writes_round_trip_with_the_sync_path(self, root):
         async def main():
-            text = AsyncPath(root / "written.txt")
+            text = self.async_path_class(root / "written.txt")
             await text.write_text("hello")
             assert (root / "written.txt").read_text() == "hello"
             assert await text.read_text() == "hello"
-            data = AsyncPath(root / "written.bin")
+            data = self.async_path_class(root / "written.bin")
             await data.write_bytes(b"\x00\x01\xff")
             assert (root / "written.bin").read_bytes() == b"\x00\x01\xff"
             assert await data.read_bytes() == b"\x00\x01\xff"
-            assert await AsyncPath(root / "a.txt").read_text() == "a"
+            assert await self.async_path_class(root / "a.txt").read_text() == "a"
 
         self._run(main())
 
@@ -113,7 +121,7 @@ class AsyncPathContract(_Switches):
         (root / "lines.txt").write_text("one\ntwo\nthree\n")
 
         async def main():
-            async with AsyncPath(root / "lines.txt").open("r") as file:
+            async with self.async_path_class(root / "lines.txt").open("r") as file:
                 assert isinstance(file, AsyncFile)
                 assert await file.readline() == "one\n"
                 assert await file.read(3) == "two"
@@ -131,7 +139,7 @@ class AsyncPathContract(_Switches):
 
     def test_a_file_opened_by_await_is_closed_by_aclose_twice(self, root):
         async def main():
-            file = await AsyncPath(root / "a.txt").open("rb")
+            file = await self.async_path_class(root / "a.txt").open("rb")
             assert await file.read() == b"a"
             await file.aclose()
             await file.aclose()
@@ -141,7 +149,7 @@ class AsyncPathContract(_Switches):
 
     def test_a_file_written_through_the_context_manager_is_complete_on_exit(self, root):
         async def main():
-            async with AsyncPath(root / "out.bin").open("wb") as file:
+            async with self.async_path_class(root / "out.bin").open("wb") as file:
                 await file.write(b"abc")
                 await file.write(b"def")
 
@@ -150,11 +158,11 @@ class AsyncPathContract(_Switches):
 
     def test_open_of_a_missing_file_raises_when_awaited(self, root):
         async def main():
-            opening = AsyncPath(root / "missing.txt").open("rb")
+            opening = self.async_path_class(root / "missing.txt").open("rb")
             with pytest.raises(FileNotFoundError):
                 await opening
             with pytest.raises(FileNotFoundError):
-                async with AsyncPath(root / "missing.txt").open("rb"):
+                async with self.async_path_class(root / "missing.txt").open("rb"):
                     pass
 
         self._run(main())
@@ -163,13 +171,15 @@ class AsyncPathContract(_Switches):
         self._require("supports_listing", root)
 
         async def main():
-            listed = [entry async for entry in AsyncPath(root / "sub").iterdir()]
-            assert all(isinstance(entry, AsyncPath) for entry in listed)
+            listed = [
+                entry async for entry in self.async_path_class(root / "sub").iterdir()
+            ]
+            assert all(isinstance(entry, self.async_path_class) for entry in listed)
             assert sorted(entry.name for entry in listed) == sorted(
                 entry.name for entry in (root / "sub").iterdir()
             )
             with pytest.raises(OSError):
-                async for _ in AsyncPath(root / "missing").iterdir():
+                async for _ in self.async_path_class(root / "missing").iterdir():
                     pass
 
         self._run(main())
@@ -178,7 +188,7 @@ class AsyncPathContract(_Switches):
         self._require("supports_listing", root)
 
         async def main():
-            top = AsyncPath(root)
+            top = self.async_path_class(root)
             assert {p.path async for p in top.glob("*.py")} == set(root.glob("*.py"))
             assert {p.path async for p in top.rglob("*.py")} == set(root.rglob("*.py"))
 
@@ -193,11 +203,11 @@ class AsyncPathContract(_Switches):
         async def main():
             walked = [
                 (str(p.path), dirs, files)
-                async for p, dirs, files in AsyncPath(root).walk()
+                async for p, dirs, files in self.async_path_class(root).walk()
             ]
             assert shape(walked) == shape(root.walk())
             seen = []
-            async for p, dirs, _files in AsyncPath(root).walk():
+            async for p, dirs, _files in self.async_path_class(root).walk():
                 seen.append(p.name)
                 if "sub" in dirs:
                     dirs.remove("sub")
@@ -210,7 +220,7 @@ class AsyncPathContract(_Switches):
         self._require("supports_delete", root)
 
         async def main():
-            directory = AsyncPath(root / "made")
+            directory = self.async_path_class(root / "made")
             await directory.mkdir()
             assert (root / "made").is_dir()
             with pytest.raises(FileExistsError):
@@ -229,11 +239,13 @@ class AsyncPathContract(_Switches):
         self._require("supports_delete", root)
 
         async def main():
-            await AsyncPath(root / "sub").rm(recursive=True)
+            await self.async_path_class(root / "sub").rm(recursive=True)
             assert not (root / "sub").exists()
             with pytest.raises(FileNotFoundError):
-                await AsyncPath(root / "sub").rm(recursive=True)
-            await AsyncPath(root / "sub").rm(recursive=True, missing_ok=True)
+                await self.async_path_class(root / "sub").rm(recursive=True)
+            await self.async_path_class(root / "sub").rm(
+                recursive=True, missing_ok=True
+            )
 
         self._run(main())
 
@@ -241,15 +253,17 @@ class AsyncPathContract(_Switches):
         self._require("supports_mkdir", root)
 
         async def main():
-            source = AsyncPath(root / "a.txt")
-            await source.copy(AsyncPath(root / "copy.txt"))
+            source = self.async_path_class(root / "a.txt")
+            await source.copy(self.async_path_class(root / "copy.txt"))
             assert (root / "copy.txt").read_text() == "a"
             with pytest.raises(FileExistsError):
                 await source.copy(root / "copy.txt")
-            copied = await source.copy_into(AsyncPath(root / "empty_dir"))
-            assert isinstance(copied, AsyncPath)
+            copied = await source.copy_into(self.async_path_class(root / "empty_dir"))
+            assert isinstance(copied, self.async_path_class)
             assert (root / "empty_dir" / "a.txt").read_text() == "a"
-            await AsyncPath(root / "sub").copy(root / "sub2", recursive=True)
+            await self.async_path_class(root / "sub").copy(
+                root / "sub2", recursive=True
+            )
             assert (root / "sub2" / "nested" / "d.py").read_text() == "d"
 
         self._run(main())
@@ -259,12 +273,12 @@ class AsyncPathContract(_Switches):
         self._require("supports_concurrent_use", root)
 
         async def main():
-            await AsyncPath(root / "sub").copy(
+            await self.async_path_class(root / "sub").copy(
                 root / "w", recursive=True, max_workers=4
             )
             assert (root / "w" / "c.py").read_text() == "c"
             assert (root / "w" / "nested" / "d.py").read_text() == "d"
-            await AsyncPath(root / "w").rm(recursive=True, max_workers=4)
+            await self.async_path_class(root / "w").rm(recursive=True, max_workers=4)
             assert not (root / "w").exists()
 
         self._run(main())
@@ -273,11 +287,15 @@ class AsyncPathContract(_Switches):
         self._require("supports_move")
 
         async def main():
-            await AsyncPath(root / "b.py").move(AsyncPath(root / "moved.py"))
+            await self.async_path_class(root / "b.py").move(
+                self.async_path_class(root / "moved.py")
+            )
             assert not (root / "b.py").exists()
             assert (root / "moved.py").read_text() == "b"
             if self._has("supports_rename", root):
-                await AsyncPath(root / "moved.py").rename(root / "renamed.py")
+                await self.async_path_class(root / "moved.py").rename(
+                    root / "renamed.py"
+                )
                 assert (root / "renamed.py").read_text() == "b"
 
         self._run(main())
@@ -286,7 +304,7 @@ class AsyncPathContract(_Switches):
         self._require("supports_mkdir", root)
 
         async def main():
-            await AsyncPath(root / "touched").touch()
+            await self.async_path_class(root / "touched").touch()
             assert (root / "touched").read_bytes() == b""
 
         self._run(main())
@@ -299,15 +317,15 @@ class AsyncPathContract(_Switches):
                 (Symlink, "symlink_to", ("target",)),
                 (Hardlink, "hardlink_to", (root / "a.txt",)),
             ):
-                if supports(AsyncPath(root), protocol):
+                if supports(self.async_path_class(root), protocol):
                     continue
                 with pytest.raises(NotImplementedError):
-                    await getattr(AsyncPath(root / "a.txt"), name)(*args)
+                    await getattr(self.async_path_class(root / "a.txt"), name)(*args)
 
         self._run(main())
 
     def test_supports_and_capabilities_answer_for_the_wrapped_path(self, root):
-        wrapped = AsyncPath(root)
+        wrapped = self.async_path_class(root)
         assert capabilities(wrapped) == capabilities(root)
         for protocol in capabilities(root):
             assert supports(wrapped, protocol)
@@ -317,7 +335,7 @@ class AsyncPathContract(_Switches):
             names = ["a.txt", "b.py", "sub/c.py", "sub/nested/d.py"] * 4
             results = await asyncio.gather(
                 *(
-                    AsyncPath(root.joinpath(*name.split("/"))).read_text()
+                    self.async_path_class(root.joinpath(*name.split("/"))).read_text()
                     for name in names
                 )
             )
@@ -328,8 +346,8 @@ class AsyncPathContract(_Switches):
     def test_the_running_loop_is_left_open_and_in_place(self, root):
         async def main():
             loop = asyncio.get_running_loop()
-            await AsyncPath(root / "a.txt").read_text()
-            [entry async for entry in AsyncPath(root).walk()]
+            await self.async_path_class(root / "a.txt").read_text()
+            [entry async for entry in self.async_path_class(root).walk()]
             assert asyncio.get_running_loop() is loop and not loop.is_closed()
 
         self._run(main())

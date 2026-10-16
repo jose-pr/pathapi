@@ -165,6 +165,54 @@ def test_a_path_a_method_returns_is_an_async_path_and_other_values_stay():
     asyncio.run(main())
 
 
+class TaggedAsyncPath(AsyncPath):
+    """An `AsyncPath` that overrides the hook and carries one more member."""
+
+    __slots__ = ()
+    adopted: "list[object]" = []
+
+    @classmethod
+    def _adopt(cls, path):
+        cls.adopted.append(path)
+        return super()._adopt(path)
+
+    def tagged(self):
+        return True
+
+
+def test_every_path_a_subclass_derives_is_that_subclass():
+    TaggedAsyncPath.adopted = []
+
+    async def main():
+        base = TaggedAsyncPath(_tree(MemPath) / "sub")
+        derived = [
+            base / "sub",
+            "x" / base,
+            base.parent,
+            *base.parents,
+            base.joinpath("sub"),
+            base.with_name("n"),
+            base.relative_to(base.parent),
+            await base.resolve(),
+            await (base.parent / "a.txt").copy_into(base),
+            *[entry async for entry in base.iterdir()],
+            *[entry async for entry in base.glob("*")],
+            *[top async for top, _dirs, _files in base.walk()],
+        ]
+        assert derived and all(type(path) is TaggedAsyncPath for path in derived)
+        assert all(path.tagged() for path in derived)
+
+    asyncio.run(main())
+    assert TaggedAsyncPath.adopted
+
+
+def test_the_hook_of_the_base_class_builds_the_class_it_is_called_on():
+    path = MemPath("/a", backend=MemPathBackend())
+    assert type(AsyncPath._adopt(path)) is AsyncPath
+    assert type(TaggedAsyncPath._adopt(path)) is TaggedAsyncPath
+    assert (AsyncPath(path) / "b").path == path / "b"
+
+
 def test_the_pure_methods_take_and_give_async_paths():
     root = MemPath("/", backend=MemPathBackend())
     base = AsyncPath(root / "a" / "b")
