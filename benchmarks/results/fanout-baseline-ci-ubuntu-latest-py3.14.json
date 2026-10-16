@@ -1,0 +1,74 @@
+{
+  "schema": "pathapi.bench/1",
+  "name": "ci-ubuntu-latest-py3.14-fanout",
+  "suite": "fanout",
+  "source": "ci",
+  "note": null,
+  "created_utc": "2026-10-16T17:41:13+00:00",
+  "package": {
+    "name": "pathapi",
+    "version": "0.1.1"
+  },
+  "git": {
+    "commit": "fb6e2cf717652057043428db294d37443e53ca9f",
+    "dirty": true
+  },
+  "python": "CPython 3.14.8",
+  "interpreter": "3.14-posix-x86_64",
+  "processor": "Linux-x86_64",
+  "cpu_count": 4,
+  "env": {},
+  "metrics": {
+    "fanout: FTP loopback copy(recursive=True) 64-file tree": {
+      "group": "fanout",
+      "min_ms": 156.964856,
+      "median_ms": 157.418198,
+      "max_ms": 162.468217,
+      "samples": 3,
+      "calls_per_sample": 1
+    },
+    "fanout: FTP loopback rm(recursive=True) 64-file tree": {
+      "group": "fanout",
+      "min_ms": 32.80868,
+      "median_ms": 33.639935,
+      "max_ms": 35.354499,
+      "samples": 3,
+      "calls_per_sample": 1
+    },
+    "fanout: FTP loopback sync 64-file tree": {
+      "group": "fanout",
+      "min_ms": 175.500492,
+      "median_ms": 175.872272,
+      "max_ms": 175.925753,
+      "samples": 3,
+      "calls_per_sample": 1
+    },
+    "fanout: simulated 2 ms per call copy(recursive=True) 64-file tree": {
+      "group": "fanout",
+      "min_ms": 611.339326,
+      "median_ms": 612.080725,
+      "max_ms": 614.584111,
+      "samples": 3,
+      "calls_per_sample": 1
+    },
+    "fanout: simulated 2 ms per call rm(recursive=True) 64-file tree": {
+      "group": "fanout",
+      "min_ms": 323.096543,
+      "median_ms": 323.913272,
+      "max_ms": 324.029987,
+      "samples": 3,
+      "calls_per_sample": 1
+    },
+    "fanout: simulated 2 ms per call sync 64-file tree": {
+      "group": "fanout",
+      "min_ms": 730.399185,
+      "median_ms": 730.549769,
+      "max_ms": 730.870628,
+      "samples": 3,
+      "calls_per_sample": 1
+    }
+  },
+  "counters": {},
+  "errors": {},
+  "skipped": {}
+}

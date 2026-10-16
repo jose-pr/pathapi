@@ -128,3 +128,4 @@ Excerpt (values illustrative):
 | `ci-ubuntu-latest-py3.14.json` | The `benchmark` job of the test workflow on the hosted Linux runner, default suite, at the release commit of the version its `package.version` names. Replaced at each release; earlier ones are in the file's history. |
 | `ci-macos-latest-py3.14.json` | The same job on the hosted macOS runner. |
 | `ci-windows-latest-py3.14.json` | The same job on the hosted Windows runner. |
+| `fanout-baseline-ci-ubuntu-latest-py3.14.json` | The `fanout` suite from the `benchmark` job on the hosted Linux runner, serial (before `max_workers` existed). The macOS and Windows runners have a file each of the same name pattern. |
