@@ -26,6 +26,8 @@ HEADER = PACKAGE / "AGENTS.md"
 EXPORTS = {
     "pathapi": {
         "ArchivePath",
+        "AsyncFile",
+        "AsyncPath",
         "BinaryOpen",
         "Chmod",
         "FTPPath",
@@ -49,6 +51,8 @@ EXPORTS = {
         "sync",
     },
     "pathapi.path": {
+        "AsyncFile",
+        "AsyncPath",
         "FsPathLike",
         "Path",
         "PathLike",

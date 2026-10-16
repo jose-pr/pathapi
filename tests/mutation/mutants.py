@@ -1331,3 +1331,67 @@ mutant(
     "tests/test_copy_symlink_overwrite.py::test_a_store_without_links_refuses_before_removing_the_target",
     "a target that cannot hold links is removed before the copy is refused",
 )
+mutant(
+    "async-call-runs-on-the-loop",
+    "path/_async.py",
+    "        result = await _asyncio.to_thread(_invoke, self._path, name, args, kwargs)\n",
+    "        result = _invoke(self._path, name, args, kwargs)\n",
+    "tests/test_async_path.py::test_a_call_runs_on_a_worker_thread_while_the_loop_goes_on",
+    "an AsyncPath call runs on the event loop's own thread",
+)
+mutant(
+    "async-arguments-not-unwrapped",
+    "path/_async.py",
+    "    async def method(self, *args, **kwargs):\n        args = tuple(_unwrap(arg) for arg in args)\n",
+    "    async def method(self, *args, **kwargs):\n        args = tuple(args)\n",
+    "tests/test_async_path.py::test_async_paths_given_to_a_method_reach_the_backend_unwrapped",
+    "an AsyncPath given as an argument reaches the backend wrapped",
+)
+mutant(
+    "async-keywords-not-unwrapped",
+    "path/_async.py",
+    "        kwargs = {key: _unwrap(value) for key, value in kwargs.items()}\n        result = await",
+    "        kwargs = dict(kwargs)\n        result = await",
+    "tests/test_async_path.py::test_async_paths_given_to_a_method_reach_the_backend_unwrapped",
+    "an AsyncPath given as a keyword reaches the backend wrapped",
+)
+mutant(
+    "async-result-not-wrapped",
+    "path/_async.py",
+    "        return _wrap(result)\n",
+    "        return result\n",
+    "tests/test_async_path.py::test_a_path_a_method_returns_is_an_async_path_and_other_values_stay",
+    "a path a coroutine returns is not an AsyncPath",
+)
+mutant(
+    "async-walk-reads-ahead",
+    "path/_async.py",
+    "            1,\n            lambda entry: (_wrap(entry[0]), *entry[1:]),\n",
+    "            2,\n            lambda entry: (_wrap(entry[0]), *entry[1:]),\n",
+    "tests/test_async_path.py::test_walk_hands_over_one_directory_at_a_time_so_pruning_works",
+    "walk() lists the next directory before the caller can prune it",
+)
+mutant(
+    "async-listing-order-reversed",
+    "path/_async.py",
+    "            self._ready[:0] = items[::-1]\n",
+    "            self._ready[:0] = items\n",
+    "tests/test_async_path.py::test_a_listing_is_read_a_batch_at_a_time_in_order",
+    "a listing delivers each batch back to front",
+)
+mutant(
+    "async-close-not-completed-on-cancel",
+    "path/_async.py",
+    "        await _asyncio.shield(task)\n    except _asyncio.CancelledError:\n        if not task.done():",
+    "        await task\n    except _asyncio.CancelledError:\n        if not task.done():",
+    "tests/test_async_path.py::test_aclose_finishes_the_close_when_the_awaiting_task_is_cancelled",
+    "a cancelled aclose() returns before the file is closed",
+)
+mutant(
+    "async-cancelled-open-leaks-the-file",
+    "path/_async.py",
+    "            task.add_done_callback(_close_late)\n",
+    "            pass\n",
+    "tests/test_async_path.py::test_a_file_opened_by_a_cancelled_await_is_closed_when_the_worker_returns",
+    "a file opened by a cancelled await is never closed",
+)
