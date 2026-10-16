@@ -23,6 +23,13 @@ def pytest_addoption(parser):
         "names of pathapi.http.transport_names(), separated by commas "
         "(for example builtin,requests)",
     )
+    parser.addoption(
+        "--http-async-transports",
+        default="builtin",
+        help="the async HTTP transports the transport suite runs against, by "
+        "the names of pathapi.http.async_transport_names(), separated by "
+        "commas (for example builtin,httpx)",
+    )
 
 
 def pytest_configure(config):
@@ -69,6 +76,10 @@ def pytest_generate_tests(metafunc):
         option = metafunc.config.getoption("--http-transports", default="builtin")
         kinds = [name.strip() for name in option.split(",") if name.strip()]
         metafunc.parametrize("http_transport_kind", kinds, indirect=True)
+    if "async_http_transport_kind" in metafunc.fixturenames:
+        option = metafunc.config.getoption("--http-async-transports", default="builtin")
+        kinds = [name.strip() for name in option.split(",") if name.strip()]
+        metafunc.parametrize("async_http_transport_kind", kinds, indirect=True)
 
 
 @pytest.fixture
@@ -88,6 +99,16 @@ def http_transport(http_transport_kind):
 
     with make_transport(http_transport_kind) as transport:
         yield transport
+
+
+@pytest.fixture
+def async_http_transport_kind(request, monkeypatch):
+    """Runs the test once per async HTTP transport (`--http-async-transports`):
+    the default transport of every `AsyncHTTPClient` the test builds is that
+    kind (`PATHAPI_HTTP_ASYNC_TRANSPORT`), and
+    `transport_fakes.make_async_transport(kind)` builds one of it."""
+    monkeypatch.setenv("PATHAPI_HTTP_ASYNC_TRANSPORT", request.param)
+    return request.param
 
 
 @pytest.fixture

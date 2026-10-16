@@ -3,10 +3,11 @@ table-driven fake and a wrapper that records what a real one sends."""
 
 from __future__ import annotations
 
+import asyncio
 import os
 import typing
 
-from pathapi.http import HTTPResponse, get_transport
+from pathapi.http import HTTPResponse, get_async_transport, get_transport
 
 _REASONS = {
     200: "OK",
@@ -52,6 +53,32 @@ def spy_on_sends(monkeypatch, project=lambda method, url, **kwargs: (method, url
 
     monkeypatch.setattr(transport_class, "send", spy)
     return log
+
+
+def current_async_kind():
+    """The async transport kind the test runs with: what
+    `async_http_transport_kind` set."""
+    return os.environ.get("PATHAPI_HTTP_ASYNC_TRANSPORT", "builtin")
+
+
+def make_async_transport(kind, **arguments):
+    """A real async transport of the kind `get_async_transport()` names."""
+    return get_async_transport(kind)(**arguments)
+
+
+def run_with_async_transport(kind, scenario, **arguments):
+    """Runs the coroutine function `scenario(transport)` on a new event loop
+    with an async transport of `kind`, closes the transport and returns what
+    the scenario returned."""
+
+    async def main():
+        transport = make_async_transport(kind, **arguments)
+        try:
+            return await scenario(transport)
+        finally:
+            await transport.aclose()
+
+    return asyncio.run(main())
 
 
 class Sent(typing.NamedTuple):
@@ -131,3 +158,25 @@ class RecordingTransport:
 
     def clear(self):
         self.sent.clear()
+
+
+class FakeAsyncTransport(FakeTransport):
+    """`FakeTransport` with the coroutines of an async transport."""
+
+    async def send(self, method, url, *, headers, body=None, timeout, stream=False):
+        return super().send(
+            method, url, headers=headers, body=body, timeout=timeout, stream=stream
+        )
+
+    async def aclose(self):
+        self.close()
+
+
+def areply(status=200, content=b"", headers=None, reason=None, url=""):
+    """An `AsyncHTTPResponse` of `status` holding `content`."""
+    from pathapi.http import AsyncHTTPResponse
+
+    sync = reply(status, content, headers, reason, url)
+    return AsyncHTTPResponse(
+        sync.status, sync.reason, sync.headers, url, content, decode=True
+    )

@@ -39,19 +39,24 @@ _SUGGESTABLE = _re.compile(r"[A-Za-z0-9][A-Za-z0-9._]*")
 _EXPECTING_BODY = frozenset({"PATCH", "POST", "PUT"})
 
 
-def _declared() -> "dict[str, _ty.Any]":
-    """The entry points of `TRANSPORT_GROUP` by name, the first declaration of
-    a name winning."""
+def _entries(group: str) -> "dict[str, _ty.Any]":
+    """The entry points of `group` by name, the first declaration of a name
+    winning."""
     import importlib.metadata as _metadata
 
     try:
-        found = _metadata.entry_points(group=TRANSPORT_GROUP)
+        found = _metadata.entry_points(group=group)
     except TypeError:  # Python 3.9
-        found = _metadata.entry_points().get(TRANSPORT_GROUP, ())
+        found = _metadata.entry_points().get(group, ())
     declared: "dict[str, _ty.Any]" = {}
     for entry in found:
         declared.setdefault(entry.name, entry)
     return declared
+
+
+def _declared() -> "dict[str, _ty.Any]":
+    """The entry points of `TRANSPORT_GROUP` by name."""
+    return _entries(TRANSPORT_GROUP)
 
 
 def transport_names() -> "tuple[str, ...]":

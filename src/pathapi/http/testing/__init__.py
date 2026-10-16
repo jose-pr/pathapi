@@ -30,6 +30,8 @@ import typing as _ty
 __all__ = ["HELPERS", "MODULES", "run", "suite_directory"]
 
 MODULES = (
+    "test_async_client.py",
+    "test_async_transport.py",
     "test_client_default.py",
     "test_client_errors.py",
     "test_client_peer_text.py",

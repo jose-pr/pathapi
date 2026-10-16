@@ -4,11 +4,13 @@
 `HTTPTransport` on `http.client`, or one another distribution provides) and
 follows redirects under one rule for credentials: `Authorization` goes to the
 origin it was given for and to no other scheme, host or port. A reply comes
-back as an `HTTPResponse`. `translate_errors()` maps a failed request to the
-`OSError` types `pathlib` raises.
+back as an `HTTPResponse`. `AsyncHTTPClient` is its sibling for an event loop,
+over an async transport (`ThreadedTransport` runs any synchronous one on
+worker threads). `translate_errors()` maps a failed request to the `OSError`
+types `pathlib` raises.
 
-Importing this package loads `http.client` and `ssl`; `import pathapi`
-does not. Nothing here needs a third-party library.
+Importing this package loads `http.client`, `ssl` and `asyncio`; `import
+pathapi` does not. Nothing here needs a third-party library.
 """
 
 from __future__ import annotations
@@ -17,6 +19,16 @@ import sys as _sys
 import types as _types
 
 from . import _settings
+from ._async_client import AsyncHTTPClient
+from ._async_response import AsyncHTTPResponse
+from ._async_transports import (
+    ASYNC_TRANSPORT_ENV,
+    ASYNC_TRANSPORT_GROUP,
+    ThreadedTransport,
+    async_transport_names,
+    default_async_transport,
+    get_async_transport,
+)
 from ._builtin import HTTPTransport
 from ._client import DEFAULT_TIMEOUT, HTTPClient
 from ._errors import os_error, server_size, translate_errors
@@ -41,6 +53,10 @@ from ._transports import (
 )
 
 __all__ = [
+    "ASYNC_TRANSPORT_ENV",
+    "ASYNC_TRANSPORT_GROUP",
+    "AsyncHTTPClient",
+    "AsyncHTTPResponse",
     "DEFAULT_TIMEOUT",
     "HTTPClient",
     "HTTPResponse",
@@ -51,8 +67,12 @@ __all__ = [
     "PreparedRequest",
     "TRANSPORT_ENV",
     "TRANSPORT_GROUP",
+    "ThreadedTransport",
+    "async_transport_names",
+    "default_async_transport",
     "default_transport",
     "drop_body",
+    "get_async_transport",
     "get_transport",
     "is_redirect",
     "json_body",

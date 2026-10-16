@@ -66,4 +66,7 @@ def test_the_package_declares_no_dependency_extra_or_command(project):
     assert declared.get("dependencies", []) == []
     assert set(declared.get("optional-dependencies", {})) == {"dev", "docs"}
     assert "scripts" not in declared and "gui-scripts" not in declared
-    assert set(declared.get("entry-points", {})) == {"pathapi.http_transports"}
+    assert set(declared.get("entry-points", {})) == {
+        "pathapi.http_transports",
+        "pathapi.http_async_transports",
+    }

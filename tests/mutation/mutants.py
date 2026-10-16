@@ -1414,3 +1414,83 @@ mutant(
     "tests/test_async_contract.py::TestMemAsyncContract::test_supports_and_capabilities_answer_for_the_wrapped_path",
     "supports() of an AsyncPath says yes to every protocol",
 )
+mutant(
+    "async-client-keeps-authorization-across-origins",
+    "http/_async_follow.py",
+    '        if origin(current) != home:\n            headers = drop_header(headers, "Authorization")\n',
+    '        if False:\n            headers = drop_header(headers, "Authorization")\n',
+    "tests/transport/test_async_client.py::test_authorization_is_dropped_by_a_redirect_to_another_port",
+    "the async client sends Authorization to the origin a redirect names",
+)
+mutant(
+    "async-client-write-follows-redirects-to-another-host",
+    "http/_async_follow.py",
+    '    elif origin(location) != origin(url):\n        reason = "it leaves the scheme, host and port of the request"\n',
+    '    elif False:\n        reason = "it leaves the scheme, host and port of the request"\n',
+    "tests/transport/test_async_client.py::test_a_write_redirected_somewhere_else_is_not_sent_there",
+    "the async client sends a write again to the host a 307 names",
+)
+mutant(
+    "async-client-redirect-loop-has-no-end",
+    "http/_async_follow.py",
+    "        if hops >= MAX_REDIRECTS:\n",
+    "        if hops >= 10 * MAX_REDIRECTS:\n",
+    "tests/transport/test_async_client.py::test_a_redirect_loop_stops_after_thirty_redirects",
+    "the async client follows a redirect loop for ten times as long",
+)
+mutant(
+    "async-client-reply-limit-ignored",
+    "http/_async_client.py",
+    "            await resp._buffered(limit, too_large(_follow.shown(url), limit))\n",
+    "            await resp._buffered(None, too_large(_follow.shown(url), limit))\n",
+    "tests/transport/test_async_client.py::test_a_reply_over_the_limit_is_efbig_when_read_whole_and_fine_streamed",
+    "the async client reads a reply of any size whole",
+)
+mutant(
+    "async-client-deadline-not-applied-to-the-body",
+    "http/_async_client.py",
+    "            deadline.bound_async(resp)\n",
+    "            pass\n",
+    "tests/transport/test_async_units.py::test_a_streamed_body_is_not_read_once_the_deadline_has_passed",
+    "a streamed async reply is read past the deadline",
+)
+mutant(
+    "async-threaded-reply-of-a-cancelled-send-leaks",
+    "http/_async_transports.py",
+    "            work.add_done_callback(_close_late)\n",
+    "            pass\n",
+    "tests/transport/test_async_units.py::test_a_caller_cancelled_while_a_request_is_sent_has_its_reply_closed",
+    "the connection of a request whose caller was cancelled is never given back",
+)
+mutant(
+    "async-threaded-read-on-the-event-loop-thread",
+    "http/_async_transports.py",
+    "        return await _asyncio.to_thread(self._response._next, amount)\n",
+    "        return self._response._next(amount)\n",
+    "tests/transport/test_async_units.py::test_a_request_and_the_reading_of_its_body_run_off_the_event_loop_thread",
+    "a streamed body is read on the event loop thread",
+)
+mutant(
+    "async-threaded-closes-a-transport-it-was-given",
+    "http/_async_transports.py",
+    "            built, self._built = self._built, None\n",
+    "            built, self._built = self._transport, None\n",
+    "tests/transport/test_async_units.py::test_a_transport_given_stays_open_and_one_it_built_is_closed",
+    "closing the thread-backed transport closes the synchronous one it was given",
+)
+mutant(
+    "async-entry-point-replaces-the-built-in-transport",
+    "http/_async_transports.py",
+    "    if name == _BUILTIN:\n        return ThreadedTransport\n",
+    "    if False:\n        return ThreadedTransport\n",
+    "tests/transport/test_async_registry.py::test_the_built_in_async_transport_is_the_threaded_one_and_no_entry_replaces_it",
+    "an entry named builtin replaces the thread-backed transport",
+)
+mutant(
+    "async-response-reads-a-closed-body",
+    "http/_async_response.py",
+    "        if self._closed and not self._kept:\n",
+    "        if False:\n",
+    "tests/transport/test_async_units.py::test_a_streamed_response_closes_its_body_once_and_refuses_reads_after",
+    "an async response is read after it was closed",
+)

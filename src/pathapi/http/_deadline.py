@@ -57,6 +57,13 @@ class Deadline:
             response._source = _Bounded(source, self)
         return response
 
+    def bound_async(self, response):
+        """`bound()` for a response read with coroutines."""
+        source = getattr(response, "_source", None)
+        if source is not None:
+            response._source = _AsyncBounded(source, self)
+        return response
+
 
 class _Bounded:
     """A response body that raises `TimeoutError` instead of reading once the
@@ -72,3 +79,18 @@ class _Bounded:
 
     def close(self) -> None:
         self._source.close()
+
+
+class _AsyncBounded:
+    """`_Bounded` for a body read with coroutines."""
+
+    def __init__(self, source, deadline: Deadline):
+        self._source = source
+        self._deadline = deadline
+
+    async def read(self, amount: int) -> bytes:
+        self._deadline.check()
+        return await self._source.read(amount)
+
+    async def aclose(self) -> None:
+        await self._source.aclose()

@@ -21,12 +21,15 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 SUITE = REPO / "tests" / "transport"
 PER_TRANSPORT = re.compile(
     r"\b(http_transport_kind|http_transport|on_current_transport|make_transport|"
-    r"current_kind)\b"
+    r"current_kind|async_http_transport_kind|make_async_transport|"
+    r"run_with_async_transport)\b"
 )
 # Test files of the suite that check one implementation (the built-in
 # transport's pool and proxy handling, the registry, the helper that a new
 # transport starts from) and so are not run over another transport.
 NOT_PER_TRANSPORT = {
+    "test_async_registry.py",
+    "test_async_units.py",
     "test_client_deadline.py",
     "test_client_urls.py",
     "test_transport_pool.py",

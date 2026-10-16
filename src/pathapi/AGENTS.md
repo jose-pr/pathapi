@@ -1355,9 +1355,9 @@ with `UserWarning`).
 
 ## HTTP requests (`pathapi.http`)
 
-Standard library only (`http.client`, `ssl`); needs no extra and no URI.
-`import pathapi.http` loads `http.client` and `ssl`; `import pathapi`
-does not. The package sends a request through a **transport**, follows
+Standard library only (`http.client`, `ssl`, `asyncio`); needs no extra and no
+URI. `import pathapi.http` loads `http.client`, `ssl` and `asyncio`;
+`import pathapi` does not. The package sends a request through a **transport**, follows
 redirects under one rule for credentials, and maps a failed request to the
 `OSError` types `pathlib` raises. Path classes for HTTP servers in other
 distributions are built on it.
@@ -1671,6 +1671,103 @@ contract" above: `send()` and `close()`.
 
 The suite that holds a transport to these promises ships with the package:
 "Testing support" under "Testing helpers".
+
+### Async HTTP (`pathapi.http`)
+
+`AsyncHTTPClient` is the sibling of `HTTPClient` for an event loop: the same
+settings, the same redirect and credential rules and the same errors, with the
+methods that wait as coroutines and `aclose()` as the closer. It sends through
+an **async transport** and never creates, closes or configures an event loop.
+
+```python
+class AsyncHTTPClient:
+    headers: dict
+    timeout: float | tuple | None
+    deadline: float | None
+    user_agent: str
+    def __init__(
+        self, transport=None, *, headers=None, timeout=(10, 60), deadline=None,
+        user_agent=None,
+    ): ...
+    transport
+    async def request(
+        self, method, url, *, data=None, headers=None, stream=False,
+        allow_redirects=None, timeout=..., deadline=..., auth=None,
+    ): ...
+    async def redirect(
+        self, method, url, resp, *, headers=None, stream=False, timeout=...,
+        deadline=..., auth=None,
+    ): ...
+    async def aclose(self): ...
+
+class AsyncHTTPResponse:
+    status: int
+    reason: str
+    headers: Headers
+    url: str
+    def __init__(
+        self, status, reason, headers, url, body=b"", *, decode=True,
+    ): ...
+    async def read(self, size=-1): ...
+    async def buffered(self): ...
+    async def aclose(self): ...
+
+class ThreadedTransport:
+    def __init__(self, transport=None): ...
+    transport
+    async def send(
+        self, method, url, *, headers, body=None, timeout, stream=False,
+    ): ...
+    async def aclose(self): ...
+
+ASYNC_TRANSPORT_GROUP = "pathapi.http_async_transports"
+ASYNC_TRANSPORT_ENV = "PATHAPI_HTTP_ASYNC_TRANSPORT"
+def async_transport_names() -> tuple[str, ...]: ...
+def get_async_transport(name: str) -> type: ...
+def default_async_transport(): ...
+```
+
+- **`AsyncHTTPClient(transport=None, *, headers=None, timeout=(10, 60),
+  deadline=None, user_agent=None)`** takes what `HTTPClient` takes. `transport`
+  is an object whose `send()` is a coroutine function (anything else is
+  `TypeError`); without one the client builds the transport that
+  `PATHAPI_HTTP_ASYNC_TRANSPORT` names on first use, and `aclose()` or leaving
+  its `async with` block closes one it built, never one it was given.
+  `request()` and `redirect()` take the arguments of `HTTPClient`'s and return
+  an `AsyncHTTPResponse`; `headers`, `auth`, `data`, `timeout`, `deadline`,
+  redirects, the `Authorization` rule, `MAX_REPLY_BYTES` and the errors are as
+  documented above. `iter_bytes()` of a response is an async iterator. A caller
+  cancelled while a request is in flight abandons it, and the response is
+  closed when it arrives.
+- **`AsyncHTTPResponse`** reads as `HTTPResponse` does, with coroutines:
+  `await read(size=-1)`, `iter_bytes(chunk_size)` (an async iterator),
+  `await buffered()`, `await aclose()` and `async with`. Decoding, the
+  `OSError(EIO)` for a body that ends early and `ValueError` for a read after
+  `aclose()` are those of `HTTPResponse`. A transport builds one from `bytes` or
+  from an object with `async read(amount)` and `async aclose()`.
+- **The async transport contract.** An object with `async send(method, url, *,
+  headers, body=None, timeout, stream=False) -> AsyncHTTPResponse` and `async
+  aclose()`: the arguments, the checks, the exceptions and the promises of "The
+  transport contract" above, with the response read by coroutines. A `body` that
+  is a binary file or an iterable of `bytes` is read without blocking the
+  loop the transport runs on, or on a thread.
+- **`ThreadedTransport(transport=None)`** is the default, `builtin` in the
+  registry: it runs a synchronous transport on worker threads of the loop's
+  default executor, one call for `send()` and one for each read of a streamed
+  body. "Async" here means an executor: the sockets block, one worker thread
+  each. `transport` is the synchronous transport to run; without one, the
+  transport `PATHAPI_HTTP_TRANSPORT` names is built on first use and closed by
+  `aclose()`. Every synchronous transport can be used from an event loop this
+  way.
+- **The registry**, as for the synchronous one. A distribution provides a native
+  async transport with an entry in the group `pathapi.http_async_transports`
+  (the name is the transport's, the value a class built with no arguments).
+  `async_transport_names()` lists `builtin` and the entries without importing
+  them; `get_async_transport(name)` is the class (`builtin` is always
+  `ThreadedTransport`); `default_async_transport()` builds the kind
+  `PATHAPI_HTTP_ASYNC_TRANSPORT` names. A name nothing answers to is a
+  `ValueError` that is also an `ImportError`, naming the choices, the group and
+  `pathapi-NAME` as a name to look for.
 
 ## Protocols (`pathapi.protocols`)
 
@@ -2549,6 +2646,7 @@ distribution and `pytest` installed:
 
 ```
 python -m pathapi.http.testing --http-transports requests -q
+python -m pathapi.http.testing --http-async-transports httpx -q
 ```
 
 Everything after `python -m pathapi.http.testing` goes to pytest, which is
@@ -2556,7 +2654,11 @@ rooted at `suite_directory()` unless the arguments give `--rootdir`.
 `--http-transports` takes names that `transport_names()` lists, separated by
 commas (default `builtin`): each test that depends on the transport runs once
 per name, with `PATHAPI_HTTP_TRANSPORT` set to it, so the clients the
-test builds use `get_transport(name)()`. The tests are `HTTPClient` over
+test builds use `get_transport(name)()`. `--http-async-transports` does the
+same for the async half (`test_async_transport.py`, `test_async_client.py`),
+with the names `async_transport_names()` lists and
+`PATHAPI_HTTP_ASYNC_TRANSPORT`; those tests run their coroutines with
+`asyncio.run()` and need no pytest plugin. The tests are `HTTPClient` over
 loopback servers (redirects and the rule for `Authorization`, replies cut short
 or too large, errors, headers) and the transport contract against servers
 scripted at the byte level (what the server received is what is asserted). The
@@ -2596,7 +2698,7 @@ caught as `PathError`, `NotImplementedError` or `ValueError`.
 
 ## Environment variables
 
-The package reads one.
+The package reads two.
 
 ### `PATHAPI_HTTP_TRANSPORT` (`pathapi.http`)
 
@@ -2607,6 +2709,16 @@ given none. The value is case-sensitive, and an empty or unrecognised one
 raises `ValueError` naming the choices (`transport_names()`), the group and,
 as `get_transport()` does, a `pathapi-NAME` to look for. It is read when a client first needs its transport,
 once per client, so a change reaches clients that need theirs afterwards.
+
+### `PATHAPI_HTTP_ASYNC_TRANSPORT` (`pathapi.http`)
+
+`builtin` (the default when unset: `ThreadedTransport`, which runs the
+synchronous transport `PATHAPI_HTTP_TRANSPORT` names on worker threads), or the
+name of a transport an installed distribution declares in the group
+`pathapi.http_async_transports`: the transport an `AsyncHTTPClient` builds when
+it was given none. Case-sensitive; an empty or unrecognised value raises
+`ValueError` (also an `ImportError`) as `get_async_transport()` does. Read when
+a client first needs its transport, once per client.
 
 ## Gotchas
 
