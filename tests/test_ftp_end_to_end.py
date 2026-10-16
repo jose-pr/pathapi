@@ -444,3 +444,30 @@ def test_ftp_an_empty_path_is_the_root_whatever_the_working_directory(
     assert arguments
     assert [verb for verb, argument in arguments if not argument] == []
     assert ("MLSD" if mlsd else "NLST", "/") in arguments
+
+
+def test_ftp_move_over_a_file_keeps_it_when_the_rename_is_refused(
+    ftp_factory, monkeypatch
+):
+    url, _handler, root = ftp_factory()
+    (root / "src.txt").write_bytes(b"new")
+    (root / "dst.txt").write_bytes(b"old")
+    real = ftplib.FTP.rename
+
+    def refuse_source(self, fromname, toname):
+        if fromname.endswith("src.txt"):
+            raise ftplib.error_perm("550 Permission denied")
+        return real(self, fromname, toname)
+
+    monkeypatch.setattr(ftplib.FTP, "rename", refuse_source)
+    backend = _backend(url)
+
+    with pytest.raises(PermissionError):
+        _at(url, "src.txt", backend).move(_at(url, "dst.txt", backend), overwrite=True)
+
+    assert (root / "dst.txt").read_bytes() == b"old"
+    assert (root / "src.txt").read_bytes() == b"new"
+    assert sorted(p.name for p in root.iterdir() if p.is_file()) == [
+        "dst.txt",
+        "src.txt",
+    ]

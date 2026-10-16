@@ -1219,3 +1219,43 @@ mutant(
     "tests/transport/test_client_deadline.py::test_a_deadline_that_is_not_positive_is_a_value_error",
     "a deadline of zero or less is accepted",
 )
+mutant(
+    "move-overwrite-no-displacing",
+    "protocols/transfer.py",
+    "                if replacing:\n                    return _rename_over(",
+    "                if False:\n                    return _rename_over(",
+    "tests/test_move_overwrite_secures.py::test_a_store_that_refuses_to_rename_over_a_file_still_moves_it",
+    "a store that refuses to rename over a file can no longer replace it",
+)
+mutant(
+    "move-overwrite-target-not-put-back",
+    "protocols/_moving.py",
+    "            _put_back(aside, target, error)\n",
+    "            pass\n",
+    "tests/test_move_overwrite_secures.py::test_the_displaced_file_comes_back_when_the_second_rename_fails",
+    "the target moved aside is not put back when the rename fails",
+)
+mutant(
+    "move-overwrite-removes-directory-first",
+    "protocols/transfer.py",
+    "            if standing:\n                _replace_tree(",
+    "            if False:\n                _replace_tree(",
+    "tests/test_move_overwrite_secures.py::test_a_failed_copy_keeps_the_existing_directory_target",
+    "a directory target is removed before the tree that replaces it is copied",
+)
+mutant(
+    "move-overwrite-unlinks-file-first",
+    "protocols/transfer.py",
+    "            # An existing file is kept by copy() until the new content is complete.\n",
+    "            target.unlink(missing_ok=True)\n",
+    "tests/test_move_overwrite_secures.py::test_a_failed_copy_keeps_the_existing_file_target_and_the_source",
+    "a file target is unlinked before the copy that replaces it",
+)
+mutant(
+    "move-overwrite-directory-renamed-over-first",
+    "protocols/_moving.py",
+    "    if not directory:\n        try:\n",
+    "    if True:\n        try:\n",
+    "tests/test_move_overwrite_secures.py::test_a_directory_is_replaced_whole_where_rename_would_merge_into_it",
+    "a directory is renamed over the existing one instead of replacing it",
+)

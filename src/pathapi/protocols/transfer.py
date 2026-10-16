@@ -12,6 +12,7 @@ from .. import _names, _stubs
 from .._errorpolicy import copy_error_predicate
 from .._filestat import FileStat
 from ._copytree import _copy_tree
+from ._moving import _rename_over, _replace_tree
 from ._relation import (
     _INNER,
     _OTHER,
@@ -400,6 +401,10 @@ class Move(Copy, Remove, _ty.Protocol):
         same file under another spelling (a case alias, `x.move(x)`) is
         renamed in place. Between two hard links of one file, an existing
         target needs `overwrite=True`, and the source name is then removed.
+
+        With `overwrite=True` an existing target stays until what replaces it
+        is in place: a move that fails part way leaves the target, and the
+        source, as they were.
         """
         if isinstance(target, str):
             target = self._coerce_target(target)
@@ -424,6 +429,9 @@ class Move(Copy, Remove, _ty.Protocol):
         # removing the "existing" target would delete the source itself.
         relation = _relation(src, target, follow=False, held=held)
         target_stat = None
+        # An existing target is not removed here: it stays until what replaces
+        # it is in place (see `_moving`). `standing` is a real directory.
+        replacing = standing = False
         if relation != _SAME:
             target_stat = held.target(target)
             if target_stat is not None and not overwrite:
@@ -437,29 +445,36 @@ class Move(Copy, Remove, _ty.Protocol):
                     raise OSError(_errno.ENOTEMPTY, "Directory not empty", str(target))
                 if relation == _OTHER:
                     return _drop_second_name(src, src_stat, target, target_stat)
-                if target_stat.is_dir() and not target_stat.is_symlink():
+                standing = target_stat.is_dir() and not target_stat.is_symlink()
+                if standing:
                     if not src_stat.is_dir():
                         raise IsADirectoryError(target)
-                    target.rm(recursive=True, missing_ok=True)
-                elif (
-                    native
-                    and type(target) is type(src)
-                    and getattr(type(src), "replace", Move.replace) is not Move.replace
-                ):
-                    # A class with its own replace() (os.replace() swaps atomically and leaves the
-                    # target alone on failure). Path.replace() is built on move(): calling it here
-                    # would never end.
-                    try:
-                        return src.replace(target)
-                    except OSError as error:
-                        if error.errno != _errno.EXDEV:
-                            raise
-                        native = False
-                else:
+                    replacing = True
+                elif target_stat.is_symlink():
+                    # The link itself goes; nothing behind it is touched.
                     target.unlink(missing_ok=True)
+                else:
+                    replacing = True
+                    if (
+                        native
+                        and type(target) is type(src)
+                        and getattr(type(src), "replace", Move.replace)
+                        is not Move.replace
+                    ):
+                        # A class with its own replace() (os.replace() swaps atomically and leaves
+                        # the target alone on failure). Path.replace() is built on move(): calling
+                        # it here would never end.
+                        try:
+                            return src.replace(target)
+                        except OSError as error:
+                            if error.errno != _errno.EXDEV:
+                                raise
+                            native = False
 
         if native:
             try:
+                if replacing:
+                    return _rename_over(src, target, directory=standing)
                 return src.rename(target)
             except NotImplementedError:
                 pass
@@ -473,26 +488,35 @@ class Move(Copy, Remove, _ty.Protocol):
         # the result does not depend on rename() being available. The copy is handed
         # what is known (nothing at `target`, `src` not a link); a failed rename changed nothing.
         links = _holds_links(src, target)
-        handing = _handing(
-            src,
-            target,
-            held.source_raw if not src_stat.is_symlink() else None,
-            relation != _SAME and target_stat is None,
-        )
+        raw = held.source_raw if not src_stat.is_symlink() else None
+        handing = _handing(src, target, raw, relation != _SAME and target_stat is None)
         if src_stat.is_symlink() and links:
+            if replacing:
+                target.unlink(missing_ok=True)
             with handing:
                 src.copy(target, overwrite=overwrite, follow_symlinks=False)
             src.unlink()
         elif src.is_dir() if src_stat.is_symlink() else src_stat.is_dir():
-            with handing:
-                src.copy(
+            if standing:
+                _replace_tree(
+                    src,
                     target,
-                    overwrite=overwrite,
-                    recursive=True,
-                    follow_symlinks=not links,
+                    lambda temp: _handing(src, temp, raw, True),
+                    links,
                 )
+            else:
+                if replacing:
+                    target.unlink(missing_ok=True)
+                with handing:
+                    src.copy(
+                        target,
+                        overwrite=overwrite,
+                        recursive=True,
+                        follow_symlinks=not links,
+                    )
             src.rm(recursive=True)
         else:
+            # An existing file is kept by copy() until the new content is complete.
             with handing:
                 src.copy(target, overwrite=overwrite)
             src.unlink()
