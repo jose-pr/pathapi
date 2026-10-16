@@ -492,7 +492,7 @@ FANOUT_BYTES = 512
 #: What each operation of the simulated slow backend waits, in seconds.
 FANOUT_DELAY = 0.002
 #: The `max_workers` settings the fan-out suite measures; None is serial.
-FANOUT_WORKERS = (None,)
+FANOUT_WORKERS = (None, 8)
 
 
 class _DelayedMem(MemPath):
