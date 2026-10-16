@@ -47,7 +47,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `get_async_transport()` and `default_async_transport()`).
 - **The async half of the transport suite.** `python -m pathapi.http.testing
   --http-async-transports NAME` holds an async transport to the promises of the
-  synchronous suite (`test_async_transport.py`, `test_async_client.py`).
+  synchronous suite (`test_async_transport.py`, `test_async_client.py`). Without the
+  option the async tests run over `builtin` when `--http-transports` is left out too,
+  and are not collected when it names a transport: a distribution that runs
+  `--http-transports NAME` gets the tests it got before.
 - **`pathapi.testing.AsyncPathContract`.** The pytest contract of `AsyncPath` over a
   backend: it takes the `root` fixture of `PathContract` and checks each coroutine
   against the sync path's result, with `asyncio.run()` and no extra test dependency.
