@@ -176,7 +176,9 @@ def check_class(modules, node):
                         f"{label} = {ast.unparse(member.value)} in the header, {getattr(cls, target.id)!r} in the code"
                     )
             continue
-        assert isinstance(member, ast.FunctionDef), ast.dump(member)
+        assert isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)), ast.dump(
+            member
+        )
         label = f"{node.name}.{member.name}"
         if member.name == "__init__":
             problems += signature_problems(
@@ -203,6 +205,10 @@ def check_class(modules, node):
                 f"{label}: {wanted or 'an instance method'} in the header, {found or 'an instance method'} in the code"
             )
         bound = getattr(cls, member.name)
+        if inspect.iscoroutinefunction(bound) != isinstance(
+            member, ast.AsyncFunctionDef
+        ):
+            problems.append(f"{label}: async in the header or the code, not both")
         actual = inspect.signature(bound)
         plain = inspect.isfunction(bound) and found is None
         problems += signature_problems(
