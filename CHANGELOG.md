@@ -45,6 +45,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   target first. A directory target is swapped in by rename where its class has one.
   If you list the directory while a move runs, you may see a hidden
   `.NAME.<hex>.pathapi-tmp` sibling.
+- **`copy(follow_symlinks=False, overwrite=True)` of a link no longer destroys the old
+  target when the new link cannot be made.** The existing target was unlinked before
+  `symlink_to()`, so a refused link lost it. Where the target's class can rename, the
+  link is now made in a hidden sibling and renamed over the target; a class that
+  cannot rename still unlinks first. A target class that cannot make links now raises
+  `NotImplementedError` before anything is removed.
 
 ## [0.1.1] - 2026-10-16
 
