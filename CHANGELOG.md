@@ -33,6 +33,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   call. Recursive `copy()`, `rm()` and `move()` are one such call, so `max_workers=` is the
   sync fan-out. `supports()` and `capabilities()` of an `AsyncPath` answer for the wrapped
   path.
+- **`AsyncHTTPClient`: the HTTP client for an event loop.** `pathapi.http.AsyncHTTPClient`
+  is the sibling of `HTTPClient`: the same constructor arguments, redirect and
+  `Authorization` rules, `timeout`, `deadline`, reply limit and errors, with `request()`
+  and `redirect()` as coroutines, `aclose()` and `async with`. It returns an
+  `AsyncHTTPResponse` (`await read()`, `iter_bytes()` as an async iterator, `await
+  aclose()`). It sends through an async transport, an object with `async send()` and
+  `async aclose()`. The default one, `ThreadedTransport`, runs the synchronous transport
+  `PATHAPI_HTTP_TRANSPORT` names on worker threads, so every synchronous transport works
+  from a loop; a native one is declared in the entry-point group
+  `pathapi.http_async_transports` and chosen by `PATHAPI_HTTP_ASYNC_TRANSPORT` (same
+  rules and messages as the synchronous registry; `async_transport_names()`,
+  `get_async_transport()` and `default_async_transport()`).
+- **The async half of the transport suite.** `python -m pathapi.http.testing
+  --http-async-transports NAME` holds an async transport to the promises of the
+  synchronous suite (`test_async_transport.py`, `test_async_client.py`).
 - **`pathapi.testing.AsyncPathContract`.** The pytest contract of `AsyncPath` over a
   backend: it takes the `root` fixture of `PathContract` and checks each coroutine
   against the sync path's result, with `asyncio.run()` and no extra test dependency.

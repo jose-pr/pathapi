@@ -42,7 +42,9 @@ where the backend has a faster way.
   requests on the standard library (redirects that never carry
   `Authorization` to another origin, TLS verified by default, a `proxies=`
   provider); another HTTP library plugs in as a transport through the
-  `pathapi.http_transports` entry-point group.
+  `pathapi.http_transports` entry-point group. `AsyncHTTPClient` is the same
+  client for an event loop, over async transports registered in
+  `pathapi.http_async_transports`.
 - **`PathSyncer`**: one-way, content-compared tree sync between any two
   implementations, with dry runs and event hooks.
 - **Extensible**: subclass `Path` for any resource, and verify it with the
@@ -137,7 +139,7 @@ print(sorted(p.name for p in Path("site-copy").iterdir()))
 | `pathapi.mempath` | `MemPath` in-memory filesystem |
 | `pathapi.ftp` | `FTPPath`, `FTPBackend` (FTP and FTPS on `ftplib`) |
 | `pathapi.archive` | `ZipPath`, `TarPath`, `ArchivePath` (members of a zip or tar file), `make_archive`, `unpack_archive` |
-| `pathapi.http` | `HTTPClient`, `HTTPTransport`, `HTTPResponse` (HTTP requests on `http.client`) |
+| `pathapi.http` | `HTTPClient`, `HTTPTransport`, `HTTPResponse`, `AsyncHTTPClient`, `ThreadedTransport` (HTTP requests on `http.client`, and from an event loop) |
 | `pathapi.protocols` | `Stat`, `Chmod`, `BinaryOpen`, `NativeChecksum` |
 | `pathapi.sync` | `PathSyncer`, `SyncEvent`, `PathAndStat` |
 | `pathapi.glob` | the glob engine behind `Path.glob()` |
