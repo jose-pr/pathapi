@@ -1315,3 +1315,19 @@ mutant(
     "tests/test_fanout.py::test_the_ignore_error_of_an_rm_is_asked_one_call_at_a_time",
     "the ignore_error handler of rm() is called from several threads at once",
 )
+mutant(
+    "copy-symlink-overwrite-unlinks-first",
+    "protocols/transfer.py",
+    "            if supports(target, Move):\n                try:\n                    return _link_over(",
+    "            if False:\n                try:\n                    return _link_over(",
+    "tests/test_copy_symlink_overwrite.py::test_a_store_that_renames_keeps_its_link_when_the_new_one_is_refused",
+    "an existing target is unlinked before the new link is made",
+)
+mutant(
+    "copy-symlink-onto-linkless-target-unlinks",
+    "protocols/transfer.py",
+    "        if not supports(target, Symlink):\n",
+    "        if False:\n",
+    "tests/test_copy_symlink_overwrite.py::test_a_store_without_links_refuses_before_removing_the_target",
+    "a target that cannot hold links is removed before the copy is refused",
+)

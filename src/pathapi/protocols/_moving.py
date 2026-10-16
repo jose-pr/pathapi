@@ -85,6 +85,25 @@ def _discard(aside: "Path", target: "Path") -> None:
         ) from error
 
 
+def _link_over(target: "Path", link, directory: bool) -> None:
+    """Make `target`, an existing entry, a link to `link`. The new link is made
+    in a hidden sibling and renamed over `target`, which stays until then:
+    a link that cannot be made leaves it. `NotImplementedError` from the
+    rename is raised with `target` untouched."""
+    swap = _swap()
+    temp = swap._temp_sibling(target)
+    swap._LIVE_TEMPS.add(str(temp))
+    try:
+        try:
+            temp.symlink_to(link, target_is_directory=directory)
+            _rename_over(temp, target, directory=False)
+        except BaseException:
+            _quietly_remove(temp)
+            raise
+    finally:
+        swap._LIVE_TEMPS.discard(str(temp))
+
+
 def _replace_tree(src: "Path", target: "Path", handing, links: bool) -> None:
     """Copy the directory `src` over the existing directory `target`: the
     new tree is finished beside it first, so a copy that fails leaves

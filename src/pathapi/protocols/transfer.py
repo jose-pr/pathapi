@@ -13,7 +13,7 @@ from .._errorpolicy import copy_error_predicate
 from .._filestat import FileStat
 from .. import _fanout
 from ._copytree import _copy_tree, _copy_tree_pooled
-from ._moving import _rename_over, _replace_tree
+from ._moving import _link_over, _rename_over, _replace_tree
 from ._relation import (
     _INNER,
     _OTHER,
@@ -372,14 +372,22 @@ class Copy(Identity, Create, Symlink, Readlink, BinaryOpen, _ty.Protocol):
             raise OSError(
                 _errno.EINVAL, "Source and target are the same file", str(target)
             )
+        if not supports(target, Symlink):
+            raise NotImplementedError(f"copy(follow_symlinks=False) onto {target!r}")
         target_stat = FileStat.from_path(target, follow_symlink=False)
+        directory = self.is_dir()
         if target_stat is not None:
             if target_stat.is_dir() and not target_stat.is_symlink():
                 raise IsADirectoryError(target)
             if not overwrite:
                 raise FileExistsError(target)
+            if supports(target, Move):
+                try:
+                    return _link_over(target, link, directory)
+                except NotImplementedError:
+                    pass
             target.unlink(missing_ok=True)
-        target.symlink_to(link, target_is_directory=self.is_dir())
+        target.symlink_to(link, target_is_directory=directory)
 
 
 class Move(Copy, Remove, _ty.Protocol):
