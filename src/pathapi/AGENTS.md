@@ -1840,7 +1840,11 @@ class Move(Copy, Remove, Protocol):
 
 `rename()` (stub). `move()` falls back to a copy and a removal where it is
 missing, so `supports(x, Move)` says whether the backend renames natively, not
-whether `move()` works.
+whether `move()` works. With `overwrite=True` an existing target stays until what
+replaces it is in place: `rename()` is tried over it, a backend that refuses has
+it renamed aside and put back if the source cannot be renamed in, and a copy and
+delete builds the new file or tree beside the target first. A hidden
+`.NAME.<hex>.pathapi-tmp` sibling exists meanwhile.
 
 ### `checksum.NativeChecksum`
 

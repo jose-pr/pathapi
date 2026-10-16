@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`move(overwrite=True)` no longer destroys the old target when the move fails.**
+  An existing target was removed before the source was renamed or copied over it, so
+  a failing rename or copy lost the target. The target now stays until the source
+  has taken its place: a local file is replaced atomically, `rename()` is tried
+  over a file elsewhere, a backend that refuses has the target renamed aside and put
+  back on failure, and a copy and delete finishes the new file or tree beside the
+  target first. A directory target is swapped in by rename where its class has one.
+  If you list the directory while a move runs, you may see a hidden
+  `.NAME.<hex>.pathapi-tmp` sibling.
+
 ## [0.1.1] - 2026-10-16
 
 ### Added
