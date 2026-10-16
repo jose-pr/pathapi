@@ -33,8 +33,10 @@ the standard library, and `pytest` is needed only to import
 `Chmod`, `BinaryOpen`, `FsPathLike`, the aliases `PathLike`/`PurePathLike`, the
 exceptions `PathError` and `NonRelativePatternError`, and the modules `glob`
 (`pathapi.glob`) and `sync` (`pathapi.sync`). `FTPPath`, `ZipPath`,
-`TarPath` and `ArchivePath` are exported too, imported on first use so that
-`import pathapi` loads neither `ftplib` nor `ssl` nor any archive code.
+`TarPath`, `ArchivePath`, `AsyncPath` and `AsyncFile` are exported too, imported
+on first use so that `import pathapi` loads neither `ftplib` nor `asyncio` nor
+`ssl` nor any archive code (`pathapi.testing.AsyncPathContract` is loaded on
+first use the same way).
 `pathapi.http` (HTTP requests) is not exported there: import it when
 it is needed, since it loads `http.client` and `ssl`.
 `MemPath` is defined in `pathapi.mempath`, which also holds
@@ -531,6 +533,193 @@ Base class for I/O paths.
   at. `overwrite=True` replaces a
   local file atomically (`replace()`); elsewhere the target is unlinked just
   before the rename. Returns `rename()`'s result (`None` on the fallback).
+
+### `AsyncPath`, `AsyncFile`
+
+```python
+class AsyncPath:
+    def __init__(self, path): ...
+    path
+    # no I/O: plain methods and properties, AsyncPath in and out
+    name: str
+    suffix: str
+    suffixes
+    stem
+    parts
+    segments
+    root: str
+    drive: str
+    anchor: str
+    parent
+    parents
+    def with_name(self, name) -> AsyncPath: ...
+    def with_stem(self, stem) -> AsyncPath: ...
+    def with_suffix(self, suffix) -> AsyncPath: ...
+    def with_segments(self, *segments) -> AsyncPath: ...
+    def joinpath(self, *args) -> AsyncPath: ...
+    def relative_to(self, other) -> AsyncPath: ...
+    def is_relative_to(self, other): ...
+    def match(self, path_pattern, *, case_sensitive=None): ...
+    def full_match(self, pattern, *, case_sensitive=None) -> bool: ...
+    def as_posix(self) -> str: ...
+    def as_uri(self) -> str: ...
+    def has_glob_pattern(self): ...
+    def is_absolute(self) -> bool: ...
+    def is_hidden(self): ...
+    # listings and files: plain methods returning async objects
+    def iterdir(self): ...
+    def glob(
+        self, pattern, *, case_sensitive=None, include_hidden=True,
+        recursive=None, dironly=None, recurse_symlinks=False, native=True,
+        on_error=None, bound_loops=False,
+    ): ...
+    def rglob(
+        self, pattern, *, case_sensitive=None, include_hidden=True,
+        recursive=True, dironly=None, recurse_symlinks=False, native=True,
+        on_error=None, bound_loops=False,
+    ): ...
+    def walk(self, top_down=True, on_error=None, follow_symlinks=False): ...
+    def open(
+        self, mode="r", buffering=-1, encoding=None, errors=None, newline=None,
+    ): ...
+    # I/O: coroutines of the sync method's name and arguments
+    async def stat(self, *, follow_symlinks=True): ...
+    async def lstat(self): ...
+    async def exists(self, *, follow_symlinks=True): ...
+    async def is_dir(self, *, follow_symlinks=True): ...
+    async def is_file(self, *, follow_symlinks=True): ...
+    async def is_symlink(self): ...
+    async def is_block_device(self): ...
+    async def is_char_device(self): ...
+    async def is_fifo(self): ...
+    async def is_socket(self): ...
+    async def is_junction(self) -> bool: ...
+    async def is_mount(self) -> bool: ...
+    async def is_dir_binding(self) -> bool: ...
+    async def samefile(self, other_path): ...
+    async def owner(self, *, follow_symlinks=True) -> str: ...
+    async def group(self, *, follow_symlinks=True) -> str: ...
+    async def chmod(self, mode, *, follow_symlinks=True): ...
+    async def lchmod(self, mode): ...
+    async def chown(self, uid=None, gid=None, *, follow_symlinks=True) -> None: ...
+    async def touch(self, mode=None, exist_ok=True): ...
+    async def mkdir(self, mode=0o777, parents=False, exist_ok=False): ...
+    async def unlink(self, missing_ok=False): ...
+    async def rmdir(self): ...
+    async def rm(
+        self, recursive=False, missing_ok=False, ignore_error=False, *,
+        follow_symlinks=False, follow_binds=False, max_workers=None,
+    ): ...
+    async def rename(self, target): ...
+    async def replace(self, target) -> AsyncPath: ...
+    async def move(self, target, *, overwrite=False): ...
+    async def move_into(self, target_dir, *, overwrite=False) -> AsyncPath: ...
+    async def copy(
+        self, target, *, overwrite=False, follow_symlinks=True,
+        preserve_metadata=True, recursive=False, ignore_error=None,
+        progress=None, on_error=None, max_workers=None,
+    ): ...
+    async def copy_into(
+        self, target_dir, *, overwrite=False, follow_symlinks=True,
+        preserve_metadata=True, recursive=False, ignore_error=None,
+        progress=None, on_error=None, max_workers=None,
+    ) -> AsyncPath: ...
+    async def symlink_to(
+        self, target, target_is_directory=False, *, force=False,
+    ) -> None: ...
+    async def hardlink_to(self, target) -> None: ...
+    async def readlink(self) -> AsyncPath: ...
+    async def absolute(self) -> AsyncPath: ...
+    async def resolve(self, strict=False) -> AsyncPath: ...
+    async def read_bytes(self) -> bytes: ...
+    async def read_text(self, encoding=None, errors=None, newline=None) -> str: ...
+    async def write_bytes(self, data): ...
+    async def write_text(self, data, encoding=None, errors=None, newline=None): ...
+    async def checksum(self, algorithm="md5") -> str: ...
+    async def supported_checksums(self) -> FrozenSet[str]: ...
+
+
+class AsyncFile:
+    file
+    closed: bool
+    name
+    mode
+    def readable(self) -> bool: ...
+    def writable(self) -> bool: ...
+    def seekable(self) -> bool: ...
+    async def aclose(self) -> None: ...
+    async def read(self, *args): ...
+    async def readline(self, *args): ...
+    async def readlines(self, *args): ...
+    async def write(self, *args): ...
+    async def writelines(self, *args): ...
+    async def seek(self, *args): ...
+    async def tell(self, *args): ...
+    async def truncate(self, *args): ...
+    async def flush(self, *args): ...
+```
+
+`AsyncPath` is `Path` for use from an event loop: a sibling, not a subclass
+or an alias, exported from `pathapi` and `pathapi.path` (there is no `aio`
+namespace). `AsyncPath(path)` stores any `Pathname` (in practice a `Path`:
+`LocalPath`, `MemPath`, `FTPPath`, an archive path, or a class of another
+distribution) and does no I/O; `TypeError` for a `str` or a standard-library
+path, and `AsyncPath(async_path)` wraps the same path. `.path` is the wrapped
+path. It never creates, closes or configures an event loop or a loop policy and
+never calls `asyncio.run()`.
+
+- **"Async" means a worker thread.** Each coroutine runs the wrapped path's
+  sync method with `asyncio.to_thread()` on the running loop's default
+  executor, so any backend can be used from a loop at once and the loop stays
+  free; nothing in it is a native async client. Callbacks that a method takes
+  (`progress`, `on_error`, `ignore_error`, the `on_error` of `walk()` and
+  `glob()`) are called on worker threads. Cancelling an `await` abandons the
+  wait, not the call: the worker thread finishes it, so a cancelled `write_text()`
+  can still land. Many concurrent awaits share the executor, which bounds them.
+- **Same names, same arguments.** A method is a coroutine exactly when it does
+  I/O; the pure members (`name`, `parent`, `with_*()`, `/`, `joinpath()`,
+  `match()`, `relative_to()`, `as_posix()`, ...) are plain and give `AsyncPath`
+  (`parents` is a tuple). An `AsyncPath` given as an argument or keyword
+  (`copy(target)`, `rename()`, `relative_to()`, `samefile()`, `/`) reaches the
+  wrapped method as the path it wraps, and a `Path` a method returns
+  (`resolve()`, `copy_into()`, `readlink()`, ...) comes back as an `AsyncPath`;
+  other values (a `FileStat`, `bytes`, `str`) are the sync method's. The
+  parameters shown by `inspect.signature()` are the sync method's. `info` and
+  `__iter__` are not provided; `.path.info` is the sync object.
+- **A method whose protocol the wrapped class lacks is still there.** Awaiting
+  it raises what the sync call raises (`NotImplementedError` for a stub, so
+  `await AsyncPath(MemPath("/a")).rename(...)` raises it), and
+  `supports(async_path, Move)` and `capabilities(async_path)` answer for the
+  wrapped path.
+- **Listings are async iterators.** `iterdir()`, `glob()` and `rglob()` return an
+  async iterator of `AsyncPath` that pulls the sync iterator on a worker thread
+  32 entries at a time, in order; the listing starts at the first step, so a
+  bad glob pattern or a missing directory raises there and not at the call.
+  Entries read before a failure are delivered and then the failure raised.
+  `walk()` yields `(AsyncPath, dirnames, filenames)` one directory per worker
+  call, so editing `dirnames` in place prunes a top-down walk. `aclose()` on
+  the iterator closes the sync iterator and is harmless to repeat; one that
+  ran to its end is closed already. Use an iterator from one task at a time.
+- **`open()` returns an object that is awaited or used with `async with`:**
+  `file = await path.open("rb")` and `async with path.open("w") as file` both
+  give an `AsyncFile`, and the file is opened on a worker thread when the
+  await or the `async with` starts. Cancelling that await closes the file the
+  worker opens afterwards.
+- **`AsyncFile`** wraps the sync file: `read`, `readline`, `readlines`,
+  `write`, `writelines`, `seek`, `tell`, `truncate` and `flush` are coroutines
+  taking the sync method's positional arguments, one at a time, and
+  `async for line in file` iterates lines. `readable()`, `writable()`,
+  `seekable()`, `closed`, `name` and `mode` are plain. The closer is
+  `aclose()`: complete when it returns, harmless to call twice, and it
+  finishes the close even if the awaiting task is cancelled (it then raises
+  `CancelledError`). `async with` closes it. `file` is the sync file object,
+  not to be used while a coroutine runs.
+- **Tree operations are one worker call.** `copy(recursive=True)`, `rm(recursive=True)`
+  and `move()` run the sync method once, so `max_workers=` is the sync fan-out
+  of `Path` (see the threads note under `Path`): only a class that sets
+  `_threadsafe` uses more than one thread, the others run serially.
+- `AsyncPath` compares, hashes and orders as the wrapped paths do, only with
+  another `AsyncPath` (`AsyncPath(p) != p`); `str()` is the wrapped path's.
 
 ### `FsPathLike`, `PathLike`, `PurePathLike`
 
@@ -2236,6 +2425,44 @@ directory told from a file, a numeric `st_mtime`), `_scandir()` agreeing with
 `walk()`, with pathlib's exception types, and a pickle round trip that keeps
 `==` and `hash()`. Capability attributes: `supports_listing`,
 `supports_empty_directories`, `distinguishes_file_types`, `supports_pickle`.
+
+### `AsyncPathContract`
+
+```python
+class AsyncPathContract:
+    supports_listing = None
+    supports_mkdir = None
+    supports_delete = None
+    supports_rename = None
+    supports_move = True
+    supports_concurrent_use = None
+```
+
+The contract of `AsyncPath` (see above) over a backend. `root` is the same
+fixture `PathContract` takes, a **sync** path: a fresh, function-scoped
+directory populated with `populate_fixture_tree()`; each test wraps it in
+`AsyncPath` and compares what the coroutine returns or raises with what the
+sync call on the same backend returns or raises. The coroutines run with
+`asyncio.run()` inside ordinary test functions, so no pytest plugin is needed.
+It covers the pure members, existence and type tests, `stat()`, reads and
+writes, `open()` (awaited and as `async with`, lines, `seek()`, `aclose()`),
+`iterdir()`, `glob()`, `rglob()`, `walk()` with pruning, `mkdir()`, `rmdir()`,
+`unlink()`, `rm()`, `copy()`, `copy_into()`, a recursive copy and `rm()` with
+`max_workers` (when `supports_concurrent_use`), `move()`, `rename()`, `touch()`,
+the `NotImplementedError` of an unsupported protocol, `supports()` and
+`capabilities()` of the wrapper, and concurrent calls. The switches are those
+of `PathContract` with the same meaning and defaults.
+
+```python
+import pytest
+from pathapi import LocalPath as MyPath  # your Path subclass
+from pathapi.testing import AsyncPathContract, populate_fixture_tree
+
+class TestMyAsyncPath(AsyncPathContract):
+    @pytest.fixture
+    def root(self, tmp_path):
+        return populate_fixture_tree(MyPath(tmp_path))
+```
 
 ### `PathContract`
 

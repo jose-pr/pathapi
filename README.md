@@ -151,13 +151,33 @@ The full reference is on the [documentation site](https://jose-pr.github.io/path
 an agent-oriented API summary ships inside the package as
 `pathapi/AGENTS.md`.
 
+## Async
+
+`AsyncPath(path)` wraps any `pathapi` path for use inside an event loop: the
+pure members stay plain, every method that does I/O is a coroutine of the same
+name, listings are async iterators and `open()` gives an `AsyncFile`. Each call
+runs the sync method on a worker thread, so every backend works at once and the
+loop is never blocked; it is not a native async client.
+
+```python
+import asyncio
+from pathapi import AsyncPath, LocalPath
+
+async def main():
+    root = AsyncPath(LocalPath("."))
+    async for entry in root.iterdir():
+        print(entry.name, await entry.is_dir())
+
+asyncio.run(main())
+```
+
 ## Extending
 
 Subclass `Path` for a resource of your own (`MemPath` is the reference), as
 worked through in
 [Extending](https://jose-pr.github.io/pathapi/guides/extending/).
 `pathapi.testing` provides the pytest contracts (`PurePathContract`,
-`ReadPathContract`, `PathContract`) and `populate_fixture_tree()` that every
+`ReadPathContract`, `PathContract`, `AsyncPathContract`) and `populate_fixture_tree()` that every
 class of the package and of the distributions above is verified with.
 
 ## Supported Python versions

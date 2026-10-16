@@ -21,6 +21,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   fixed order, and the error that ends the operation is the first to happen. A value
   below 1 is `ValueError`, one that is not an int is `TypeError`. `PathContract`
   has a `supports_concurrent_use` switch for the matching test.
+- **`AsyncPath` and `AsyncFile`: a path for use from an event loop.** `AsyncPath(path)`
+  wraps any `Path`; the pure members (`name`, `parent`, `/`, `with_*()`, `match()`, ...)
+  are plain and give `AsyncPath`, every method that does I/O is a coroutine of the same
+  name and arguments, `iterdir()`, `glob()`, `rglob()` and `walk()` return async iterators,
+  and `open()` returns an object that is awaited or used with `async with` and gives an
+  `AsyncFile` (`read`, `readline`, `write`, `seek`, ..., `aclose()`). They are exported
+  from `pathapi` and `pathapi.path`. Each call runs the wrapped path's sync method on a
+  worker thread (`asyncio.to_thread()`), so every backend can be used from a loop and the
+  loop is not blocked; cancelling an `await` abandons the wait and the worker finishes the
+  call. Recursive `copy()`, `rm()` and `move()` are one such call, so `max_workers=` is the
+  sync fan-out. `supports()` and `capabilities()` of an `AsyncPath` answer for the wrapped
+  path.
+- **`pathapi.testing.AsyncPathContract`.** The pytest contract of `AsyncPath` over a
+  backend: it takes the `root` fixture of `PathContract` and checks each coroutine
+  against the sync path's result, with `asyncio.run()` and no extra test dependency.
 
 ### Changed
 
