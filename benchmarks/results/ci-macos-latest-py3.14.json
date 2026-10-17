@@ -4,162 +4,162 @@
   "suite": "default",
   "source": "ci",
   "note": null,
-  "created_utc": "2026-10-15T19:14:53+00:00",
+  "created_utc": "2026-10-17T05:19:49+00:00",
   "package": {
     "name": "pathapi",
-    "version": "0.1.1"
+    "version": "0.1.2"
   },
   "git": {
-    "commit": "04671c844dcb2278c3df80415561b9ef255fd49d",
+    "commit": "07faa3c163f816517c32ed807b0f411734ff5fc4",
     "dirty": false
   },
   "python": "CPython 3.14.8",
   "interpreter": "3.14-darwin-universal2",
   "processor": "Darwin-arm64",
-  "cpu_count": 5,
+  "cpu_count": 3,
   "env": {},
   "metrics": {
     "local: LocalPath construct path (10k)": {
       "group": "local",
-      "min_ms": 0.000388,
-      "median_ms": 0.000422,
-      "max_ms": 0.000465,
+      "min_ms": 0.000453,
+      "median_ms": 0.000482,
+      "max_ms": 0.000545,
       "samples": 3,
       "calls_per_sample": 10000
     },
     "local: LocalPath glob('**/*.txt') 240 files": {
       "group": "local",
-      "min_ms": 2.975,
-      "median_ms": 3.043334,
-      "max_ms": 3.118459,
+      "min_ms": 2.72325,
+      "median_ms": 2.726292,
+      "max_ms": 2.864333,
       "samples": 3,
       "calls_per_sample": 1
     },
     "local: LocalPath iterdir() 8 entries": {
       "group": "local",
-      "min_ms": 0.020125,
-      "median_ms": 0.026792,
-      "max_ms": 0.030458,
+      "min_ms": 0.0205,
+      "median_ms": 0.021625,
+      "max_ms": 0.025875,
       "samples": 5,
       "calls_per_sample": 1
     },
     "local: LocalPath join path (10k)": {
       "group": "local",
-      "min_ms": 0.001393,
-      "median_ms": 0.001431,
-      "max_ms": 0.001437,
+      "min_ms": 0.001666,
+      "median_ms": 0.00168,
+      "max_ms": 0.00182,
       "samples": 3,
       "calls_per_sample": 10000
     },
     "local: LocalPath read_bytes() 64 KiB": {
       "group": "local",
-      "min_ms": 0.016125,
-      "median_ms": 0.018458,
-      "max_ms": 0.029,
+      "min_ms": 0.01475,
+      "median_ms": 0.015625,
+      "max_ms": 0.020375,
       "samples": 5,
       "calls_per_sample": 1
     },
     "local: LocalPath stat() (timeit)": {
       "group": "local",
-      "min_ms": 0.002102,
-      "median_ms": 0.002237,
-      "max_ms": 0.003484,
+      "min_ms": 0.00248,
+      "median_ms": 0.002807,
+      "max_ms": 0.002918,
       "samples": 5,
       "calls_per_sample": 2000
     },
     "local: LocalPath stat() file (2k)": {
       "group": "local",
-      "min_ms": 0.002377,
-      "median_ms": 0.002442,
-      "max_ms": 0.002472,
+      "min_ms": 0.003013,
+      "median_ms": 0.003027,
+      "max_ms": 0.003034,
       "samples": 3,
       "calls_per_sample": 2000
     },
     "local: pathlib.Path construct path (10k)": {
       "group": "local",
-      "min_ms": 0.000389,
-      "median_ms": 0.000401,
-      "max_ms": 0.000426,
+      "min_ms": 0.000446,
+      "median_ms": 0.00055,
+      "max_ms": 0.000754,
       "samples": 3,
       "calls_per_sample": 10000
     },
     "local: pathlib.Path glob('**/*.txt') 240 files": {
       "group": "local",
-      "min_ms": 1.846875,
-      "median_ms": 1.866292,
-      "max_ms": 1.941792,
+      "min_ms": 1.865875,
+      "median_ms": 1.874958,
+      "max_ms": 1.893,
       "samples": 3,
       "calls_per_sample": 1
     },
     "local: pathlib.Path iterdir() 8 entries": {
       "group": "local",
-      "min_ms": 0.019875,
-      "median_ms": 0.021208,
-      "max_ms": 0.026292,
+      "min_ms": 0.020208,
+      "median_ms": 0.020292,
+      "max_ms": 0.021167,
       "samples": 5,
       "calls_per_sample": 1
     },
     "local: pathlib.Path join path (10k)": {
       "group": "local",
-      "min_ms": 0.001306,
-      "median_ms": 0.001376,
-      "max_ms": 0.001479,
+      "min_ms": 0.00142,
+      "median_ms": 0.001533,
+      "max_ms": 0.001691,
       "samples": 3,
       "calls_per_sample": 10000
     },
     "local: pathlib.Path read_bytes() 64 KiB": {
       "group": "local",
-      "min_ms": 0.013333,
-      "median_ms": 0.013916,
-      "max_ms": 0.01775,
+      "min_ms": 0.013917,
+      "median_ms": 0.014417,
+      "max_ms": 0.014833,
       "samples": 5,
       "calls_per_sample": 1
     },
     "local: pathlib.Path stat() (timeit)": {
       "group": "local",
-      "min_ms": 0.002114,
-      "median_ms": 0.002123,
-      "max_ms": 0.002277,
+      "min_ms": 0.002349,
+      "median_ms": 0.00249,
+      "max_ms": 0.003142,
       "samples": 5,
       "calls_per_sample": 2000
     },
     "local: pathlib.Path stat() file (2k)": {
       "group": "local",
-      "min_ms": 0.002226,
-      "median_ms": 0.002363,
-      "max_ms": 0.002445,
+      "min_ms": 0.002822,
+      "median_ms": 0.002847,
+      "max_ms": 0.003775,
       "samples": 3,
       "calls_per_sample": 2000
     },
     "mem: MemPath glob('**/*.txt') 1k files": {
       "group": "mem",
-      "min_ms": 5.15885,
-      "median_ms": 5.161267,
-      "max_ms": 5.26025,
+      "min_ms": 7.079994,
+      "median_ms": 7.355002,
+      "max_ms": 7.366354,
       "samples": 3,
       "calls_per_sample": 20
     },
     "mem: path join": {
       "group": "mem",
-      "min_ms": 0.002445,
-      "median_ms": 0.002562,
-      "max_ms": 0.002662,
+      "min_ms": 0.002716,
+      "median_ms": 0.002872,
+      "max_ms": 0.00323,
       "samples": 5,
       "calls_per_sample": 10000
     },
     "mem: segments + name access": {
       "group": "mem",
-      "min_ms": 5.7e-05,
-      "median_ms": 5.9e-05,
-      "max_ms": 6.2e-05,
+      "min_ms": 7.1e-05,
+      "median_ms": 7.8e-05,
+      "max_ms": 8.9e-05,
       "samples": 5,
       "calls_per_sample": 10000
     },
     "mem: suffix + stem access": {
       "group": "mem",
-      "min_ms": 0.000331,
-      "median_ms": 0.000336,
-      "max_ms": 0.000376,
+      "min_ms": 0.000361,
+      "median_ms": 0.000426,
+      "max_ms": 0.000526,
       "samples": 5,
       "calls_per_sample": 10000
     }
